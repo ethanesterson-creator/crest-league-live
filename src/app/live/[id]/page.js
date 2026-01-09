@@ -26,18 +26,19 @@ export default function LiveGamePage() {
 
   const [game, setGame] = useState(null);
 
-  // roster rows come from game_roster
   const [rosterA, setRosterA] = useState([]);
   const [rosterB, setRosterB] = useState([]);
-
-  // stat totals map: key = `${player_id}:${stat_key}` -> number
   const [statTotals, setStatTotals] = useState({});
 
-  // finalize confirm modal
   const [confirmFinalizeOpen, setConfirmFinalizeOpen] = useState(false);
-
-  // clock mode UI (quarters/halves/periods)
   const [clockMode, setClockMode] = useState("");
+
+  // Bench collapse toggles (big scroll saver)
+  const [showBenchA, setShowBenchA] = useState(false);
+  const [showBenchB, setShowBenchB] = useState(false);
+
+  // Optional: compact stat chips even tighter on phones
+  const [superCompact, setSuperCompact] = useState(true);
 
   // UI clock tick
   const [nowMs, setNowMs] = useState(Date.now());
@@ -50,7 +51,8 @@ export default function LiveGamePage() {
 
   useEffect(() => {
     if (!rules?.clock?.enabled) return;
-    const def = rules?.clock?.defaultMode || (rules?.clock?.modes?.[0]?.id ?? "");
+    const def =
+      rules?.clock?.defaultMode || (rules?.clock?.modes?.[0]?.id ?? "");
     setClockMode(def);
   }, [rules?.clock?.enabled, rules?.clock?.defaultMode, rules?.clock?.modes]);
 
@@ -395,12 +397,13 @@ export default function LiveGamePage() {
   }
 
   if (loading) return <div className="p-6 text-white">Loading…</div>;
-  if (!game) return <div className="p-6 text-red-200">{err || "Game not found."}</div>;
+  if (!game)
+    return <div className="p-6 text-red-200">{err || "Game not found."}</div>;
 
   const header = `${game.league_key} • ${game.sport} • Level ${game.level} • ${game.mode}`;
   const teamA = norm(game.team_a1);
- const teamB = norm(game.team_b1);
- const safeTeamB = teamB; // keep your existing variable usage
+  const teamB = norm(game.team_b1);
+  const safeTeamB = teamB;
 
   const scoreA = Number(game.score_a || 0);
   const scoreB = Number(game.score_b || 0);
@@ -421,6 +424,84 @@ export default function LiveGamePage() {
 
   const clockPresets = activeClockMode?.presets ?? [300, 600, 900, 1200, 1800];
 
+  // tighter spacing knobs
+  const chipPad = superCompact ? "px-2 py-1" : "px-3 py-2";
+  const chipText = superCompact ? "text-[11px]" : "text-sm";
+
+  function StatChip({ p, sd }) {
+    const deltas = sd?.deltas?.length ? sd.deltas : [1];
+    const v = getVal(p.player_id, sd.key);
+
+    return (
+      <div className="flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-2 py-1">
+        <div className="flex items-center gap-2">
+          <div className="text-[11px] font-black opacity-80">{sd.label}</div>
+          <div className="min-w-[24px] text-right text-sm font-black tabular-nums">
+            {v}
+          </div>
+        </div>
+
+        <div className="flex items-center gap-1">
+          {deltas.map((d) => (
+            <button
+              key={`${p.player_id}-${sd.key}-${d}`}
+              onClick={() => bumpStat(p, sd.key, d)}
+              className={`rounded-lg border border-white/10 bg-white/10 ${chipPad} ${chipText} font-extrabold active:scale-95`}
+            >
+              +{d}
+            </button>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  function PlayerRow({ p, sideLabel }) {
+    return (
+      <div className="rounded-xl border border-white/10 bg-black/20 p-3">
+        <div className="flex items-center justify-between gap-2">
+          <div className="min-w-0">
+            <div className="truncate text-base font-extrabold">
+              {p.player_name || p.player_id}
+            </div>
+          </div>
+
+          <button
+            onClick={() => togglePlaying(p)}
+            className="shrink-0 rounded-xl border border-red-800 bg-red-950/40 px-3 py-2 text-xs font-extrabold text-red-200 active:scale-95"
+            title={`Remove from playing (${sideLabel})`}
+          >
+            Remove
+          </button>
+        </div>
+
+        {/* One compact row of stat chips (wraps if needed) */}
+        <div className="mt-2 flex flex-wrap gap-2">
+          {statDefs.map((sd) => (
+            <StatChip key={`${p.player_id}-${sd.key}`} p={p} sd={sd} />
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  function BenchRow({ p, sideLabel }) {
+    return (
+      <div className="flex items-center justify-between rounded-xl border border-white/10 bg-black/10 p-3">
+        <div className="min-w-0 truncate font-semibold opacity-90">
+          {p.player_name || p.player_id}
+        </div>
+        <button
+          onClick={() => togglePlaying(p)}
+          className="shrink-0 rounded-xl border border-emerald-700 bg-emerald-950/30 px-3 py-2 text-xs font-extrabold text-emerald-200 active:scale-95"
+          title={`Add to playing (${sideLabel})`}
+        >
+          Add
+        </button>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-transparent text-white">
       {err ? (
@@ -433,13 +514,24 @@ export default function LiveGamePage() {
 
       <div className="mx-auto max-w-6xl px-3 pt-3 sm:px-4">
         <div className="flex items-center justify-between gap-3">
-          <div className="min-w-0 truncate text-xs opacity-80 sm:text-sm">{header}</div>
-          <button
-            onClick={() => router.push("/")}
-            className="shrink-0 rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm font-semibold hover:bg-white/10"
-          >
-            Home
-          </button>
+          <div className="min-w-0 truncate text-xs opacity-80 sm:text-sm">
+            {header}
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setSuperCompact((v) => !v)}
+              className="shrink-0 rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-xs font-semibold hover:bg-white/10"
+              title="Toggle tighter stat chips"
+            >
+              {superCompact ? "Compact: ON" : "Compact: OFF"}
+            </button>
+            <button
+              onClick={() => router.push("/")}
+              className="shrink-0 rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm font-semibold hover:bg-white/10"
+            >
+              Home
+            </button>
+          </div>
         </div>
 
         {/* Compact scoreboard (mobile) */}
@@ -494,7 +586,9 @@ export default function LiveGamePage() {
 
                   {rules?.clock?.modes?.length ? (
                     <div className="mt-2 flex items-center justify-center gap-2">
-                      <div className="text-[11px] font-bold text-white/60">Style</div>
+                      <div className="text-[11px] font-bold text-white/60">
+                        Style
+                      </div>
                       <select
                         className="rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm font-bold text-white"
                         value={clockMode}
@@ -565,220 +659,78 @@ export default function LiveGamePage() {
           </div>
         </div>
 
-        {/* Full scoreboard (desktop/tablet) */}
-        <div className="mt-6 hidden md:block md:sticky md:top-[64px] md:z-40">
-          <div className="grid grid-cols-3 gap-4 rounded-2xl border border-white/10 bg-[#08172c]/85 p-5 backdrop-blur">
-            <div>
-              <div className="text-xs tracking-widest opacity-70">HOME</div>
-              <div className="mt-2 text-3xl font-extrabold">{teamA}</div>
-              <div className="mt-2 text-6xl font-black tabular-nums">{scoreA}</div>
-              <div className="mt-4 flex gap-2">
-                {scoreButtons.map((d) => (
-                  <button
-                    key={`A-${d}`}
-                    onClick={() => bumpScore("A", d)}
-                    className="rounded-xl border border-white/10 bg-white/10 px-4 py-3 text-lg font-extrabold active:scale-95"
-                  >
-                    +{d}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <div className="flex flex-col items-center justify-center">
-              <div className="text-xs tracking-widest opacity-70">
-                {rules?.clock?.enabled ? "GAME CLOCK" : "NO CLOCK"}
-              </div>
-
-              {rules?.clock?.enabled ? (
-                <>
-                  <div className="mt-2 text-7xl font-black tabular-nums">
-                    {fmtClock(derived.remaining)}
-                  </div>
-
-                  {rules?.clock?.modes?.length ? (
-                    <div className="mt-3 flex items-center gap-2">
-                      <div className="text-xs font-bold text-white/60">Clock Style</div>
-                      <select
-                        className="rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm font-bold text-white"
-                        value={clockMode}
-                        onChange={(e) => setClockMode(e.target.value)}
-                      >
-                        {rules.clock.modes.map((m) => (
-                          <option key={m.id} value={m.id}>
-                            {m.label}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                  ) : null}
-
-                  <div className="mt-3 flex flex-wrap items-center justify-center gap-2">
-                    {game.timer_running ? (
-                      <button
-                        onClick={onPause}
-                        className="rounded-xl bg-white px-4 py-2 text-sm font-black text-black active:scale-95"
-                      >
-                        Pause
-                      </button>
-                    ) : (
-                      <button
-                        onClick={onStart}
-                        className="rounded-xl bg-white px-4 py-2 text-sm font-black text-black active:scale-95"
-                      >
-                        Start
-                      </button>
-                    )}
-                    <button
-                      onClick={() =>
-                        onReset(
-                          game.duration_seconds ||
-                            clockPresets[clockPresets.length - 1] ||
-                            1800
-                        )
-                      }
-                      className="rounded-xl border border-white/15 bg-white/5 px-4 py-2 text-sm font-black active:scale-95"
-                    >
-                      Reset
-                    </button>
-
-                    {clockPresets.map((s) => (
-                      <button
-                        key={s}
-                        onClick={() => onReset(s)}
-                        className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm font-bold active:scale-95"
-                      >
-                        {fmtClock(s)}
-                      </button>
-                    ))}
-                  </div>
-                </>
-              ) : (
-                <div className="mt-2 text-sm text-white/70">
-                  This sport does not use a game clock.
-                </div>
-              )}
-
+        {/* Players (compact rows) */}
+        <div className="mt-6 grid gap-6 md:grid-cols-2">
+          {/* Team A */}
+          <div className="rounded-2xl border border-white/10 bg-white/5 p-4 sm:p-5">
+            <div className="flex items-center justify-between">
+              <div className="text-lg font-black">{teamA} Players</div>
               <button
-                onClick={() => setConfirmFinalizeOpen(true)}
-                className="mt-4 rounded-xl border border-emerald-400/30 bg-emerald-500/10 px-6 py-2 text-sm font-black text-emerald-100 hover:bg-emerald-500/15 active:scale-95"
+                onClick={() => setShowBenchA((v) => !v)}
+                className="rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-xs font-bold hover:bg-white/10"
               >
-                Finalize Game
+                {showBenchA ? "Hide Bench" : `Show Bench (${benchA.length})`}
               </button>
             </div>
 
-            <div className="text-right">
-              <div className="text-xs tracking-widest opacity-70">AWAY</div>
-              <div className="mt-2 text-3xl font-extrabold">{safeTeamB}</div>
-              <div className="mt-2 text-6xl font-black tabular-nums">{scoreB}</div>
-              <div className="mt-4 flex justify-end gap-2">
-                {scoreButtons.map((d) => (
-                  <button
-                    key={`B-${d}`}
-                    onClick={() => bumpScore("B", d)}
-                    className="rounded-xl border border-white/10 bg-white/10 px-4 py-3 text-lg font-extrabold active:scale-95"
-                  >
-                    +{d}
-                  </button>
-                ))}
-              </div>
+            <div className="mt-3 space-y-3">
+              {playingA.length ? (
+                playingA.map((p) => <PlayerRow key={p.player_id} p={p} sideLabel="A" />)
+              ) : (
+                <div className="rounded-xl border border-white/10 bg-white/5 p-3 text-sm opacity-70">
+                  No playing roster found.
+                </div>
+              )}
             </div>
+
+            {showBenchA ? (
+              <div className="mt-4 space-y-2">
+                {benchA.length ? (
+                  benchA.map((p) => <BenchRow key={p.player_id} p={p} sideLabel="A" />)
+                ) : (
+                  <div className="text-xs opacity-50">No bench.</div>
+                )}
+              </div>
+            ) : null}
+          </div>
+
+          {/* Team B */}
+          <div className="rounded-2xl border border-white/10 bg-white/5 p-4 sm:p-5">
+            <div className="flex items-center justify-between">
+              <div className="text-lg font-black">{safeTeamB} Players</div>
+              <button
+                onClick={() => setShowBenchB((v) => !v)}
+                className="rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-xs font-bold hover:bg-white/10"
+              >
+                {showBenchB ? "Hide Bench" : `Show Bench (${benchB.length})`}
+              </button>
+            </div>
+
+            <div className="mt-3 space-y-3">
+              {playingB.length ? (
+                playingB.map((p) => <PlayerRow key={p.player_id} p={p} sideLabel="B" />)
+              ) : (
+                <div className="rounded-xl border border-white/10 bg-white/5 p-3 text-sm opacity-70">
+                  No playing roster found.
+                </div>
+              )}
+            </div>
+
+            {showBenchB ? (
+              <div className="mt-4 space-y-2">
+                {benchB.length ? (
+                  benchB.map((p) => <BenchRow key={p.player_id} p={p} sideLabel="B" />)
+                ) : (
+                  <div className="text-xs opacity-50">No bench.</div>
+                )}
+              </div>
+            ) : null}
           </div>
         </div>
 
-        {/* Players */}
-        <div className="mt-6 grid gap-6 md:grid-cols-2">
-          {[
-            { side: "A", title: `${teamA} Players`, list: playingA, bench: benchA },
-            { side: "B", title: `${safeTeamB} Players`, list: playingB, bench: benchB },
-          ].map(({ side, title, list, bench }) => (
-            <div key={side} className="rounded-2xl border border-white/10 bg-white/5 p-4 sm:p-5">
-              <div className="flex items-center justify-between">
-                <div className="text-lg font-black">{title}</div>
-                <div className="text-xs opacity-60">{side === "A" ? teamA : safeTeamB}</div>
-              </div>
-
-              <div className="mt-4 text-sm font-bold opacity-80">Playing</div>
-              <div className="mt-2 space-y-3">
-                {list.length ? (
-                  list.map((p) => (
-                    <div key={p.player_id} className="rounded-xl border border-white/10 bg-black/20 p-3">
-                      <div className="flex items-center justify-between gap-3">
-                        <div className="min-w-0">
-                          <div className="truncate text-base font-extrabold">
-                            {p.player_name || p.player_id}
-                          </div>
-                        </div>
-
-                        <button
-                          onClick={() => togglePlaying(p)}
-                          className="rounded-xl border border-red-800 bg-red-950/40 px-3 py-2 text-xs font-extrabold text-red-200 active:scale-95"
-                        >
-                          Remove
-                        </button>
-                      </div>
-
-                      {/* Mobile-friendly: 1 column on phones, 2 on larger */}
-                      <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
-                        {statDefs.map((sd) => (
-                          <div key={sd.key} className="rounded-xl border border-white/10 bg-white/5 p-3">
-                            <div className="flex items-end justify-between">
-                              <div className="text-sm font-black">{sd.label}</div>
-                              <div className="text-xl font-black tabular-nums">
-                                {getVal(p.player_id, sd.key)}
-                              </div>
-                            </div>
-                            <div className="mt-2 flex flex-wrap gap-2">
-                              {(sd.deltas?.length ? sd.deltas : [1]).map((d) => (
-                                <button
-                                  key={`${p.player_id}-${sd.key}-${d}`}
-                                  onClick={() => bumpStat(p, sd.key, d)}
-                                  className="rounded-xl border border-white/10 bg-white/10 px-3 py-2 text-sm font-extrabold active:scale-95"
-                                >
-                                  +{d}
-                                </button>
-                              ))}
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  ))
-                ) : (
-                  <div className="rounded-xl border border-white/10 bg-white/5 p-3 text-sm opacity-70">
-                    No roster found for this team.
-                  </div>
-                )}
-              </div>
-
-              <div className="mt-5 text-sm font-bold opacity-80">Not Playing</div>
-              <div className="mt-2 space-y-2">
-                {bench.length ? (
-                  bench.map((p) => (
-                    <div
-                      key={p.player_id}
-                      className="flex items-center justify-between rounded-xl border border-white/10 bg-black/10 p-3"
-                    >
-                      <div className="min-w-0 truncate font-semibold opacity-90">
-                        {p.player_name || p.player_id}
-                      </div>
-                      <button
-                        onClick={() => togglePlaying(p)}
-                        className="rounded-xl border border-emerald-700 bg-emerald-950/30 px-3 py-2 text-xs font-extrabold text-emerald-200 active:scale-95"
-                      >
-                        Add
-                      </button>
-                    </div>
-                  ))
-                ) : (
-                  <div className="text-xs opacity-50">None</div>
-                )}
-              </div>
-            </div>
-          ))}
+        <div className="mt-6 pb-10 text-xs opacity-50">
+          Live Game ID: {String(game.id)}
         </div>
-
-        <div className="mt-6 pb-10 text-xs opacity-50">Live Game ID: {String(game.id)}</div>
       </div>
 
       {/* Finalize confirmation modal */}
