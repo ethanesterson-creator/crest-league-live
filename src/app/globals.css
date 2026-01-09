@@ -1,0 +1,102 @@
+/* Tailwind */
+@import "tailwindcss";
+
+/* Bauercrest theme tokens */
+:root {
+  --bc-navy: #0b1f3b;
+  --bc-navy-2: #08172c;
+  --bc-white: #ffffff;
+
+  /* surfaces */
+  --bc-bg: var(--bc-navy-2);
+  --bc-card: rgba(255, 255, 255, 0.06);
+  --bc-card-2: rgba(255, 255, 255, 0.09);
+  --bc-border: rgba(255, 255, 255, 0.14);
+
+  /* text */
+  --bc-text: var(--bc-white);
+  --bc-muted: rgba(255, 255, 255, 0.75);
+  --bc-faint: rgba(255, 255, 255, 0.55);
+
+  /* feedback */
+  --bc-success: #16a34a;
+  --bc-danger: #dc2626;
+}
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  background: var(--bc-bg);
+  color: var(--bc-text);
+  color-scheme: dark;
+}
+
+
+/* Optional: nicer selection */
+::selection {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+/* Utility-ish classes (so we don’t repeat styles everywhere) */
+.bc-container {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 16px;
+}
+
+.bc-card {
+  background: var(--bc-card);
+  border: 1px solid var(--bc-border);
+  border-radius: 16px;
+}
+
+.bc-card-pad {
+  padding: 16px;
+}
+
+.bc-muted {
+  color: var(--bc-muted);
+}
+
+.bc-faint {
+  color: var(--bc-faint);
+}
+
+.bc-divider {
+  border-top: 1px solid var(--bc-border);
+}
+
+/* Make buttons/inputs feel less “prototype” even before we build components */
+button {
+  cursor: pointer;
+}
+
+input,
+select,
+textarea {
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  color: var(--bc-text);
+  border-radius: 12px;
+  padding: 10px 12px;
+  outline: none;
+}
+
+input::placeholder,
+textarea::placeholder {
+  color: rgba(255, 255, 255, 0.5);
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+/* Fix native select dropdown list (Windows/Chrome white-on-white) */
+select option {
+  background: var(--bc-navy);
+  color: var(--bc-white);
+}
