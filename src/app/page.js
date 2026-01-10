@@ -510,12 +510,7 @@ export default function HomePage() {
               ))}
             </div>
           )}
-        </div>
-
-        <div className="mt-6 text-xs text-slate-500">
-          Notes: Team dropdowns come from your <b>players</b> table right now so you can run games immediately.
-          Later we can switch to a real <b>teams</b> table once you import it.
-        </div>
+        </div>        
       </div>
     </div>
   );
