@@ -102,9 +102,10 @@ export default function RootLayout({ children }) {
                 Install
               </a>
 
-              <Link href="/post" className="...same classes as other nav buttons...">
+              <a className="bc-muted" href="/post" style={{ fontSize: 14 }}>
                 Post Games
-              </Link>
+              </a>
+
 
               {/* Next later:
                   - Stat Leaders
