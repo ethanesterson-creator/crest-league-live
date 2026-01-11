@@ -102,6 +102,10 @@ export default function RootLayout({ children }) {
                 Install
               </a>
 
+              <Link href="/post" className="...same classes as other nav buttons...">
+                Post Games
+              </Link>
+
               {/* Next later:
                   - Stat Leaders
                   - Display Board
