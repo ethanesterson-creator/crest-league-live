@@ -38,39 +38,49 @@ export default function PostDraftEditorPage() {
   const [scoreAInput, setScoreAInput] = useState("0");
   const [scoreBInput, setScoreBInput] = useState("0");
 
-  async function load() {
-    setErr("");
-    setMsg("");
+ async function load() {
+  setErr("");
+  setMsg("");
 
-    const { data: g, error: gErr } = await supabase.from("live_games").select("*").eq("id", id).single();
-    if (gErr) {
-      setErr(gErr.message);
-      return;
-    }
-    setGame(g);
-    setScoreAInput(String(Number(g.score_a || 0)));
-    setScoreBInput(String(Number(g.score_b || 0)));
+  const { data: g, error: gErr } = await supabase
+    .from("live_games")
+    .select("*")
+    .eq("id", id)
+    .single();
 
-    const { data: r, error: rErr } = await supabase.from("game_roster").select("*").eq("game_id", id);
-    if (rErr) {
-      setRosterA([]);
-      setRosterB([]);
-      return;
-    }
-
-    const ta = norm(g.team_a1);
-    const tb = norm(g.team_b1);
-
-    const a = [];
-    const b = [];
-    for (const row of r || []) {
-      const rt = norm(row.team_name);
-      if (rt === ta) a.push(row);
-      else if (rt === tb) b.push(row);
-    }
-    setRosterA(a);
-    setRosterB(b);
+  if (gErr) {
+    setErr(gErr.message);
+    return;
   }
+
+  setGame(g);
+  setScoreAInput(String(Number(g.score_a || 0)));
+  setScoreBInput(String(Number(g.score_b || 0)));
+
+  const { data: r, error: rErr } = await supabase
+    .from("game_roster")
+    .select("*")
+    .eq("game_id", id);
+
+  if (rErr) {
+    setRosterA([]);
+    setRosterB([]);
+    return;
+  }
+
+  // ✅ FIX: Split by team_side (A/B). game_roster does NOT have team_name.
+  const a = [];
+  const b = [];
+
+  for (const row of r || []) {
+    if (row.team_side === "A") a.push(row);
+    else if (row.team_side === "B") b.push(row);
+  }
+
+  setRosterA(a);
+  setRosterB(b);
+}
+
 
   useEffect(() => {
     if (!id) return;
@@ -118,49 +128,55 @@ export default function PostDraftEditorPage() {
   }
 
   async function buildRosterIfMissing() {
-    setErr("");
-    setMsg("");
+  setErr("");
+  setMsg("");
 
-    const ta = norm(game?.team_a1);
-    const tb = norm(game?.team_b1);
-    const lk = norm(game?.league_key);
+  const ta = norm(game?.team_a1);
+  const tb = norm(game?.team_b1);
+  const lk = norm(game?.league_key);
 
-    if (!ta || !tb || !lk) {
-      setErr("Missing league/team info for this draft.");
-      return;
-    }
-
-    const { data: players, error } = await supabase
-      .from("players")
-      .select("*")
-      .eq("league_id", lk)
-      .in("team_name", [ta, tb])
-      .limit(5000);
-
-    if (error) {
-      setErr(error.message);
-      return;
-    }
-
-    const rows = (players || []).map((p) => ({
-      game_id: id,
-      player_id: String(p.player_id ?? p.id ?? ""),
-      player_name: p.player_name ?? p.name ?? "",
-      team_name: norm(p.team_name),
-    }));
-
-    if (!rows.length) {
-      setErr("No players found for these teams in this league.");
-      return;
-    }
-
-    const { error: insErr } = await supabase.from("game_roster").insert(rows);
-    if (insErr) setErr(insErr.message);
-    else {
-      setMsg("✅ Roster built.");
-      await load();
-    }
+  if (!ta || !tb || !lk) {
+    setErr("Missing league/team info for this draft.");
+    return;
   }
+
+  const { data: players, error } = await supabase
+    .from("players")
+    .select("id, first_name, last_name, team_name, league_id")
+    .eq("league_id", lk)
+    .in("team_name", [ta, tb])
+    .limit(5000);
+
+  if (error) {
+    setErr(error.message);
+    return;
+  }
+
+  const rows = (players || []).map((p) => {
+    const fullName = `${p.first_name ?? ""} ${p.last_name ?? ""}`.trim();
+    const side = norm(p.team_name) === ta ? "A" : "B";
+    return {
+      game_id: id,
+      player_id: String(p.id),
+      player_name: fullName || "Unknown",
+      team_side: side,
+      is_playing: true,
+    };
+  });
+
+  if (!rows.length) {
+    setErr("No players found for these teams in this league.");
+    return;
+  }
+
+  const { error: insErr } = await supabase.from("game_roster").insert(rows);
+  if (insErr) setErr(insErr.message);
+  else {
+    setMsg("✅ Roster built.");
+    await load();
+  }
+}
+
 
   async function finalizeDraft() {
     setErr("");

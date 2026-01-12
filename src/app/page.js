@@ -161,6 +161,7 @@ export default function HomePage() {
     const { data, error } = await supabase
       .from("live_games")
       .select("*")
+      .neq("status", "draft")
       .order("created_at", { ascending: false })
       .limit(10);
 
