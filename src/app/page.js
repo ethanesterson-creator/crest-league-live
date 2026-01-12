@@ -131,7 +131,7 @@ export default function HomePage() {
 
   async function ping() {
     setErr("");
-    const { error } = await supabase.from("live_games").select("id").limit(1);
+    const { error } = await supabase.from("live_games").select("id").neq("status", "draft").limit(1);
     setStatus(error ? `Supabase error: ${error.message}` : "Connected ✅");
     if (error) setErr(error.message);
   }
