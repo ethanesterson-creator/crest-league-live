@@ -47,9 +47,10 @@ export default function PostDraftEditorPage() {
 
   function getTotal(playerId, statKey) {
     const pid = String(playerId ?? "");
-    const key = String(statKey ?? "");
+    const key = String(statKey ?? "").toUpperCase();
     return Number(statTotals?.[pid]?.[key] ?? 0);
-  }
+ }
+
 
   async function load() {
     setErr("");
@@ -98,7 +99,7 @@ export default function PostDraftEditorPage() {
     const totals = {};
     for (const e of ev || []) {
       const pid = String(e.player_id ?? "");
-      const k = String(e.stat_key ?? "");
+      const k = String(e.stat_key ?? "").toUpperCase();
       const d = Number(e.delta ?? 0);
 
       if (!totals[pid]) totals[pid] = {};
@@ -164,6 +165,15 @@ export default function PostDraftEditorPage() {
       setErr(error.message);
       return;
     }
+     // ✅ instant UI tick (no waiting)
+    setStatTotals((prev) => {
+    const pid = String(player.player_id ?? player.id ?? "");
+    const key = String(statKey ?? "").toUpperCase();
+    const next = { ...(prev || {}) };
+    if (!next[pid]) next[pid] = {};
+    next[pid][key] = Number(next[pid][key] ?? 0) + 1;
+    return next;
+});
 
     // quick feedback message + reload totals
     setMsg(`✅ +${statKey} recorded`);
