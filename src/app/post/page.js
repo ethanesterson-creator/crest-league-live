@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { supabase } from "@/lib/supabase";
 
@@ -10,6 +10,13 @@ const MODES = ["5v5", "6v6", "7v7", "8v8", "9v9", "10v10", "11v11"];
 
 function norm(s) {
   return String(s ?? "").trim().toLowerCase();
+}
+
+function matchupLabel(a1, a2) {
+  const x1 = norm(a1);
+  const x2 = norm(a2);
+  if (x1 && x2 && x1 !== x2) return `${x1} + ${x2}`;
+  return x1 || "—";
 }
 
 export default function PostGamesPage() {
@@ -25,9 +32,14 @@ export default function PostGamesPage() {
   const [mode, setMode] = useState("5v5");
   const [modeDirty, setModeDirty] = useState(false);
 
+  // matchup type
+  const [matchupType, setMatchupType] = useState("single"); // single | two_team
+
   const [teams, setTeams] = useState([]);
   const [teamA, setTeamA] = useState("");
   const [teamB, setTeamB] = useState("");
+  const [teamA2, setTeamA2] = useState("");
+  const [teamB2, setTeamB2] = useState("");
 
   const [playedOn, setPlayedOn] = useState(() => {
     const d = new Date();
@@ -102,20 +114,21 @@ export default function PostGamesPage() {
 
     if (list.length) {
       setTeamA((prev) => (norm(prev) ? prev : list[0]));
-      setTeamB((prev) => {
-        if (norm(prev)) return prev;
-        return list[1] ?? list[0];
-      });
+      setTeamB((prev) => (norm(prev) ? prev : list[1] ?? list[0]));
+      setTeamA2((prev) => (norm(prev) ? prev : list[2] ?? list[0]));
+      setTeamB2((prev) => (norm(prev) ? prev : list[3] ?? list[1] ?? list[0]));
     } else {
       setTeamA("");
       setTeamB("");
+      setTeamA2("");
+      setTeamB2("");
     }
   }
 
   async function loadDrafts() {
     const { data, error } = await supabase
       .from("live_games")
-      .select("id, created_at, played_on, league_key, sport, level, mode, team_a1, team_b1, score_a, score_b, status")
+      .select("id, created_at, played_on, league_key, sport, level, mode, matchup_type, team_a1, team_a2, team_b1, team_b2, score_a, score_b, status")
       .eq("status", "draft")
       .order("created_at", { ascending: false })
       .limit(200);
@@ -165,20 +178,38 @@ export default function PostGamesPage() {
     loadDrafts();
   }, []);
 
+  function validateTeams() {
+    const a1 = norm(teamA);
+    const b1 = norm(teamB);
+    if (!a1 || !b1) return "Pick both teams.";
+    if (a1 === b1) return "Teams must be different.";
+
+    if (matchupType === "single") return "";
+
+    const a2 = norm(teamA2);
+    const b2 = norm(teamB2);
+    if (!a2 || !b2) return "Pick all 4 teams (A1, A2, B1, B2).";
+
+    const picks = [a1, a2, b1, b2];
+    const uniq = new Set(picks);
+    if (uniq.size !== picks.length) return "All 4 teams must be different (no duplicates).";
+
+    return "";
+  }
+
   async function createDraft() {
     setErr("");
     setMsg("");
 
     try {
       const lk = norm(leagueKey);
-      const ta = norm(teamA);
-      const tb = norm(teamB);
       const lv = String(level || "").trim().toUpperCase();
 
       if (!playedOn) throw new Error("Pick a date.");
       if (!lk) throw new Error("Pick a league.");
-      if (!ta || !tb) throw new Error("Pick both teams.");
-      if (ta === tb) throw new Error("Teams must be different.");
+
+      const teamErr = validateTeams();
+      if (teamErr) throw new Error(teamErr);
 
       const row = {
         status: "draft",
@@ -189,8 +220,11 @@ export default function PostGamesPage() {
         level: lv,
         mode,
 
-        team_a1: ta,
-        team_b1: tb,
+        matchup_type: matchupType,
+        team_a1: norm(teamA),
+        team_b1: norm(teamB),
+        team_a2: matchupType === "two_team" ? norm(teamA2) : null,
+        team_b2: matchupType === "two_team" ? norm(teamB2) : null,
 
         score_a: 0,
         score_b: 0,
@@ -276,6 +310,19 @@ export default function PostGamesPage() {
               </select>
             </label>
 
+            {/* Matchup type */}
+            <label className="text-sm">
+              <div className="mb-1 text-slate-300">Matchup</div>
+              <select
+                className="w-full rounded-xl border border-slate-800 bg-slate-950 px-3 py-2 outline-none focus:border-slate-500"
+                value={matchupType}
+                onChange={(e) => setMatchupType(e.target.value)}
+              >
+                <option value="single">1 team vs 1 team</option>
+                <option value="two_team">2 teams vs 2 teams</option>
+              </select>
+            </label>
+
             <label className="text-sm">
               <div className="mb-1 text-slate-300">Level</div>
               <select
@@ -313,7 +360,7 @@ export default function PostGamesPage() {
             <div />
 
             <label className="text-sm">
-              <div className="mb-1 text-slate-300">Team A</div>
+              <div className="mb-1 text-slate-300">Team A1</div>
               <select
                 className="w-full rounded-xl border border-slate-800 bg-slate-950 px-3 py-2 outline-none focus:border-slate-500"
                 value={teamA}
@@ -328,7 +375,7 @@ export default function PostGamesPage() {
             </label>
 
             <label className="text-sm">
-              <div className="mb-1 text-slate-300">Team B</div>
+              <div className="mb-1 text-slate-300">Team B1</div>
               <select
                 className="w-full rounded-xl border border-slate-800 bg-slate-950 px-3 py-2 outline-none focus:border-slate-500"
                 value={teamB}
@@ -341,6 +388,40 @@ export default function PostGamesPage() {
                 ))}
               </select>
             </label>
+
+            {matchupType === "two_team" ? (
+              <>
+                <label className="text-sm">
+                  <div className="mb-1 text-slate-300">Team A2</div>
+                  <select
+                    className="w-full rounded-xl border border-slate-800 bg-slate-950 px-3 py-2 outline-none focus:border-slate-500"
+                    value={teamA2}
+                    onChange={(e) => setTeamA2(e.target.value)}
+                  >
+                    {teams.map((t) => (
+                      <option key={t} value={t}>
+                        {t}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+
+                <label className="text-sm">
+                  <div className="mb-1 text-slate-300">Team B2</div>
+                  <select
+                    className="w-full rounded-xl border border-slate-800 bg-slate-950 px-3 py-2 outline-none focus:border-slate-500"
+                    value={teamB2}
+                    onChange={(e) => setTeamB2(e.target.value)}
+                  >
+                    {teams.map((t) => (
+                      <option key={t} value={t}>
+                        {t}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </>
+            ) : null}
           </div>
 
           <button
@@ -355,7 +436,7 @@ export default function PostGamesPage() {
           <div className="flex items-center justify-between gap-3">
             <div className="text-lg font-black">Draft Games</div>
             <button
-              onClick={loadDrafts}
+              onClick={() => loadDrafts()}
               className="rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-sm font-semibold hover:bg-white/10"
             >
               Refresh
@@ -366,25 +447,32 @@ export default function PostGamesPage() {
             <div className="mt-4 text-sm text-white/60">No drafts yet.</div>
           ) : (
             <div className="mt-4 grid gap-4">
-              {drafts.map((g) => (
-                <Link
-                  key={g.id}
-                  href={`/post/${g.id}`}
-                  className="block rounded-2xl border border-white/10 bg-black/20 p-4 hover:bg-black/30"
-                >
-                  <div className="text-xs text-white/60">{g.played_on ?? "—"}</div>
-                  <div className="mt-1 text-xl font-black">
-                    {g.team_a1} vs {g.team_b1}
-                  </div>
-                  <div className="mt-1 text-sm text-white/70">
-                    {g.league_key} • {g.sport} • Level {g.level} • {g.mode} •{" "}
-                    <span className="text-yellow-300 font-bold">draft</span>
-                  </div>
-                  <div className="mt-2 text-2xl font-black tabular-nums">
-                    {Number(g.score_a || 0)} - {Number(g.score_b || 0)}
-                  </div>
-                </Link>
-              ))}
+              {drafts.map((g) => {
+                const left =
+                  g.matchup_type === "two_team" ? matchupLabel(g.team_a1, g.team_a2) : norm(g.team_a1);
+                const right =
+                  g.matchup_type === "two_team" ? matchupLabel(g.team_b1, g.team_b2) : norm(g.team_b1);
+
+                return (
+                  <Link
+                    key={g.id}
+                    href={`/post/${g.id}`}
+                    className="block rounded-2xl border border-white/10 bg-black/20 p-4 hover:bg-black/30"
+                  >
+                    <div className="text-xs text-white/60">{g.played_on ?? "—"}</div>
+                    <div className="mt-1 text-xl font-black">
+                      {left} vs {right}
+                    </div>
+                    <div className="mt-1 text-sm text-white/70">
+                      {g.league_key} • {g.sport} • Level {g.level} • {g.mode} •{" "}
+                      <span className="text-yellow-300 font-bold">draft</span>
+                    </div>
+                    <div className="mt-2 text-2xl font-black tabular-nums">
+                      {Number(g.score_a || 0)} - {Number(g.score_b || 0)}
+                    </div>
+                  </Link>
+                );
+              })}
             </div>
           )}
         </div>

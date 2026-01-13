@@ -64,6 +64,17 @@ async function loadLeagues(setLeagues) {
   setLeagues(data ?? []);
 }
 
+function uniqNonEmpty(arr) {
+  return Array.from(new Set(arr.map((x) => norm(x)).filter(Boolean)));
+}
+
+function matchupLabel(a1, a2) {
+  const x1 = norm(a1);
+  const x2 = norm(a2);
+  if (x1 && x2 && x1 !== x2) return `${x1} + ${x2}`;
+  return x1 || "—";
+}
+
 export default function HomePage() {
   const [status, setStatus] = useState("Checking…");
   const [err, setErr] = useState("");
@@ -83,6 +94,9 @@ export default function HomePage() {
   const [mode, setMode] = useState("5v5");
   const [modeDirty, setModeDirty] = useState(false);
 
+  // matchup type
+  const [matchupType, setMatchupType] = useState("single"); // single | two_team
+
   // sport rules (fallback presets)
   const rules = useMemo(() => getSportRules(sport), [sport]);
   const clockModes = useMemo(() => rules?.clock?.modes ?? [], [rules]);
@@ -99,6 +113,10 @@ export default function HomePage() {
   const [teams, setTeams] = useState([]);
   const [teamA, setTeamA] = useState("");
   const [teamB, setTeamB] = useState("");
+
+  // extra teams for 2-team matchup
+  const [teamA2, setTeamA2] = useState("");
+  const [teamB2, setTeamB2] = useState("");
 
   // ---- points_rules helpers ----
   async function fetchRuleRow(lk, sp, lv) {
@@ -200,7 +218,9 @@ export default function HomePage() {
         if (!clockStyleDirty) setClockStyle(fallbackStyle);
 
         const modeObj = clockModes.find((m) => m.id === fallbackStyle) ?? clockModes[0] ?? null;
-        const presets = modeObj?.presets?.length ? modeObj.presets : FALLBACK_TIMER_PRESETS.map((p) => p.seconds);
+        const presets = modeObj?.presets?.length
+          ? modeObj.presets
+          : FALLBACK_TIMER_PRESETS.map((p) => p.seconds);
 
         if (!presetDirty) setPreset(presets[presets.length - 1] ?? 1800);
         return;
@@ -227,7 +247,9 @@ export default function HomePage() {
       // If dbSeconds is 0 but clock is enabled, fall back to some preset
       if (!presetDirty && !(dbSeconds > 0)) {
         const modeObj = clockModes.find((m) => m.id === dbStyle) ?? clockModes[0] ?? null;
-        const presets = modeObj?.presets?.length ? modeObj.presets : FALLBACK_TIMER_PRESETS.map((p) => p.seconds);
+        const presets = modeObj?.presets?.length
+          ? modeObj.presets
+          : FALLBACK_TIMER_PRESETS.map((p) => p.seconds);
         setPreset(presets[presets.length - 1] ?? 1800);
       }
     })();
@@ -237,8 +259,7 @@ export default function HomePage() {
   const timerOptions = useMemo(() => {
     if (!clockEnabled) return [];
 
-    const modeObj =
-      clockModes.find((m) => m.id === clockStyle) ?? clockModes[0] ?? null;
+    const modeObj = clockModes.find((m) => m.id === clockStyle) ?? clockModes[0] ?? null;
 
     const secondsList = modeObj?.presets?.length
       ? modeObj.presets
@@ -255,11 +276,7 @@ export default function HomePage() {
 
   async function ping() {
     setErr("");
-    const { error } = await supabase
-      .from("live_games")
-      .select("id")
-      .is("played_on", null)
-      .limit(1);
+    const { error } = await supabase.from("live_games").select("id").is("played_on", null).limit(1);
 
     setStatus(error ? `Supabase error: ${error.message}` : "Connected ✅");
     if (error) setErr(error.message);
@@ -275,14 +292,16 @@ export default function HomePage() {
 
     if (error) return;
 
-    const unique = Array.from(
-      new Set((data || []).map((r) => norm(r.team_name)).filter(Boolean))
-    ).sort();
+    const unique = Array.from(new Set((data || []).map((r) => norm(r.team_name)).filter(Boolean))).sort();
 
     setTeams(unique);
 
     setTeamA((prev) => (prev && unique.includes(norm(prev)) ? prev : unique[0] || ""));
     setTeamB((prev) => (prev && unique.includes(norm(prev)) ? prev : unique[1] || ""));
+
+    // defaults for extra teams (2-team)
+    setTeamA2((prev) => (prev && unique.includes(norm(prev)) ? prev : unique[2] || ""));
+    setTeamB2((prev) => (prev && unique.includes(norm(prev)) ? prev : unique[3] || ""));
   }
 
   async function loadGames() {
@@ -314,22 +333,55 @@ export default function HomePage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [leagueKey]);
 
+  // Validation
   const canCreate = useMemo(() => {
-    return norm(leagueKey) && norm(teamA) && norm(teamB) && norm(teamA) !== norm(teamB);
-  }, [leagueKey, teamA, teamB]);
+    const lk = norm(leagueKey);
+    const a1 = norm(teamA);
+    const b1 = norm(teamB);
+
+    if (!lk || !a1 || !b1) return false;
+    if (a1 === b1) return false;
+
+    if (matchupType === "single") return true;
+
+    const a2 = norm(teamA2);
+    const b2 = norm(teamB2);
+
+    if (!a2 || !b2) return false;
+
+    // No duplicates across all four picks
+    const picks = [a1, a2, b1, b2];
+    const uniq = new Set(picks);
+    return uniq.size === picks.length;
+  }, [leagueKey, teamA, teamA2, teamB, teamB2, matchupType]);
 
   async function createGame() {
     setErr("");
+
+    // extra guardrails (nice error messages)
+    if (!canCreate) {
+      setErr(
+        matchupType === "two_team"
+          ? "Pick 4 different teams (A1, A2, B1, B2). No duplicates."
+          : "Pick two different teams."
+      );
+      return;
+    }
 
     const duration = clockEnabled ? Number(preset || 0) : 0;
 
     const payload = {
       league_key: norm(leagueKey),
-      sport, // keep display value; live page normalizes later
+      sport, // keep display value
       level: String(level).toUpperCase(),
       mode,
+
+      matchup_type: matchupType,
       team_a1: norm(teamA),
       team_b1: norm(teamB),
+      team_a2: matchupType === "two_team" ? norm(teamA2) : null,
+      team_b2: matchupType === "two_team" ? norm(teamB2) : null,
+
       score_a: 0,
       score_b: 0,
 
@@ -340,17 +392,13 @@ export default function HomePage() {
       timer_remaining_seconds: duration,
       timer_remaining_at_anchor: duration,
 
-      clock_style: clockEnabled ? (clockStyle || "countdown") : "none",
+      clock_style: clockEnabled ? clockStyle || "countdown" : "none",
 
       status: "active",
       notes: "",
     };
 
-    const { data, error } = await supabase
-      .from("live_games")
-      .insert(payload)
-      .select("*")
-      .single();
+    const { data, error } = await supabase.from("live_games").insert(payload).select("*").single();
 
     if (error) {
       setErr(error.message);
@@ -443,6 +491,19 @@ export default function HomePage() {
               </select>
             </label>
 
+            {/* Matchup type */}
+            <label className="text-sm">
+              <div className="mb-1 text-slate-300">Matchup</div>
+              <select
+                className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 outline-none focus:border-slate-500"
+                value={matchupType}
+                onChange={(e) => setMatchupType(e.target.value)}
+              >
+                <option value="single">1 team vs 1 team</option>
+                <option value="two_team">2 teams vs 2 teams</option>
+              </select>
+            </label>
+
             <label className="text-sm">
               <div className="mb-1 text-slate-300">Level</div>
               <select
@@ -480,8 +541,9 @@ export default function HomePage() {
               </select>
             </label>
 
+            {/* Team picks */}
             <label className="text-sm">
-              <div className="mb-1 text-slate-300">Team A</div>
+              <div className="mb-1 text-slate-300">Team A1</div>
               <select
                 className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 outline-none focus:border-slate-500"
                 value={teamA}
@@ -497,7 +559,7 @@ export default function HomePage() {
             </label>
 
             <label className="text-sm">
-              <div className="mb-1 text-slate-300">Team B</div>
+              <div className="mb-1 text-slate-300">Team B1</div>
               <select
                 className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 outline-none focus:border-slate-500"
                 value={teamB}
@@ -511,6 +573,42 @@ export default function HomePage() {
                 ))}
               </select>
             </label>
+
+            {matchupType === "two_team" ? (
+              <>
+                <label className="text-sm">
+                  <div className="mb-1 text-slate-300">Team A2</div>
+                  <select
+                    className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 outline-none focus:border-slate-500"
+                    value={teamA2}
+                    onChange={(e) => setTeamA2(e.target.value)}
+                  >
+                    <option value="">Select…</option>
+                    {teams.map((t) => (
+                      <option key={t} value={t}>
+                        {t}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+
+                <label className="text-sm">
+                  <div className="mb-1 text-slate-300">Team B2</div>
+                  <select
+                    className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 outline-none focus:border-slate-500"
+                    value={teamB2}
+                    onChange={(e) => setTeamB2(e.target.value)}
+                  >
+                    <option value="">Select…</option>
+                    {teams.map((t) => (
+                      <option key={t} value={t}>
+                        {t}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </>
+            ) : null}
 
             {/* Clock Style */}
             {clockEnabled ? (
@@ -526,7 +624,13 @@ export default function HomePage() {
                 >
                   {(clockModes?.length
                     ? clockModes
-                    : [{ id: "countdown", label: "Countdown", presets: FALLBACK_TIMER_PRESETS.map((p) => p.seconds) }]
+                    : [
+                        {
+                          id: "countdown",
+                          label: "Countdown",
+                          presets: FALLBACK_TIMER_PRESETS.map((p) => p.seconds),
+                        },
+                      ]
                   ).map((m) => (
                     <option key={m.id} value={m.id}>
                       {m.label}
@@ -535,9 +639,7 @@ export default function HomePage() {
                 </select>
               </label>
             ) : (
-              <div className="text-xs text-slate-400 sm:col-span-2">
-                This game has no clock (per points_rules).
-              </div>
+              <div className="text-xs text-slate-400 sm:col-span-2">This game has no clock (per points_rules).</div>
             )}
 
             {/* Timer Preset */}
@@ -566,19 +668,13 @@ export default function HomePage() {
             onClick={createGame}
             disabled={!canCreate}
             className={`mt-4 w-full rounded-2xl px-4 py-3 text-lg font-extrabold shadow
-              ${
-                canCreate
-                  ? "bg-emerald-500 text-slate-950 hover:bg-emerald-400"
-                  : "bg-slate-800 text-slate-400"
-              }`}
+              ${canCreate ? "bg-emerald-500 text-slate-950 hover:bg-emerald-400" : "bg-slate-800 text-slate-400"}`}
           >
             Create Game
           </button>
 
           {err ? (
-            <div className="mt-3 rounded-xl border border-red-900 bg-red-950/50 p-3 text-sm text-red-200">
-              {err}
-            </div>
+            <div className="mt-3 rounded-xl border border-red-900 bg-red-950/50 p-3 text-sm text-red-200">{err}</div>
           ) : null}
         </div>
 
@@ -590,57 +686,57 @@ export default function HomePage() {
             <div className="text-sm text-slate-400">No games yet.</div>
           ) : (
             <div className="space-y-3">
-              {games.map((g) => (
-                <div
-                  key={g.id}
-                  className="rounded-2xl border border-slate-800 bg-slate-950/60 p-4"
-                >
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <div className="text-xs text-slate-400">
-                        {new Date(g.created_at).toLocaleString()}
-                      </div>
-                      <div className="mt-1 text-xl font-extrabold">
-                        {g.team_a1} vs {g.team_b1}
-                      </div>
-                      <div className="mt-1 text-sm text-slate-300">
-                        {g.league_key} • {g.sport} • Level {g.level} • {g.mode} •{" "}
-                        <span className="text-emerald-400 font-semibold">{g.status}</span>
-                      </div>
-                      <div className="mt-1 text-xs text-slate-500 break-all">ID: {g.id}</div>
-                    </div>
+              {games.map((g) => {
+                const left = g.matchup_type === "two_team" ? matchupLabel(g.team_a1, g.team_a2) : norm(g.team_a1);
+                const right = g.matchup_type === "two_team" ? matchupLabel(g.team_b1, g.team_b2) : norm(g.team_b1);
 
-                    <div className="flex flex-col items-end gap-2">
-                      <div className="rounded-2xl border border-slate-700 bg-slate-950 px-4 py-3 text-center">
-                        <div className="text-xs text-slate-400">Score</div>
-                        <div className="text-3xl font-black tabular-nums">
-                          {g.score_a} - {g.score_b}
+                return (
+                  <div key={g.id} className="rounded-2xl border border-slate-800 bg-slate-950/60 p-4">
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <div className="text-xs text-slate-400">{new Date(g.created_at).toLocaleString()}</div>
+                        <div className="mt-1 text-xl font-extrabold">
+                          {left} vs {right}
                         </div>
+                        <div className="mt-1 text-sm text-slate-300">
+                          {g.league_key} • {g.sport} • Level {g.level} • {g.mode} •{" "}
+                          <span className="text-emerald-400 font-semibold">{g.status}</span>
+                        </div>
+                        <div className="mt-1 text-xs text-slate-500 break-all">ID: {g.id}</div>
                       </div>
 
-                      <div className="flex gap-2">
-                        <Link
-                          className="rounded-xl bg-emerald-500 px-4 py-2 text-sm font-extrabold text-slate-950 hover:bg-emerald-400"
-                          href={`/live/${g.id}`}
-                        >
-                          Open
-                        </Link>
+                      <div className="flex flex-col items-end gap-2">
+                        <div className="rounded-2xl border border-slate-700 bg-slate-950 px-4 py-3 text-center">
+                          <div className="text-xs text-slate-400">Score</div>
+                          <div className="text-3xl font-black tabular-nums">
+                            {g.score_a} - {g.score_b}
+                          </div>
+                        </div>
 
-                        {g.status !== "final" ? (
-                          <button
-                            onClick={() => deleteGame(g.id)}
-                            className="rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm font-bold text-red-100 hover:bg-red-500/20"
+                        <div className="flex gap-2">
+                          <Link
+                            className="rounded-xl bg-emerald-500 px-4 py-2 text-sm font-extrabold text-slate-950 hover:bg-emerald-400"
+                            href={`/live/${g.id}`}
                           >
-                            Delete
-                          </button>
-                        ) : (
-                          <div className="text-xs text-white/50 italic">Finalized — admin only</div>
-                        )}
+                            Open
+                          </Link>
+
+                          {g.status !== "final" ? (
+                            <button
+                              onClick={() => deleteGame(g.id)}
+                              className="rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm font-bold text-red-100 hover:bg-red-500/20"
+                            >
+                              Delete
+                            </button>
+                          ) : (
+                            <div className="text-xs text-white/50 italic">Finalized — admin only</div>
+                          )}
+                        </div>
                       </div>
                     </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </div>

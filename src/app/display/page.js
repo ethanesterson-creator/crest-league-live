@@ -7,16 +7,7 @@ import { getSportRules } from "@/lib/sportRules";
 const OVERALL_SPORT_KEY = "overall";
 const HIGHLIGHTS_BUCKET = "highlights";
 
-const SPORTS = [
-  "Hoop",
-  "Soccer",
-  "Softball",
-  "Volleyball",
-  "Football",
-  "Speedball",
-  "Euro",
-  "Hockey",
-];
+const SPORTS = ["Hoop", "Soccer", "Softball", "Volleyball", "Football", "Speedball", "Euro", "Hockey"];
 
 function norm(s) {
   return String(s ?? "").trim().toLowerCase();
@@ -35,6 +26,13 @@ function fmtClock(seconds) {
   const mm = String(Math.floor(s / 60)).padStart(2, "0");
   const ss = String(s % 60).padStart(2, "0");
   return `${mm}:${ss}`;
+}
+
+function matchupLabel(a1, a2) {
+  const x1 = norm(a1);
+  const x2 = norm(a2);
+  if (x1 && x2 && x1 !== x2) return `${x1} + ${x2}`;
+  return x1 || "—";
 }
 
 export default function DisplayBoardPage() {
@@ -75,10 +73,7 @@ export default function DisplayBoardPage() {
   }, [sport]);
 
   async function loadLeagues() {
-    const { data, error } = await supabase
-      .from("leagues")
-      .select("id, name")
-      .order("id", { ascending: true });
+    const { data, error } = await supabase.from("leagues").select("id, name").order("id", { ascending: true });
 
     if (error) {
       setLeagues([
@@ -110,9 +105,7 @@ export default function DisplayBoardPage() {
   async function loadLeagueStandings(lid) {
     const { data, error } = await supabase
       .from("standings")
-      .select(
-        "league_id, sport, team_name, wins, losses, points_for, points_against, league_points"
-      )
+      .select("league_id, sport, team_name, wins, losses, points_for, points_against, league_points")
       .eq("league_id", norm(lid))
       .eq("sport", OVERALL_SPORT_KEY);
 
@@ -123,9 +116,7 @@ export default function DisplayBoardPage() {
   async function loadAllStandings() {
     const { data, error } = await supabase
       .from("standings")
-      .select(
-        "league_id, sport, team_name, wins, losses, points_for, points_against, league_points"
-      )
+      .select("league_id, sport, team_name, wins, losses, points_for, points_against, league_points")
       .eq("sport", OVERALL_SPORT_KEY);
 
     if (error) throw error;
@@ -168,18 +159,33 @@ export default function DisplayBoardPage() {
     setLeaderRows(data || []);
   }
 
+  // ✅ Only show finals that still exist in live_games (so admin hard-deletes vanish)
   async function loadRecentFinals() {
     const { data, error } = await supabase
       .from("games")
       .select(
-        "id, league_id, sport, level, team_a, team_b, score_a, score_b, status, created_at, updated_at, duration_seconds"
+        "id, league_id, sport, level, team_a, team_b, team_a2, team_b2, matchup_type, score_a, score_b, status, created_at, updated_at, duration_seconds"
       )
       .eq("status", "final")
       .order("updated_at", { ascending: false })
-      .limit(8);
+      .limit(50);
 
     if (error) throw error;
-    setRecentFinals(data || []);
+
+    const ids = (data || []).map((g) => g.id);
+    if (!ids.length) {
+      setRecentFinals([]);
+      return;
+    }
+
+    // Check which of these still exist in live_games
+    const { data: lg, error: lgErr } = await supabase.from("live_games").select("id").in("id", ids);
+    if (lgErr) throw lgErr;
+
+    const liveSet = new Set((lg || []).map((x) => x.id));
+    const filtered = (data || []).filter((g) => liveSet.has(g.id));
+
+    setRecentFinals(filtered.slice(0, 8));
   }
 
   async function loadHighlightsBoard() {
@@ -241,11 +247,8 @@ export default function DisplayBoardPage() {
 
   async function goFullscreen() {
     try {
-      if (!document.fullscreenElement) {
-        await document.documentElement.requestFullscreen();
-      } else {
-        await document.exitFullscreen();
-      }
+      if (!document.fullscreenElement) await document.documentElement.requestFullscreen();
+      else await document.exitFullscreen();
     } catch {
       // ignore
     }
@@ -264,7 +267,6 @@ export default function DisplayBoardPage() {
     return "Recent Final Games";
   }, [tab, leagueId, sport, statLabel]);
 
-  // Auto-advance highlights: images advance every 8s; videos advance when ended
   const activeHighlight = highlights?.length ? highlights[Math.max(0, Math.min(hiIndex, highlights.length - 1))] : null;
 
   useEffect(() => {
@@ -275,15 +277,10 @@ export default function DisplayBoardPage() {
     const h = activeHighlight;
     if (!h) return;
 
-    // For images: auto advance on a timer
     if (h.file_type === "image") {
-      const t = setInterval(() => {
-        setHiIndex((i) => (i + 1) % highlights.length);
-      }, 8000);
+      const t = setInterval(() => setHiIndex((i) => (i + 1) % highlights.length), 8000);
       return () => clearInterval(t);
     }
-
-    // For videos: we do NOT auto-advance by time. We advance on "ended" event (in component).
     return;
   }, [tab, hiAuto, highlights, activeHighlight]);
 
@@ -294,9 +291,7 @@ export default function DisplayBoardPage() {
         <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
           <div>
             <div className="text-3xl font-black tracking-tight">{topTitle}</div>
-            <div className="mt-1 text-sm text-white/70">
-              Display Board • Auto-refresh {autoRefresh ? "ON" : "OFF"} • Bauercrest Navy/White
-            </div>
+            <div className="mt-1 text-sm text-white/70">Display Board • Auto-refresh {autoRefresh ? "ON" : "OFF"}</div>
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
@@ -338,9 +333,7 @@ export default function DisplayBoardPage() {
                   key={t.id}
                   onClick={() => setTab(t.id)}
                   className={`rounded-xl px-4 py-2 text-sm font-black active:scale-95 ${
-                    tab === t.id
-                      ? "bg-white text-slate-950"
-                      : "border border-white/15 bg-white/5 hover:bg-white/10"
+                    tab === t.id ? "bg-white text-slate-950" : "border border-white/15 bg-white/5 hover:bg-white/10"
                   }`}
                 >
                   {t.label}
@@ -420,9 +413,7 @@ export default function DisplayBoardPage() {
         </div>
 
         {err ? (
-          <div className="mt-4 rounded-xl border border-red-700 bg-red-950/40 p-3 text-sm text-red-200">
-            {err}
-          </div>
+          <div className="mt-4 rounded-xl border border-red-700 bg-red-950/40 p-3 text-sm text-red-200">{err}</div>
         ) : null}
 
         {/* Board Content */}
@@ -443,9 +434,7 @@ export default function DisplayBoardPage() {
               index={hiIndex}
               setIndex={setHiIndex}
               highlightUrl={highlightUrl}
-              onVideoEnded={() => {
-                setHiIndex((i) => (highlights?.length ? (i + 1) % highlights.length : 0));
-              }}
+              onVideoEnded={() => setHiIndex((i) => (highlights?.length ? (i + 1) % highlights.length : 0))}
             />
           )}
         </div>
@@ -546,29 +535,34 @@ function BoardRecent({ finals }) {
 
       <div className="mt-5 grid gap-4 md:grid-cols-2">
         {finals?.length ? (
-          finals.map((g) => (
-            <div key={g.id} className="rounded-2xl border border-white/10 bg-black/20 p-5">
-              <div className="text-xs text-white/60">
-                {prettyLeague(g.league_id)} • {String(g.sport || "").toUpperCase()} • Level {g.level}
-              </div>
+          finals.map((g) => {
+            const left = g.matchup_type === "two_team" ? matchupLabel(g.team_a, g.team_a2) : norm(g.team_a);
+            const right = g.matchup_type === "two_team" ? matchupLabel(g.team_b, g.team_b2) : norm(g.team_b);
 
-              <div className="mt-2 text-xl font-extrabold">
-                {g.team_a} vs {g.team_b}
-              </div>
+            return (
+              <div key={g.id} className="rounded-2xl border border-white/10 bg-black/20 p-5">
+                <div className="text-xs text-white/60">
+                  {prettyLeague(g.league_id)} • {String(g.sport || "").toUpperCase()} • Level {g.level}
+                </div>
 
-              <div className="mt-3 flex items-center justify-between">
-                <div className="text-sm text-white/60">Final</div>
-                <div className="text-3xl font-black tabular-nums">
-                  {g.score_a} - {g.score_b}
+                <div className="mt-2 text-xl font-extrabold">
+                  {left} vs {right}
+                </div>
+
+                <div className="mt-3 flex items-center justify-between">
+                  <div className="text-sm text-white/60">Final</div>
+                  <div className="text-3xl font-black tabular-nums">
+                    {g.score_a} - {g.score_b}
+                  </div>
+                </div>
+
+                <div className="mt-2 text-xs text-white/50">
+                  Updated: {g.updated_at ? new Date(g.updated_at).toLocaleString() : "—"} • Duration:{" "}
+                  {g.duration_seconds ? fmtClock(g.duration_seconds) : "—"}
                 </div>
               </div>
-
-              <div className="mt-2 text-xs text-white/50">
-                Updated: {g.updated_at ? new Date(g.updated_at).toLocaleString() : "—"} • Duration:{" "}
-                {g.duration_seconds ? fmtClock(g.duration_seconds) : "—"}
-              </div>
-            </div>
-          ))
+            );
+          })
         ) : (
           <div className="text-white/60">No finalized games yet.</div>
         )}
@@ -631,20 +625,10 @@ function BoardHighlights({ items, index, setIndex, highlightUrl, onVideoEnded })
 
           <div className="mt-4 overflow-hidden rounded-2xl border border-white/10 bg-black/30">
             {h.file_type === "video" ? (
-              <video
-                src={url}
-                controls
-                className="w-full"
-                onEnded={onVideoEnded}
-                playsInline
-              />
+              <video src={url} controls className="w-full" onEnded={onVideoEnded} playsInline />
             ) : (
               <img src={url} alt={h.title ?? "Highlight"} className="w-full object-contain" />
             )}
-          </div>
-
-          <div className="mt-3 text-xs text-white/50">
-            Tip: For long videos, use “Next” when you’re ready. Videos advance automatically when they finish.
           </div>
         </div>
       )}
