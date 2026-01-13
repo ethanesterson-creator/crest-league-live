@@ -5,8 +5,7 @@ import Link from "next/link";
 import { supabase } from "@/lib/supabase";
 import { getSportRules } from "@/lib/sportRules";
 
-// Keep the human-friendly sport names for the dropdown.
-// getSportRules() normalizes these internally.
+// Include Evening Activity because it's in points_rules
 const SPORTS = [
   "Hoop",
   "Softball",
@@ -16,18 +15,24 @@ const SPORTS = [
   "Euro",
   "Soccer",
   "Hockey",
+  "Evening Activity",
 ];
 
-const LEVELS = ["A", "B", "C", "D"];
-const MODES = ["5v5", "7v7", "11v11", "3v3", "2v2", "1v1"];
+// Fallbacks only used if points_rules row is missing
+const FALLBACK_LEVELS = ["A", "B", "C", "D", "ALL"];
+const MODES = ["5v5", "6v6", "7v7", "8v8", "9v9", "10v10", "11v11", "3v3", "2v2", "1v1"];
 
-// Fallback presets if something is missing in sportRules
 const FALLBACK_TIMER_PRESETS = [
   { label: "30:00", seconds: 1800 },
+  { label: "25:00", seconds: 1500 },
   { label: "20:00", seconds: 1200 },
   { label: "15:00", seconds: 900 },
+  { label: "12:00", seconds: 720 },
   { label: "10:00", seconds: 600 },
+  { label: "08:00", seconds: 480 },
+  { label: "07:00", seconds: 420 },
   { label: "05:00", seconds: 300 },
+  { label: "04:00", seconds: 240 },
 ];
 
 function norm(s) {
@@ -48,7 +53,6 @@ async function loadLeagues(setLeagues) {
     .order("id", { ascending: true });
 
   if (error) {
-    // fallback if leagues table isn't ready
     setLeagues([
       { id: "seniors", name: "Seniors" },
       { id: "juniors", name: "Juniors" },
@@ -65,55 +69,170 @@ export default function HomePage() {
   const [err, setErr] = useState("");
   const [games, setGames] = useState([]);
 
-  // leagues for dropdown (from Supabase)
   const [leagues, setLeagues] = useState([]);
 
   // form
   const [leagueKey, setLeagueKey] = useState("seniors");
   const [sport, setSport] = useState("Hoop");
+
+  // available levels based on points_rules
+  const [availableLevels, setAvailableLevels] = useState(FALLBACK_LEVELS);
   const [level, setLevel] = useState("A");
+
+  // mode defaulted from points_rules
   const [mode, setMode] = useState("5v5");
+  const [modeDirty, setModeDirty] = useState(false);
 
-  // sport rules (drives timer presets + clock visibility)
+  // sport rules (fallback presets)
   const rules = useMemo(() => getSportRules(sport), [sport]);
-  const clockEnabled = !!rules?.clock?.enabled;
-
-  // clock style (quarters/halves/periods/etc)
   const clockModes = useMemo(() => rules?.clock?.modes ?? [], [rules]);
-  const [clockStyle, setClockStyle] = useState("");
 
-  // timer preset seconds
+  // clock config (defaulted from points_rules, fallback to sport rules)
+  const [clockEnabled, setClockEnabled] = useState(!!rules?.clock?.enabled);
+  const [clockStyle, setClockStyle] = useState("");
+  const [clockStyleDirty, setClockStyleDirty] = useState(false);
+
   const [preset, setPreset] = useState(FALLBACK_TIMER_PRESETS[0].seconds);
+  const [presetDirty, setPresetDirty] = useState(false);
 
   // teams from players table
   const [teams, setTeams] = useState([]);
   const [teamA, setTeamA] = useState("");
   const [teamB, setTeamB] = useState("");
 
-  // When sport changes, pick a default clock style + preset
-  useEffect(() => {
-    if (!clockEnabled) {
-      setClockStyle("");
-      setPreset(0);
+  // ---- points_rules helpers ----
+  async function fetchRuleRow(lk, sp, lv) {
+    const league_id = norm(lk);
+    const sport_key = norm(sp); // points_rules sport is lowercase
+    const level_key = String(lv || "").trim().toUpperCase();
+
+    if (!league_id || !sport_key || !level_key) return null;
+
+    const { data, error } = await supabase
+      .from("points_rules")
+      .select(
+        "league_id,sport,level,default_mode,clock_enabled,default_clock_style,default_clock_seconds,players_per_team,score_buttons,stat_keys,win_points"
+      )
+      .eq("league_id", league_id)
+      .eq("sport", sport_key)
+      .eq("level", level_key)
+      .maybeSingle();
+
+    if (error) return null;
+    return data ?? null;
+  }
+
+  async function loadAvailableLevels() {
+    const league_id = norm(leagueKey);
+    const sport_key = norm(sport);
+
+    if (!league_id || !sport_key) {
+      setAvailableLevels(FALLBACK_LEVELS);
       return;
     }
 
-    const defStyle =
-      rules?.clock?.defaultMode ||
-      (clockModes.length ? clockModes[0].id : "countdown");
-    setClockStyle(defStyle);
+    const { data, error } = await supabase
+      .from("points_rules")
+      .select("level")
+      .eq("league_id", league_id)
+      .eq("sport", sport_key);
 
-    const modeObj =
-      clockModes.find((m) => m.id === defStyle) ?? clockModes[0] ?? null;
+    if (error) {
+      setAvailableLevels(FALLBACK_LEVELS);
+      return;
+    }
 
-    const presets = modeObj?.presets?.length
-      ? modeObj.presets
-      : FALLBACK_TIMER_PRESETS.map((p) => p.seconds);
+    const uniq = Array.from(
+      new Set((data || []).map((r) => String(r.level || "").trim().toUpperCase()).filter(Boolean))
+    );
 
-    // default to the longest preset (feels natural for game creation)
-    setPreset(presets[presets.length - 1] ?? 1800);
+    // Sort levels in a sensible order
+    const order = { A: 1, B: 2, C: 3, D: 4, ALL: 99 };
+    uniq.sort((a, b) => (order[a] ?? 50) - (order[b] ?? 50));
+
+    setAvailableLevels(uniq.length ? uniq : FALLBACK_LEVELS);
+  }
+
+  // Reload level list whenever league or sport changes
+  useEffect(() => {
+    loadAvailableLevels();
+    // reset "dirty" overrides because the selection context changed
+    setModeDirty(false);
+    setClockStyleDirty(false);
+    setPresetDirty(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sport]);
+  }, [leagueKey, sport]);
+
+  // If Evening Activity is selected, force level to ALL
+  useEffect(() => {
+    if (norm(sport) === "evening activity") {
+      setLevel("ALL");
+    } else {
+      // if current level not in availableLevels, pick first
+      if (availableLevels?.length && !availableLevels.includes(String(level).toUpperCase())) {
+        setLevel(availableLevels[0]);
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sport, availableLevels]);
+
+  // Apply defaults from points_rules whenever league/sport/level changes
+  useEffect(() => {
+    (async () => {
+      const lv = String(level || "").trim().toUpperCase();
+      if (!lv) return;
+
+      const row = await fetchRuleRow(leagueKey, sport, lv);
+
+      // If no rule row, fall back to sport rules behavior
+      if (!row) {
+        const fallbackClockEnabled = !!rules?.clock?.enabled;
+        setClockEnabled(fallbackClockEnabled);
+
+        if (!fallbackClockEnabled) {
+          setClockStyle("");
+          setPreset(0);
+          return;
+        }
+
+        const fallbackStyle =
+          rules?.clock?.defaultMode || (clockModes.length ? clockModes[0].id : "countdown");
+        if (!clockStyleDirty) setClockStyle(fallbackStyle);
+
+        const modeObj = clockModes.find((m) => m.id === fallbackStyle) ?? clockModes[0] ?? null;
+        const presets = modeObj?.presets?.length ? modeObj.presets : FALLBACK_TIMER_PRESETS.map((p) => p.seconds);
+
+        if (!presetDirty) setPreset(presets[presets.length - 1] ?? 1800);
+        return;
+      }
+
+      // ✅ Apply defaults from DB (unless user has overridden)
+      if (!modeDirty && row.default_mode) setMode(row.default_mode);
+
+      const dbClockEnabled = row.clock_enabled === true;
+      setClockEnabled(dbClockEnabled);
+
+      if (!dbClockEnabled) {
+        setClockStyle("");
+        setPreset(0);
+        return;
+      }
+
+      const dbStyle = row.default_clock_style || "countdown";
+      if (!clockStyleDirty) setClockStyle(dbStyle);
+
+      const dbSeconds = Number(row.default_clock_seconds ?? 0);
+      if (!presetDirty && dbSeconds > 0) setPreset(dbSeconds);
+
+      // If dbSeconds is 0 but clock is enabled, fall back to some preset
+      if (!presetDirty && !(dbSeconds > 0)) {
+        const modeObj = clockModes.find((m) => m.id === dbStyle) ?? clockModes[0] ?? null;
+        const presets = modeObj?.presets?.length ? modeObj.presets : FALLBACK_TIMER_PRESETS.map((p) => p.seconds);
+        setPreset(presets[presets.length - 1] ?? 1800);
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [leagueKey, sport, level]);
 
   const timerOptions = useMemo(() => {
     if (!clockEnabled) return [];
@@ -125,17 +244,23 @@ export default function HomePage() {
       ? modeObj.presets
       : FALLBACK_TIMER_PRESETS.map((p) => p.seconds);
 
+    // Ensure the DB default is present in list
+    const list = Array.from(new Set([...secondsList, Number(preset || 0)].filter((n) => n > 0)));
+
     // Convert to {label, seconds}
-    return secondsList.map((s) => ({ seconds: s, label: fmtClock(s) }));
-  }, [clockEnabled, clockModes, clockStyle]);
+    return list
+      .sort((a, b) => a - b)
+      .map((s) => ({ seconds: s, label: fmtClock(s) }));
+  }, [clockEnabled, clockModes, clockStyle, preset]);
 
   async function ping() {
     setErr("");
     const { error } = await supabase
-    .from("live_games")
-    .select("id")
-    .is("played_on", null)
-    .limit(1);
+      .from("live_games")
+      .select("id")
+      .is("played_on", null)
+      .limit(1);
+
     setStatus(error ? `Supabase error: ${error.message}` : "Connected ✅");
     if (error) setErr(error.message);
   }
@@ -163,13 +288,12 @@ export default function HomePage() {
   async function loadGames() {
     setErr("");
     const { data, error } = await supabase
-   .from("live_games")
-   .select("*")
-   .neq("status", "draft")
-   .is("played_on", null) // ✅ only LIVE games (post games have a date)
-   .order("created_at", { ascending: false })
-   .limit(10);
-
+      .from("live_games")
+      .select("*")
+      .neq("status", "draft")
+      .is("played_on", null) // ✅ only LIVE games
+      .order("created_at", { ascending: false })
+      .limit(10);
 
     if (error) {
       setErr(error.message);
@@ -201,8 +325,8 @@ export default function HomePage() {
 
     const payload = {
       league_key: norm(leagueKey),
-      sport, // keep display value; live page normalizes
-      level,
+      sport, // keep display value; live page normalizes later
+      level: String(level).toUpperCase(),
       mode,
       team_a1: norm(teamA),
       team_b1: norm(teamB),
@@ -216,7 +340,6 @@ export default function HomePage() {
       timer_remaining_seconds: duration,
       timer_remaining_at_anchor: duration,
 
-      // store the clock style (quarters/halves/periods/countdown)
       clock_style: clockEnabled ? (clockStyle || "countdown") : "none",
 
       status: "active",
@@ -239,30 +362,24 @@ export default function HomePage() {
   }
 
   async function deleteGame(id) {
-  try {
-    setErr?.(""); // if you have setErr in this file
-    const ok = confirm("Delete this game? (Only allowed if NOT finalized)");
-    if (!ok) return;
+    try {
+      setErr("");
+      const ok = confirm("Delete this game? (Only allowed if NOT finalized)");
+      if (!ok) return;
 
-    const { error } = await supabase.rpc("delete_unfinalized_game", { gid: id });
-    if (error) throw error;
+      const { error } = await supabase.rpc("delete_unfinalized_game", { gid: id });
+      if (error) throw error;
 
-    // refresh your list (pick the one you already use)
-    // If you have a loadGames() function, call it:
-    await loadGames?.();
-
-  } catch (e) {
-    const msg = e?.message ?? String(e);
-
-    // Friendly error if they somehow try deleting a final game
-    if (msg.toLowerCase().includes("cannot delete finalized")) {
-      setErr?.("This game is finalized and can only be deleted by admin.");
-    } else {
-      setErr?.(msg);
+      await loadGames();
+    } catch (e) {
+      const msg = e?.message ?? String(e);
+      if (msg.toLowerCase().includes("cannot delete finalized")) {
+        setErr("This game is finalized and can only be deleted by admin.");
+      } else {
+        setErr(msg);
+      }
     }
   }
-}
-
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100">
@@ -289,7 +406,7 @@ export default function HomePage() {
 
           <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
             <label className="text-sm">
-              <div className="mb-1 text-slate-300">League Key (age group)</div>
+              <div className="mb-1 text-slate-300">League (age group)</div>
 
               <select
                 className="w-full rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-white outline-none focus:border-white/30"
@@ -306,25 +423,6 @@ export default function HomePage() {
                 ).map((l) => (
                   <option key={l.id} value={l.id}>
                     {l.name ?? l.id}
-                  </option>
-                ))}
-              </select>
-
-              <div className="mt-1 text-xs text-slate-400">
-                Tip: your players table uses <b>league_id</b> like “seniors”.
-              </div>
-            </label>
-
-            <label className="text-sm">
-              <div className="mb-1 text-slate-300">Mode</div>
-              <select
-                className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 outline-none focus:border-slate-500"
-                value={mode}
-                onChange={(e) => setMode(e.target.value)}
-              >
-                {MODES.map((m) => (
-                  <option key={m} value={m}>
-                    {m}
                   </option>
                 ))}
               </select>
@@ -349,12 +447,34 @@ export default function HomePage() {
               <div className="mb-1 text-slate-300">Level</div>
               <select
                 className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 outline-none focus:border-slate-500"
-                value={level}
+                value={String(level).toUpperCase()}
                 onChange={(e) => setLevel(e.target.value)}
+                disabled={norm(sport) === "evening activity"}
               >
-                {LEVELS.map((l) => (
+                {(availableLevels?.length ? availableLevels : FALLBACK_LEVELS).map((l) => (
                   <option key={l} value={l}>
                     {l}
+                  </option>
+                ))}
+              </select>
+              {norm(sport) === "evening activity" ? (
+                <div className="mt-1 text-xs text-slate-400">Evening Activity uses Level = ALL.</div>
+              ) : null}
+            </label>
+
+            <label className="text-sm">
+              <div className="mb-1 text-slate-300">Mode</div>
+              <select
+                className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 outline-none focus:border-slate-500"
+                value={mode}
+                onChange={(e) => {
+                  setMode(e.target.value);
+                  setModeDirty(true);
+                }}
+              >
+                {MODES.map((m) => (
+                  <option key={m} value={m}>
+                    {m}
                   </option>
                 ))}
               </select>
@@ -374,9 +494,6 @@ export default function HomePage() {
                   </option>
                 ))}
               </select>
-              <div className="mt-1 text-xs text-slate-400">
-                Pulled from players.team_name (lowercased)
-              </div>
             </label>
 
             <label className="text-sm">
@@ -395,32 +512,45 @@ export default function HomePage() {
               </select>
             </label>
 
-            {/* ✅ Clock Style (only if sport has clock modes) */}
-            {clockEnabled && clockModes.length > 0 ? (
+            {/* Clock Style */}
+            {clockEnabled ? (
               <label className="text-sm sm:col-span-2">
                 <div className="mb-1 text-slate-300">Clock Style</div>
                 <select
                   className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 outline-none focus:border-slate-500"
                   value={clockStyle}
-                  onChange={(e) => setClockStyle(e.target.value)}
+                  onChange={(e) => {
+                    setClockStyle(e.target.value);
+                    setClockStyleDirty(true);
+                  }}
                 >
-                  {clockModes.map((m) => (
+                  {(clockModes?.length
+                    ? clockModes
+                    : [{ id: "countdown", label: "Countdown", presets: FALLBACK_TIMER_PRESETS.map((p) => p.seconds) }]
+                  ).map((m) => (
                     <option key={m.id} value={m.id}>
                       {m.label}
                     </option>
                   ))}
                 </select>
               </label>
-            ) : null}
+            ) : (
+              <div className="text-xs text-slate-400 sm:col-span-2">
+                This game has no clock (per points_rules).
+              </div>
+            )}
 
-            {/* ✅ Timer Preset: ONLY if sport uses a clock */}
+            {/* Timer Preset */}
             {clockEnabled ? (
               <label className="text-sm sm:col-span-2">
                 <div className="mb-1 text-slate-300">Timer Preset</div>
                 <select
                   className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 outline-none focus:border-slate-500"
                   value={preset}
-                  onChange={(e) => setPreset(Number(e.target.value))}
+                  onChange={(e) => {
+                    setPreset(Number(e.target.value));
+                    setPresetDirty(true);
+                  }}
                 >
                   {(timerOptions.length ? timerOptions : FALLBACK_TIMER_PRESETS).map((p) => (
                     <option key={p.seconds} value={p.seconds}>
@@ -429,11 +559,7 @@ export default function HomePage() {
                   ))}
                 </select>
               </label>
-            ) : (
-              <div className="text-xs text-slate-400 sm:col-span-2">
-                This sport does not use a game clock — no timer preset needed.
-              </div>
-            )}
+            ) : null}
           </div>
 
           <button
@@ -499,17 +625,17 @@ export default function HomePage() {
                         >
                           Open
                         </Link>
-                        {g.status !== "final" ? (
-                        <button
-                          onClick={() => deleteGame(g.id)}
-                         className="rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm font-bold text-red-100 hover:bg-red-500/20"
-                           >
-                           Delete
-                              </button>
-                              ) : (
-                                <div className="text-xs text-white/50 italic">Finalized — admin only</div>
-                                )}
 
+                        {g.status !== "final" ? (
+                          <button
+                            onClick={() => deleteGame(g.id)}
+                            className="rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm font-bold text-red-100 hover:bg-red-500/20"
+                          >
+                            Delete
+                          </button>
+                        ) : (
+                          <div className="text-xs text-white/50 italic">Finalized — admin only</div>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -517,7 +643,7 @@ export default function HomePage() {
               ))}
             </div>
           )}
-        </div>        
+        </div>
       </div>
     </div>
   );

@@ -1,12 +1,12 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { supabase } from "@/lib/supabase";
 
-const SPORTS = ["Hoop", "Soccer", "Softball", "Volleyball", "Football", "Speedball", "Euro", "Hockey"];
-const LEVELS = ["A", "B", "C"];
-const MODES = ["5v5", "6v6", "7v7", "8v8", "9v9", "10v10"];
+const SPORTS = ["Hoop", "Soccer", "Softball", "Volleyball", "Football", "Speedball", "Euro", "Hockey", "Evening Activity"];
+const FALLBACK_LEVELS = ["A", "B", "C", "D", "ALL"];
+const MODES = ["5v5", "6v6", "7v7", "8v8", "9v9", "10v10", "11v11"];
 
 function norm(s) {
   return String(s ?? "").trim().toLowerCase();
@@ -18,8 +18,12 @@ export default function PostGamesPage() {
 
   const [leagueKey, setLeagueKey] = useState("seniors");
   const [sport, setSport] = useState("Hoop");
+
+  const [availableLevels, setAvailableLevels] = useState(FALLBACK_LEVELS);
   const [level, setLevel] = useState("A");
+
   const [mode, setMode] = useState("5v5");
+  const [modeDirty, setModeDirty] = useState(false);
 
   const [teams, setTeams] = useState([]);
   const [teamA, setTeamA] = useState("");
@@ -31,6 +35,49 @@ export default function PostGamesPage() {
   });
 
   const [drafts, setDrafts] = useState([]);
+
+  async function fetchRuleRow(lk, sp, lv) {
+    const league_id = norm(lk);
+    const sport_key = norm(sp);
+    const level_key = String(lv || "").trim().toUpperCase();
+    if (!league_id || !sport_key || !level_key) return null;
+
+    const { data, error } = await supabase
+      .from("points_rules")
+      .select("default_mode, level")
+      .eq("league_id", league_id)
+      .eq("sport", sport_key)
+      .eq("level", level_key)
+      .maybeSingle();
+
+    if (error) return null;
+    return data ?? null;
+  }
+
+  async function loadAvailableLevels() {
+    const league_id = norm(leagueKey);
+    const sport_key = norm(sport);
+
+    const { data, error } = await supabase
+      .from("points_rules")
+      .select("level")
+      .eq("league_id", league_id)
+      .eq("sport", sport_key);
+
+    if (error) {
+      setAvailableLevels(FALLBACK_LEVELS);
+      return;
+    }
+
+    const uniq = Array.from(
+      new Set((data || []).map((r) => String(r.level || "").trim().toUpperCase()).filter(Boolean))
+    );
+
+    const order = { A: 1, B: 2, C: 3, D: 4, ALL: 99 };
+    uniq.sort((a, b) => (order[a] ?? 50) - (order[b] ?? 50));
+
+    setAvailableLevels(uniq.length ? uniq : FALLBACK_LEVELS);
+  }
 
   async function loadTeams(lk) {
     const { data, error } = await supabase
@@ -76,9 +123,43 @@ export default function PostGamesPage() {
     if (!error) setDrafts(data || []);
   }
 
+  // league changes -> reload teams
   useEffect(() => {
     loadTeams(norm(leagueKey));
   }, [leagueKey]);
+
+  // league/sport changes -> reload level options, reset override
+  useEffect(() => {
+    loadAvailableLevels();
+    setModeDirty(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [leagueKey, sport]);
+
+  // sport = Evening Activity forces level ALL
+  useEffect(() => {
+    if (norm(sport) === "evening activity") {
+      setLevel("ALL");
+    } else {
+      if (availableLevels?.length && !availableLevels.includes(String(level).toUpperCase())) {
+        setLevel(availableLevels[0]);
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sport, availableLevels]);
+
+  // apply mode default from points_rules when selection changes
+  useEffect(() => {
+    (async () => {
+      const lv = String(level || "").trim().toUpperCase();
+      if (!lv) return;
+
+      const row = await fetchRuleRow(leagueKey, sport, lv);
+      if (!row) return;
+
+      if (!modeDirty && row.default_mode) setMode(row.default_mode);
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [leagueKey, sport, level]);
 
   useEffect(() => {
     loadDrafts();
@@ -92,6 +173,7 @@ export default function PostGamesPage() {
       const lk = norm(leagueKey);
       const ta = norm(teamA);
       const tb = norm(teamB);
+      const lv = String(level || "").trim().toUpperCase();
 
       if (!playedOn) throw new Error("Pick a date.");
       if (!lk) throw new Error("Pick a league.");
@@ -104,13 +186,12 @@ export default function PostGamesPage() {
 
         league_key: lk,
         sport,
-        level,
+        level: lv,
         mode,
 
         team_a1: ta,
         team_b1: tb,
 
-        // start at 0, but we’ll edit with inputs on the draft page
         score_a: 0,
         score_b: 0,
       };
@@ -137,7 +218,10 @@ export default function PostGamesPage() {
             </div>
           </div>
 
-          <Link href="/" className="rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-sm font-semibold hover:bg-white/10">
+          <Link
+            href="/"
+            className="rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-sm font-semibold hover:bg-white/10"
+          >
             Home
           </Link>
         </div>
@@ -185,7 +269,9 @@ export default function PostGamesPage() {
                 onChange={(e) => setSport(e.target.value)}
               >
                 {SPORTS.map((s) => (
-                  <option key={s} value={s}>{s}</option>
+                  <option key={s} value={s}>
+                    {s}
+                  </option>
                 ))}
               </select>
             </label>
@@ -194,11 +280,14 @@ export default function PostGamesPage() {
               <div className="mb-1 text-slate-300">Level</div>
               <select
                 className="w-full rounded-xl border border-slate-800 bg-slate-950 px-3 py-2 outline-none focus:border-slate-500"
-                value={level}
+                value={String(level).toUpperCase()}
                 onChange={(e) => setLevel(e.target.value)}
+                disabled={norm(sport) === "evening activity"}
               >
-                {LEVELS.map((l) => (
-                  <option key={l} value={l}>{l}</option>
+                {(availableLevels?.length ? availableLevels : FALLBACK_LEVELS).map((l) => (
+                  <option key={l} value={l}>
+                    {l}
+                  </option>
                 ))}
               </select>
             </label>
@@ -208,10 +297,15 @@ export default function PostGamesPage() {
               <select
                 className="w-full rounded-xl border border-slate-800 bg-slate-950 px-3 py-2 outline-none focus:border-slate-500"
                 value={mode}
-                onChange={(e) => setMode(e.target.value)}
+                onChange={(e) => {
+                  setMode(e.target.value);
+                  setModeDirty(true);
+                }}
               >
                 {MODES.map((m) => (
-                  <option key={m} value={m}>{m}</option>
+                  <option key={m} value={m}>
+                    {m}
+                  </option>
                 ))}
               </select>
             </label>
@@ -226,7 +320,9 @@ export default function PostGamesPage() {
                 onChange={(e) => setTeamA(e.target.value)}
               >
                 {teams.map((t) => (
-                  <option key={t} value={t}>{t}</option>
+                  <option key={t} value={t}>
+                    {t}
+                  </option>
                 ))}
               </select>
             </label>
@@ -239,7 +335,9 @@ export default function PostGamesPage() {
                 onChange={(e) => setTeamB(e.target.value)}
               >
                 {teams.map((t) => (
-                  <option key={t} value={t}>{t}</option>
+                  <option key={t} value={t}>
+                    {t}
+                  </option>
                 ))}
               </select>
             </label>
@@ -275,9 +373,12 @@ export default function PostGamesPage() {
                   className="block rounded-2xl border border-white/10 bg-black/20 p-4 hover:bg-black/30"
                 >
                   <div className="text-xs text-white/60">{g.played_on ?? "—"}</div>
-                  <div className="mt-1 text-xl font-black">{g.team_a1} vs {g.team_b1}</div>
+                  <div className="mt-1 text-xl font-black">
+                    {g.team_a1} vs {g.team_b1}
+                  </div>
                   <div className="mt-1 text-sm text-white/70">
-                    {g.league_key} • {g.sport} • Level {g.level} • {g.mode} • <span className="text-yellow-300 font-bold">draft</span>
+                    {g.league_key} • {g.sport} • Level {g.level} • {g.mode} •{" "}
+                    <span className="text-yellow-300 font-bold">draft</span>
                   </div>
                   <div className="mt-2 text-2xl font-black tabular-nums">
                     {Number(g.score_a || 0)} - {Number(g.score_b || 0)}
