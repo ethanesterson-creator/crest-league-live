@@ -9,6 +9,13 @@ function norm(s) {
   return String(s ?? "").trim().toLowerCase();
 }
 
+function matchupLabel(a1, a2) {
+  const x1 = norm(a1);
+  const x2 = norm(a2);
+  if (x1 && x2 && x1 !== x2) return `${x1} + ${x2}`;
+  return x1 || "—";
+}
+
 function getStatKeysForSport(sport) {
   const s = String(sport ?? "").toLowerCase();
   if (s === "hoop") return ["PTS", "AST", "REB", "BLK"];
@@ -20,6 +27,10 @@ function getStatKeysForSport(sport) {
   if (s === "volleyball") return ["Aces", "Kills"];
   if (s === "football") return ["TD", "INT"];
   return [];
+}
+
+function uniqNonEmpty(arr) {
+  return Array.from(new Set((arr || []).map((x) => norm(x)).filter(Boolean)));
 }
 
 export default function PostDraftEditorPage() {
@@ -49,8 +60,7 @@ export default function PostDraftEditorPage() {
     const pid = String(playerId ?? "");
     const key = String(statKey ?? "").toUpperCase();
     return Number(statTotals?.[pid]?.[key] ?? 0);
- }
-
+  }
 
   async function load() {
     setErr("");
@@ -65,7 +75,7 @@ export default function PostDraftEditorPage() {
     setScoreAInput(String(Number(g.score_a || 0)));
     setScoreBInput(String(Number(g.score_b || 0)));
 
-    // Roster
+    // ✅ Roster includes team_name now
     const { data: r, error: rErr } = await supabase.from("game_roster").select("*").eq("game_id", id);
     if (rErr) {
       setRosterA([]);
@@ -90,7 +100,6 @@ export default function PostDraftEditorPage() {
       .eq("event_type", "stat");
 
     if (evErr) {
-      // don't block the page if totals fail, but show a message
       setErr(evErr.message);
       setStatTotals({});
       return;
@@ -146,9 +155,8 @@ export default function PostDraftEditorPage() {
     setErr("");
     setMsg("");
 
-    // ✅ game_roster doesn't have team_name; it has team_side.
-    const side = player?.team_side;
-    const teamName = side === "A" ? String(game?.team_a1 ?? "") : String(game?.team_b1 ?? "");
+    // ✅ Correct team attribution: use roster row's team_name
+    const teamName = String(player?.team_name || "");
 
     const { error } = await supabase.rpc("rpc_add_stat", {
       p_game_id: id,
@@ -165,17 +173,17 @@ export default function PostDraftEditorPage() {
       setErr(error.message);
       return;
     }
-     // ✅ instant UI tick (no waiting)
-    setStatTotals((prev) => {
-    const pid = String(player.player_id ?? player.id ?? "");
-    const key = String(statKey ?? "").toUpperCase();
-    const next = { ...(prev || {}) };
-    if (!next[pid]) next[pid] = {};
-    next[pid][key] = Number(next[pid][key] ?? 0) + 1;
-    return next;
-});
 
-    // quick feedback message + reload totals
+    // ✅ instant UI tick (no waiting)
+    setStatTotals((prev) => {
+      const pid = String(player.player_id ?? player.id ?? "");
+      const key = String(statKey ?? "").toUpperCase();
+      const next = { ...(prev || {}) };
+      if (!next[pid]) next[pid] = {};
+      next[pid][key] = Number(next[pid][key] ?? 0) + Number(delta || 1);
+      return next;
+    });
+
     setMsg(`✅ +${statKey} recorded`);
     await load();
   }
@@ -184,11 +192,19 @@ export default function PostDraftEditorPage() {
     setErr("");
     setMsg("");
 
-    const ta = norm(game?.team_a1);
-    const tb = norm(game?.team_b1);
     const lk = norm(game?.league_key);
+    const matchupType = String(game?.matchup_type || "single");
 
-    if (!ta || !tb || !lk) {
+    const a1 = norm(game?.team_a1);
+    const b1 = norm(game?.team_b1);
+    const a2 = norm(game?.team_a2);
+    const b2 = norm(game?.team_b2);
+
+    const teamsA = uniqNonEmpty([a1, matchupType === "two_team" ? a2 : null]);
+    const teamsB = uniqNonEmpty([b1, matchupType === "two_team" ? b2 : null]);
+    const allTeams = uniqNonEmpty([...teamsA, ...teamsB]);
+
+    if (!lk || !teamsA.length || !teamsB.length) {
       setErr("Missing league/team info for this draft.");
       return;
     }
@@ -197,7 +213,7 @@ export default function PostDraftEditorPage() {
       .from("players")
       .select("id, first_name, last_name, team_name, league_id")
       .eq("league_id", lk)
-      .in("team_name", [ta, tb])
+      .in("team_name", allTeams)
       .limit(5000);
 
     if (error) {
@@ -207,12 +223,15 @@ export default function PostDraftEditorPage() {
 
     const rows = (players || []).map((p) => {
       const fullName = `${p.first_name ?? ""} ${p.last_name ?? ""}`.trim();
-      const side = norm(p.team_name) === ta ? "A" : "B";
+      const tn = norm(p.team_name);
+      const side = teamsA.includes(tn) ? "A" : "B";
+
       return {
         game_id: id,
         player_id: String(p.id),
         player_name: fullName || "Unknown",
         team_side: side,
+        team_name: tn, // ✅ store actual team (A1/A2/B1/B2)
         is_playing: true,
       };
     });
@@ -245,7 +264,6 @@ export default function PostDraftEditorPage() {
         return;
       }
 
-      // ✅ Clear feedback + go back to Post Games list
       setMsg("✅ Finalized. Standings + leaders updated.");
       router.push("/post");
       router.refresh();
@@ -264,6 +282,9 @@ export default function PostDraftEditorPage() {
       </div>
     );
   }
+
+  const leftLabel = game.matchup_type === "two_team" ? matchupLabel(game.team_a1, game.team_a2) : game.team_a1;
+  const rightLabel = game.matchup_type === "two_team" ? matchupLabel(game.team_b1, game.team_b2) : game.team_b1;
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100">
@@ -297,7 +318,7 @@ export default function PostDraftEditorPage() {
           <div className="mt-4 grid gap-4 md:grid-cols-3 md:items-end">
             <div>
               <div className="text-xs text-white/60">HOME</div>
-              <div className="text-2xl font-black">{game.team_a1}</div>
+              <div className="text-2xl font-black">{leftLabel}</div>
               <input
                 type="number"
                 min="0"
@@ -317,7 +338,7 @@ export default function PostDraftEditorPage() {
 
             <div className="text-right">
               <div className="text-xs text-white/60">AWAY</div>
-              <div className="text-2xl font-black">{game.team_b1}</div>
+              <div className="text-2xl font-black">{rightLabel}</div>
               <input
                 type="number"
                 min="0"
@@ -358,7 +379,7 @@ export default function PostDraftEditorPage() {
           ) : (
             <div className="mt-5 grid gap-6 md:grid-cols-2">
               <div>
-                <div className="text-base font-black">{game.team_a1} Players</div>
+                <div className="text-base font-black">{leftLabel} Players</div>
                 {!rosterA.length ? (
                   <div className="mt-2 text-sm text-white/60">
                     No roster yet. Click <b>Build Roster</b>.
@@ -368,18 +389,16 @@ export default function PostDraftEditorPage() {
                     {rosterA.map((p) => (
                       <div key={`A-${p.player_id}`} className="rounded-2xl border border-white/10 bg-black/20 p-4">
                         <div className="font-black">{p.player_name}</div>
+                        {p.team_name ? <div className="mt-1 text-xs text-white/50">{p.team_name}</div> : null}
 
-                        {/* totals row */}
                         <div className="mt-2 flex flex-wrap gap-2 text-xs text-white/80">
                           {statKeys.map((k) => (
                             <div key={`A-${p.player_id}-${k}`} className="rounded-lg border border-white/10 bg-white/5 px-2 py-1">
-                              <span className="font-extrabold">{k}</span>{" "}
-                              <span className="tabular-nums">{getTotal(p.player_id, k)}</span>
+                              <span className="font-extrabold">{k}</span> <span className="tabular-nums">{getTotal(p.player_id, k)}</span>
                             </div>
                           ))}
                         </div>
 
-                        {/* buttons */}
                         <div className="mt-3 flex flex-wrap gap-2">
                           {statKeys.map((k) => (
                             <button
@@ -398,7 +417,7 @@ export default function PostDraftEditorPage() {
               </div>
 
               <div>
-                <div className="text-base font-black">{game.team_b1} Players</div>
+                <div className="text-base font-black">{rightLabel} Players</div>
                 {!rosterB.length ? (
                   <div className="mt-2 text-sm text-white/60">
                     No roster yet. Click <b>Build Roster</b>.
@@ -408,18 +427,16 @@ export default function PostDraftEditorPage() {
                     {rosterB.map((p) => (
                       <div key={`B-${p.player_id}`} className="rounded-2xl border border-white/10 bg-black/20 p-4">
                         <div className="font-black">{p.player_name}</div>
+                        {p.team_name ? <div className="mt-1 text-xs text-white/50">{p.team_name}</div> : null}
 
-                        {/* totals row */}
                         <div className="mt-2 flex flex-wrap gap-2 text-xs text-white/80">
                           {statKeys.map((k) => (
                             <div key={`B-${p.player_id}-${k}`} className="rounded-lg border border-white/10 bg-white/5 px-2 py-1">
-                              <span className="font-extrabold">{k}</span>{" "}
-                              <span className="tabular-nums">{getTotal(p.player_id, k)}</span>
+                              <span className="font-extrabold">{k}</span> <span className="tabular-nums">{getTotal(p.player_id, k)}</span>
                             </div>
                           ))}
                         </div>
 
-                        {/* buttons */}
                         <div className="mt-3 flex flex-wrap gap-2">
                           {statKeys.map((k) => (
                             <button

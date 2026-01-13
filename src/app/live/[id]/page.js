@@ -16,6 +16,13 @@ function fmtClock(seconds) {
   return `${mm}:${ss}`;
 }
 
+function matchupLabel(a1, a2) {
+  const x1 = norm(a1);
+  const x2 = norm(a2);
+  if (x1 && x2 && x1 !== x2) return `${x1} + ${x2}`;
+  return x1 || "—";
+}
+
 export default function LiveGamePage() {
   const params = useParams();
   const router = useRouter();
@@ -51,8 +58,7 @@ export default function LiveGamePage() {
 
   useEffect(() => {
     if (!rules?.clock?.enabled) return;
-    const def =
-      rules?.clock?.defaultMode || (rules?.clock?.modes?.[0]?.id ?? "");
+    const def = rules?.clock?.defaultMode || (rules?.clock?.modes?.[0]?.id ?? "");
     setClockMode(def);
   }, [rules?.clock?.enabled, rules?.clock?.defaultMode, rules?.clock?.modes]);
 
@@ -67,9 +73,7 @@ export default function LiveGamePage() {
 
     const running = !!game.timer_running;
     const anchorTs = Number(game.timer_anchor_ts ?? 0); // float8 seconds
-    const atAnchor = Number(
-      game.timer_remaining_at_anchor ?? game.timer_remaining_seconds ?? 0
-    );
+    const atAnchor = Number(game.timer_remaining_at_anchor ?? game.timer_remaining_seconds ?? 0);
     const remainingStored = Number(game.timer_remaining_seconds ?? atAnchor ?? 0);
 
     if (running && anchorTs > 0) {
@@ -91,12 +95,7 @@ export default function LiveGamePage() {
     }
 
     try {
-      const { data, error } = await supabase
-        .from("live_games")
-        .select("*")
-        .eq("id", gameId)
-        .single();
-
+      const { data, error } = await supabase.from("live_games").select("*").eq("id", gameId).single();
       if (error) throw error;
       setGame(data);
     } catch (e) {
@@ -113,9 +112,10 @@ export default function LiveGamePage() {
   async function ensureRoster(g) {
     setErr("");
 
+    // ✅ include team_name so stats can be credited to the correct team in 2-team games
     const { data: r1, error: rErr } = await supabase
       .from("game_roster")
-      .select("game_id, player_id, player_name, team_side, is_playing")
+      .select("game_id, player_id, player_name, team_side, team_name, is_playing")
       .eq("game_id", g.id)
       .limit(5000);
 
@@ -130,14 +130,31 @@ export default function LiveGamePage() {
       return;
     }
 
+    // Build roster if missing
     const lk = norm(g.league_key);
-    const ta = norm(g.team_a1 || g.team_a || "");
-    const tb = norm(g.team_b1 || g.team_b || "");
+
+    const a1 = norm(g.team_a1 || g.team_a || "");
+    const b1 = norm(g.team_b1 || g.team_b || "");
+
+    // ✅ 2-team support
+    const a2 = norm(g.team_a2 || "");
+    const b2 = norm(g.team_b2 || "");
+    const matchupType = String(g.matchup_type || "single");
+
+    const teamsA = uniqNonEmpty([a1, matchupType === "two_team" ? a2 : null]);
+    const teamsB = uniqNonEmpty([b1, matchupType === "two_team" ? b2 : null]);
+    const allTeams = uniqNonEmpty([...teamsA, ...teamsB]);
+
+    if (!lk || !allTeams.length) {
+      setErr("Missing league/team info for this game.");
+      return;
+    }
 
     const { data: players, error: pErr } = await supabase
       .from("players")
       .select("id, first_name, last_name, team_name, league_id")
       .eq("league_id", lk)
+      .in("team_name", allTeams)
       .limit(5000);
 
     if (pErr) {
@@ -145,18 +162,15 @@ export default function LiveGamePage() {
       return;
     }
 
-    const picked = (players || []).filter((p) => {
+    const rows = (players || []).map((p) => {
       const tn = norm(p.team_name);
-      return tn === ta || tn === tb;
-    });
-
-    const rows = picked.map((p) => {
-      const tn = norm(p.team_name);
+      const side = teamsA.includes(tn) ? "A" : "B";
       return {
         game_id: g.id,
         player_id: String(p.id),
         player_name: `${p.first_name ?? ""} ${p.last_name ?? ""}`.trim(),
-        team_side: tn === ta ? "A" : "B",
+        team_side: side,
+        team_name: tn, // ✅ store actual team
         is_playing: true,
       };
     });
@@ -164,9 +178,7 @@ export default function LiveGamePage() {
     if (rows.length) {
       const chunk = 250;
       for (let i = 0; i < rows.length; i += chunk) {
-        const { error: insErr } = await supabase
-          .from("game_roster")
-          .insert(rows.slice(i, i + chunk));
+        const { error: insErr } = await supabase.from("game_roster").insert(rows.slice(i, i + chunk));
         if (insErr) {
           setErr(insErr.message);
           return;
@@ -176,7 +188,7 @@ export default function LiveGamePage() {
 
     const { data: r2, error: r2Err } = await supabase
       .from("game_roster")
-      .select("game_id, player_id, player_name, team_side, is_playing")
+      .select("game_id, player_id, player_name, team_side, team_name, is_playing")
       .eq("game_id", g.id)
       .limit(5000);
 
@@ -187,6 +199,10 @@ export default function LiveGamePage() {
 
     setRosterA((r2 || []).filter((x) => x.team_side === "A"));
     setRosterB((r2 || []).filter((x) => x.team_side === "B"));
+  }
+
+  function uniqNonEmpty(arr) {
+    return Array.from(new Set((arr || []).map((x) => norm(x)).filter(Boolean)));
   }
 
   async function loadEventTotals(g) {
@@ -319,9 +335,9 @@ export default function LiveGamePage() {
 
     const leagueId = norm(game.league_key);
     const sport = norm(game.sport);
-    const teamAName = norm(game.team_a1);
-    const teamBName = norm(game.team_b1);
-    const teamName = player?.team_side === "A" ? teamAName : teamBName;
+
+    // ✅ Correct team attribution: use roster row's team_name
+    const teamName = String(player?.team_name || "");
 
     const { error } = await supabase.rpc("rpc_add_stat", {
       p_game_id: game.id,
@@ -329,7 +345,7 @@ export default function LiveGamePage() {
       p_sport: sport,
       p_player_id: String(player.player_id),
       p_player_name: String(player.player_name || player.player_id),
-      p_team_name: String(teamName),
+      p_team_name: teamName,
       p_stat_key: norm(statKey),
       p_delta: d,
     });
@@ -357,10 +373,7 @@ export default function LiveGamePage() {
       return;
     }
 
-    const apply = (arr) =>
-      arr.map((p) =>
-        p.player_id === player.player_id ? { ...p, is_playing: next } : p
-      );
+    const apply = (arr) => arr.map((p) => (p.player_id === player.player_id ? { ...p, is_playing: next } : p));
 
     setRosterA((r) => apply(r));
     setRosterB((r) => apply(r));
@@ -397,13 +410,13 @@ export default function LiveGamePage() {
   }
 
   if (loading) return <div className="p-6 text-white">Loading…</div>;
-  if (!game)
-    return <div className="p-6 text-red-200">{err || "Game not found."}</div>;
+  if (!game) return <div className="p-6 text-red-200">{err || "Game not found."}</div>;
 
   const header = `${game.league_key} • ${game.sport} • Level ${game.level} • ${game.mode}`;
-  const teamA = norm(game.team_a1);
-  const teamB = norm(game.team_b1);
-  const safeTeamB = teamB;
+
+  // ✅ show combined team labels in 2-team mode
+  const leftLabel = game.matchup_type === "two_team" ? matchupLabel(game.team_a1, game.team_a2) : norm(game.team_a1);
+  const rightLabel = game.matchup_type === "two_team" ? matchupLabel(game.team_b1, game.team_b2) : norm(game.team_b1);
 
   const scoreA = Number(game.score_a || 0);
   const scoreB = Number(game.score_b || 0);
@@ -418,13 +431,10 @@ export default function LiveGamePage() {
   const benchB = rosterB.filter((p) => !p.is_playing);
 
   const scoreButtons = rules?.scoreButtons?.length ? rules.scoreButtons : [1];
-  const statDefs = rules?.stats?.length
-    ? rules.stats
-    : [{ key: "pts", label: "PTS", deltas: [1] }];
+  const statDefs = rules?.stats?.length ? rules.stats : [{ key: "pts", label: "PTS", deltas: [1] }];
 
   const clockPresets = activeClockMode?.presets ?? [300, 600, 900, 1200, 1800];
 
-  // tighter spacing knobs
   const chipPad = superCompact ? "px-2 py-1" : "px-3 py-2";
   const chipText = superCompact ? "text-[11px]" : "text-sm";
 
@@ -436,9 +446,7 @@ export default function LiveGamePage() {
       <div className="flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-2 py-1">
         <div className="flex items-center gap-2">
           <div className="text-[11px] font-black opacity-80">{sd.label}</div>
-          <div className="min-w-[24px] text-right text-sm font-black tabular-nums">
-            {v}
-          </div>
+          <div className="min-w-[24px] text-right text-sm font-black tabular-nums">{v}</div>
         </div>
 
         <div className="flex items-center gap-1">
@@ -461,9 +469,10 @@ export default function LiveGamePage() {
       <div className="rounded-xl border border-white/10 bg-black/20 p-3">
         <div className="flex items-center justify-between gap-2">
           <div className="min-w-0">
-            <div className="truncate text-base font-extrabold">
-              {p.player_name || p.player_id}
-            </div>
+            <div className="truncate text-base font-extrabold">{p.player_name || p.player_id}</div>
+            {p.team_name ? (
+              <div className="mt-0.5 text-xs text-white/50">Team: {p.team_name}</div>
+            ) : null}
           </div>
 
           <button
@@ -475,7 +484,6 @@ export default function LiveGamePage() {
           </button>
         </div>
 
-        {/* One compact row of stat chips (wraps if needed) */}
         <div className="mt-2 flex flex-wrap gap-2">
           {statDefs.map((sd) => (
             <StatChip key={`${p.player_id}-${sd.key}`} p={p} sd={sd} />
@@ -488,8 +496,9 @@ export default function LiveGamePage() {
   function BenchRow({ p, sideLabel }) {
     return (
       <div className="flex items-center justify-between rounded-xl border border-white/10 bg-black/10 p-3">
-        <div className="min-w-0 truncate font-semibold opacity-90">
-          {p.player_name || p.player_id}
+        <div className="min-w-0">
+          <div className="truncate font-semibold opacity-90">{p.player_name || p.player_id}</div>
+          {p.team_name ? <div className="mt-0.5 text-xs text-white/50">{p.team_name}</div> : null}
         </div>
         <button
           onClick={() => togglePlaying(p)}
@@ -506,17 +515,13 @@ export default function LiveGamePage() {
     <div className="min-h-screen bg-transparent text-white">
       {err ? (
         <div className="mx-auto max-w-6xl px-3 pt-3 sm:px-4">
-          <div className="rounded-xl border border-red-700 bg-red-950/40 p-3 text-sm text-red-200">
-            {err}
-          </div>
+          <div className="rounded-xl border border-red-700 bg-red-950/40 p-3 text-sm text-red-200">{err}</div>
         </div>
       ) : null}
 
       <div className="mx-auto max-w-6xl px-3 pt-3 sm:px-4">
         <div className="flex items-center justify-between gap-3">
-          <div className="min-w-0 truncate text-xs opacity-80 sm:text-sm">
-            {header}
-          </div>
+          <div className="min-w-0 truncate text-xs opacity-80 sm:text-sm">{header}</div>
           <div className="flex items-center gap-2">
             <button
               onClick={() => setSuperCompact((v) => !v)}
@@ -540,7 +545,7 @@ export default function LiveGamePage() {
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <div className="text-[10px] tracking-widest opacity-70">HOME</div>
-                <div className="mt-1 truncate text-lg font-extrabold">{teamA}</div>
+                <div className="mt-1 truncate text-lg font-extrabold">{leftLabel}</div>
                 <div className="mt-1 text-4xl font-black tabular-nums">{scoreA}</div>
                 <div className="mt-2 flex flex-wrap gap-2">
                   {scoreButtons.map((d) => (
@@ -557,7 +562,7 @@ export default function LiveGamePage() {
 
               <div className="text-right">
                 <div className="text-[10px] tracking-widest opacity-70">AWAY</div>
-                <div className="mt-1 truncate text-lg font-extrabold">{safeTeamB}</div>
+                <div className="mt-1 truncate text-lg font-extrabold">{rightLabel}</div>
                 <div className="mt-1 text-4xl font-black tabular-nums">{scoreB}</div>
                 <div className="mt-2 flex flex-wrap justify-end gap-2">
                   {scoreButtons.map((d) => (
@@ -574,21 +579,15 @@ export default function LiveGamePage() {
             </div>
 
             <div className="mt-4 rounded-xl border border-white/10 bg-black/20 p-3">
-              <div className="text-[10px] tracking-widest opacity-70">
-                {rules?.clock?.enabled ? "GAME CLOCK" : "NO CLOCK"}
-              </div>
+              <div className="text-[10px] tracking-widest opacity-70">{rules?.clock?.enabled ? "GAME CLOCK" : "NO CLOCK"}</div>
 
               {rules?.clock?.enabled ? (
                 <>
-                  <div className="mt-1 text-center text-5xl font-black tabular-nums">
-                    {fmtClock(derived.remaining)}
-                  </div>
+                  <div className="mt-1 text-center text-5xl font-black tabular-nums">{fmtClock(derived.remaining)}</div>
 
                   {rules?.clock?.modes?.length ? (
                     <div className="mt-2 flex items-center justify-center gap-2">
-                      <div className="text-[11px] font-bold text-white/60">
-                        Style
-                      </div>
+                      <div className="text-[11px] font-bold text-white/60">Style</div>
                       <select
                         className="rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm font-bold text-white"
                         value={clockMode}
@@ -605,28 +604,16 @@ export default function LiveGamePage() {
 
                   <div className="mt-2 flex flex-wrap items-center justify-center gap-2">
                     {game.timer_running ? (
-                      <button
-                        onClick={onPause}
-                        className="rounded-xl bg-white px-4 py-2 text-sm font-black text-black active:scale-95"
-                      >
+                      <button onClick={onPause} className="rounded-xl bg-white px-4 py-2 text-sm font-black text-black active:scale-95">
                         Pause
                       </button>
                     ) : (
-                      <button
-                        onClick={onStart}
-                        className="rounded-xl bg-white px-4 py-2 text-sm font-black text-black active:scale-95"
-                      >
+                      <button onClick={onStart} className="rounded-xl bg-white px-4 py-2 text-sm font-black text-black active:scale-95">
                         Start
                       </button>
                     )}
                     <button
-                      onClick={() =>
-                        onReset(
-                          game.duration_seconds ||
-                            clockPresets[clockPresets.length - 1] ||
-                            1800
-                        )
-                      }
+                      onClick={() => onReset(game.duration_seconds || clockPresets[clockPresets.length - 1] || 1800)}
                       className="rounded-xl border border-white/15 bg-white/5 px-4 py-2 text-sm font-black active:scale-95"
                     >
                       Reset
@@ -644,9 +631,7 @@ export default function LiveGamePage() {
                   </div>
                 </>
               ) : (
-                <div className="mt-2 text-center text-sm text-white/70">
-                  This sport does not use a game clock.
-                </div>
+                <div className="mt-2 text-center text-sm text-white/70">This sport does not use a game clock.</div>
               )}
 
               <button
@@ -659,12 +644,11 @@ export default function LiveGamePage() {
           </div>
         </div>
 
-        {/* Players (compact rows) */}
+        {/* Players */}
         <div className="mt-6 grid gap-6 md:grid-cols-2">
-          {/* Team A */}
           <div className="rounded-2xl border border-white/10 bg-white/5 p-4 sm:p-5">
             <div className="flex items-center justify-between">
-              <div className="text-lg font-black">{teamA} Players</div>
+              <div className="text-lg font-black">{leftLabel} Players</div>
               <button
                 onClick={() => setShowBenchA((v) => !v)}
                 className="rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-xs font-bold hover:bg-white/10"
@@ -677,27 +661,20 @@ export default function LiveGamePage() {
               {playingA.length ? (
                 playingA.map((p) => <PlayerRow key={p.player_id} p={p} sideLabel="A" />)
               ) : (
-                <div className="rounded-xl border border-white/10 bg-white/5 p-3 text-sm opacity-70">
-                  No playing roster found.
-                </div>
+                <div className="rounded-xl border border-white/10 bg-white/5 p-3 text-sm opacity-70">No playing roster found.</div>
               )}
             </div>
 
             {showBenchA ? (
               <div className="mt-4 space-y-2">
-                {benchA.length ? (
-                  benchA.map((p) => <BenchRow key={p.player_id} p={p} sideLabel="A" />)
-                ) : (
-                  <div className="text-xs opacity-50">No bench.</div>
-                )}
+                {benchA.length ? benchA.map((p) => <BenchRow key={p.player_id} p={p} sideLabel="A" />) : <div className="text-xs opacity-50">No bench.</div>}
               </div>
             ) : null}
           </div>
 
-          {/* Team B */}
           <div className="rounded-2xl border border-white/10 bg-white/5 p-4 sm:p-5">
             <div className="flex items-center justify-between">
-              <div className="text-lg font-black">{safeTeamB} Players</div>
+              <div className="text-lg font-black">{rightLabel} Players</div>
               <button
                 onClick={() => setShowBenchB((v) => !v)}
                 className="rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-xs font-bold hover:bg-white/10"
@@ -710,49 +687,33 @@ export default function LiveGamePage() {
               {playingB.length ? (
                 playingB.map((p) => <PlayerRow key={p.player_id} p={p} sideLabel="B" />)
               ) : (
-                <div className="rounded-xl border border-white/10 bg-white/5 p-3 text-sm opacity-70">
-                  No playing roster found.
-                </div>
+                <div className="rounded-xl border border-white/10 bg-white/5 p-3 text-sm opacity-70">No playing roster found.</div>
               )}
             </div>
 
             {showBenchB ? (
               <div className="mt-4 space-y-2">
-                {benchB.length ? (
-                  benchB.map((p) => <BenchRow key={p.player_id} p={p} sideLabel="B" />)
-                ) : (
-                  <div className="text-xs opacity-50">No bench.</div>
-                )}
+                {benchB.length ? benchB.map((p) => <BenchRow key={p.player_id} p={p} sideLabel="B" />) : <div className="text-xs opacity-50">No bench.</div>}
               </div>
             ) : null}
           </div>
         </div>
 
-        <div className="mt-6 pb-10 text-xs opacity-50">
-          Live Game ID: {String(game.id)}
-        </div>
+        <div className="mt-6 pb-10 text-xs opacity-50">Live Game ID: {String(game.id)}</div>
       </div>
 
-      {/* Finalize confirmation modal */}
       {confirmFinalizeOpen && (
         <div className="fixed inset-0 z-50 grid place-items-center bg-black/60 p-4">
           <div className="w-full max-w-md rounded-2xl border border-white/15 bg-[#08172c] p-5">
             <div className="text-lg font-black">Finalize this game?</div>
-            <div className="mt-2 text-sm text-white/70">
-              This will lock the score and update standings + stat leaders.
-            </div>
+            <div className="mt-2 text-sm text-white/70">This will lock the score and update standings + stat leaders.</div>
 
             {rules?.clock?.enabled && derived.isRunning ? (
-              <div className="mt-3 rounded-xl border border-red-400/30 bg-red-500/10 p-3 text-sm">
-                Pause the clock before finalizing.
-              </div>
+              <div className="mt-3 rounded-xl border border-red-400/30 bg-red-500/10 p-3 text-sm">Pause the clock before finalizing.</div>
             ) : null}
 
             <div className="mt-4 flex gap-2">
-              <button
-                className="flex-1 rounded-xl border border-white/15 bg-white/5 px-4 py-3 font-bold"
-                onClick={() => setConfirmFinalizeOpen(false)}
-              >
+              <button className="flex-1 rounded-xl border border-white/15 bg-white/5 px-4 py-3 font-bold" onClick={() => setConfirmFinalizeOpen(false)}>
                 Cancel
               </button>
               <button
