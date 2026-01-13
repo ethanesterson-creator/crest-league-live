@@ -131,7 +131,11 @@ export default function HomePage() {
 
   async function ping() {
     setErr("");
-    const { error } = await supabase.from("live_games").select("id").neq("status", "draft").limit(1);
+    const { error } = await supabase
+    .from("live_games")
+    .select("id")
+    .is("played_on", null)
+    .limit(1);
     setStatus(error ? `Supabase error: ${error.message}` : "Connected ✅");
     if (error) setErr(error.message);
   }
@@ -159,11 +163,13 @@ export default function HomePage() {
   async function loadGames() {
     setErr("");
     const { data, error } = await supabase
-      .from("live_games")
-      .select("*")
-      .neq("status", "draft")
-      .order("created_at", { ascending: false })
-      .limit(10);
+   .from("live_games")
+   .select("*")
+   .neq("status", "draft")
+   .is("played_on", null) // ✅ only LIVE games (post games have a date)
+   .order("created_at", { ascending: false })
+   .limit(10);
+
 
     if (error) {
       setErr(error.message);

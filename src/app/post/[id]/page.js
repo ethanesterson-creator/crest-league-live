@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 
 function norm(s) {
@@ -24,6 +24,7 @@ function getStatKeysForSport(sport) {
 
 export default function PostDraftEditorPage() {
   const params = useParams();
+  const router = useRouter();
   const id = params?.id;
 
   const [err, setErr] = useState("");
@@ -33,54 +34,78 @@ export default function PostDraftEditorPage() {
   const [rosterA, setRosterA] = useState([]);
   const [rosterB, setRosterB] = useState([]);
 
+  // statTotals[playerId][statKey] = number
+  const [statTotals, setStatTotals] = useState({});
+
   const statKeys = useMemo(() => getStatKeysForSport(game?.sport), [game?.sport]);
 
   const [scoreAInput, setScoreAInput] = useState("0");
   const [scoreBInput, setScoreBInput] = useState("0");
 
- async function load() {
-  setErr("");
-  setMsg("");
+  const [saving, setSaving] = useState(false);
+  const [finalizing, setFinalizing] = useState(false);
 
-  const { data: g, error: gErr } = await supabase
-    .from("live_games")
-    .select("*")
-    .eq("id", id)
-    .single();
-
-  if (gErr) {
-    setErr(gErr.message);
-    return;
+  function getTotal(playerId, statKey) {
+    const pid = String(playerId ?? "");
+    const key = String(statKey ?? "");
+    return Number(statTotals?.[pid]?.[key] ?? 0);
   }
 
-  setGame(g);
-  setScoreAInput(String(Number(g.score_a || 0)));
-  setScoreBInput(String(Number(g.score_b || 0)));
+  async function load() {
+    setErr("");
+    setMsg("");
 
-  const { data: r, error: rErr } = await supabase
-    .from("game_roster")
-    .select("*")
-    .eq("game_id", id);
+    const { data: g, error: gErr } = await supabase.from("live_games").select("*").eq("id", id).single();
+    if (gErr) {
+      setErr(gErr.message);
+      return;
+    }
+    setGame(g);
+    setScoreAInput(String(Number(g.score_a || 0)));
+    setScoreBInput(String(Number(g.score_b || 0)));
 
-  if (rErr) {
-    setRosterA([]);
-    setRosterB([]);
-    return;
+    // Roster
+    const { data: r, error: rErr } = await supabase.from("game_roster").select("*").eq("game_id", id);
+    if (rErr) {
+      setRosterA([]);
+      setRosterB([]);
+      return;
+    }
+
+    const a = [];
+    const b = [];
+    for (const row of r || []) {
+      if (row.team_side === "A") a.push(row);
+      else if (row.team_side === "B") b.push(row);
+    }
+    setRosterA(a);
+    setRosterB(b);
+
+    // Stat totals for this draft (so buttons show numbers)
+    const { data: ev, error: evErr } = await supabase
+      .from("live_events")
+      .select("player_id, stat_key, delta")
+      .eq("game_id", id)
+      .eq("event_type", "stat");
+
+    if (evErr) {
+      // don't block the page if totals fail, but show a message
+      setErr(evErr.message);
+      setStatTotals({});
+      return;
+    }
+
+    const totals = {};
+    for (const e of ev || []) {
+      const pid = String(e.player_id ?? "");
+      const k = String(e.stat_key ?? "");
+      const d = Number(e.delta ?? 0);
+
+      if (!totals[pid]) totals[pid] = {};
+      totals[pid][k] = Number(totals[pid][k] ?? 0) + d;
+    }
+    setStatTotals(totals);
   }
-
-  // ✅ FIX: Split by team_side (A/B). game_roster does NOT have team_name.
-  const a = [];
-  const b = [];
-
-  for (const row of r || []) {
-    if (row.team_side === "A") a.push(row);
-    else if (row.team_side === "B") b.push(row);
-  }
-
-  setRosterA(a);
-  setRosterB(b);
-}
-
 
   useEffect(() => {
     if (!id) return;
@@ -91,92 +116,109 @@ export default function PostDraftEditorPage() {
   async function saveScore() {
     setErr("");
     setMsg("");
+    setSaving(true);
 
-    const a = Number(scoreAInput);
-    const b = Number(scoreBInput);
-    if (!Number.isFinite(a) || !Number.isFinite(b)) {
-      setErr("Scores must be numbers.");
-      return;
-    }
-    if (a < 0 || b < 0) {
-      setErr("Scores cannot be negative.");
-      return;
-    }
+    try {
+      const a = Number(scoreAInput);
+      const b = Number(scoreBInput);
+      if (!Number.isFinite(a) || !Number.isFinite(b)) {
+        setErr("Scores must be numbers.");
+        return;
+      }
+      if (a < 0 || b < 0) {
+        setErr("Scores cannot be negative.");
+        return;
+      }
 
-    const { error } = await supabase.from("live_games").update({ score_a: a, score_b: b }).eq("id", id);
-    if (error) setErr(error.message);
-    else {
-      setMsg("✅ Score saved.");
-      await load();
+      const { error } = await supabase.from("live_games").update({ score_a: a, score_b: b }).eq("id", id);
+      if (error) setErr(error.message);
+      else {
+        setMsg("✅ Score saved.");
+        await load();
+      }
+    } finally {
+      setSaving(false);
     }
   }
 
   async function addStat(player, statKey, delta = 1) {
     setErr("");
+    setMsg("");
+
+    // ✅ game_roster doesn't have team_name; it has team_side.
+    const side = player?.team_side;
+    const teamName = side === "A" ? String(game?.team_a1 ?? "") : String(game?.team_b1 ?? "");
+
     const { error } = await supabase.rpc("rpc_add_stat", {
       p_game_id: id,
       p_league_id: norm(game?.league_key),
       p_sport: String(game?.sport ?? ""),
       p_player_id: String(player.player_id ?? player.id ?? ""),
       p_player_name: String(player.player_name ?? ""),
-      p_team_name: String(player.team_name ?? ""),
+      p_team_name: teamName,
       p_stat_key: String(statKey),
       p_delta: Number(delta),
     });
-    if (error) setErr(error.message);
-    else await load();
+
+    if (error) {
+      setErr(error.message);
+      return;
+    }
+
+    // quick feedback message + reload totals
+    setMsg(`✅ +${statKey} recorded`);
+    await load();
   }
 
   async function buildRosterIfMissing() {
-  setErr("");
-  setMsg("");
+    setErr("");
+    setMsg("");
 
-  const ta = norm(game?.team_a1);
-  const tb = norm(game?.team_b1);
-  const lk = norm(game?.league_key);
+    const ta = norm(game?.team_a1);
+    const tb = norm(game?.team_b1);
+    const lk = norm(game?.league_key);
 
-  if (!ta || !tb || !lk) {
-    setErr("Missing league/team info for this draft.");
-    return;
+    if (!ta || !tb || !lk) {
+      setErr("Missing league/team info for this draft.");
+      return;
+    }
+
+    const { data: players, error } = await supabase
+      .from("players")
+      .select("id, first_name, last_name, team_name, league_id")
+      .eq("league_id", lk)
+      .in("team_name", [ta, tb])
+      .limit(5000);
+
+    if (error) {
+      setErr(error.message);
+      return;
+    }
+
+    const rows = (players || []).map((p) => {
+      const fullName = `${p.first_name ?? ""} ${p.last_name ?? ""}`.trim();
+      const side = norm(p.team_name) === ta ? "A" : "B";
+      return {
+        game_id: id,
+        player_id: String(p.id),
+        player_name: fullName || "Unknown",
+        team_side: side,
+        is_playing: true,
+      };
+    });
+
+    if (!rows.length) {
+      setErr("No players found for these teams in this league.");
+      return;
+    }
+
+    const { error: insErr } = await supabase.from("game_roster").insert(rows);
+    if (insErr) setErr(insErr.message);
+    else {
+      setMsg("✅ Roster built.");
+      await load();
+    }
   }
-
-  const { data: players, error } = await supabase
-    .from("players")
-    .select("id, first_name, last_name, team_name, league_id")
-    .eq("league_id", lk)
-    .in("team_name", [ta, tb])
-    .limit(5000);
-
-  if (error) {
-    setErr(error.message);
-    return;
-  }
-
-  const rows = (players || []).map((p) => {
-    const fullName = `${p.first_name ?? ""} ${p.last_name ?? ""}`.trim();
-    const side = norm(p.team_name) === ta ? "A" : "B";
-    return {
-      game_id: id,
-      player_id: String(p.id),
-      player_name: fullName || "Unknown",
-      team_side: side,
-      is_playing: true,
-    };
-  });
-
-  if (!rows.length) {
-    setErr("No players found for these teams in this league.");
-    return;
-  }
-
-  const { error: insErr } = await supabase.from("game_roster").insert(rows);
-  if (insErr) setErr(insErr.message);
-  else {
-    setMsg("✅ Roster built.");
-    await load();
-  }
-}
-
 
   async function finalizeDraft() {
     setErr("");
@@ -185,14 +227,21 @@ export default function PostDraftEditorPage() {
     const ok = confirm("Finalize this post-game draft?\n\nThis updates standings + stat leaders.");
     if (!ok) return;
 
-    const { error } = await supabase.rpc("finalize_game", { gid: id });
-    if (error) {
-      setErr(error.message);
-      return;
-    }
+    setFinalizing(true);
+    try {
+      const { error } = await supabase.rpc("finalize_game", { gid: id });
+      if (error) {
+        setErr(error.message);
+        return;
+      }
 
-    setMsg("✅ Finalized. Standings + leaders updated.");
-    await load();
+      // ✅ Clear feedback + go back to Post Games list
+      setMsg("✅ Finalized. Standings + leaders updated.");
+      router.push("/post");
+      router.refresh();
+    } finally {
+      setFinalizing(false);
+    }
   }
 
   if (!game) {
@@ -213,7 +262,8 @@ export default function PostDraftEditorPage() {
           <div>
             <div className="text-2xl font-black tracking-tight">Post Game Draft</div>
             <div className="mt-1 text-sm text-white/70">
-              {game.played_on} • {game.league_key} • {game.sport} • Level {game.level} • <span className="font-bold text-yellow-300">draft</span>
+              {game.played_on} • {game.league_key} • {game.sport} • Level {game.level} •{" "}
+              <span className="font-bold text-yellow-300">draft</span>
             </div>
           </div>
 
@@ -249,9 +299,10 @@ export default function PostDraftEditorPage() {
 
             <button
               onClick={saveScore}
-              className="rounded-xl bg-white px-4 py-3 text-sm font-extrabold text-slate-950 hover:bg-white/90"
+              disabled={saving}
+              className="rounded-xl bg-white px-4 py-3 text-sm font-extrabold text-slate-950 hover:bg-white/90 disabled:opacity-60"
             >
-              Save Score
+              {saving ? "Saving..." : "Save Score"}
             </button>
 
             <div className="text-right">
@@ -269,9 +320,10 @@ export default function PostDraftEditorPage() {
 
           <button
             onClick={finalizeDraft}
-            className="mt-5 w-full rounded-2xl border border-emerald-400/30 bg-emerald-500/10 px-6 py-3 text-sm font-black text-emerald-100 hover:bg-emerald-500/15"
+            disabled={finalizing}
+            className="mt-5 w-full rounded-2xl border border-emerald-400/30 bg-emerald-500/10 px-6 py-3 text-sm font-black text-emerald-100 hover:bg-emerald-500/15 disabled:opacity-60"
           >
-            Finalize Draft
+            {finalizing ? "Finalizing..." : "Finalize Draft"}
           </button>
         </div>
 
@@ -298,16 +350,30 @@ export default function PostDraftEditorPage() {
               <div>
                 <div className="text-base font-black">{game.team_a1} Players</div>
                 {!rosterA.length ? (
-                  <div className="mt-2 text-sm text-white/60">No roster yet. Click <b>Build Roster</b>.</div>
+                  <div className="mt-2 text-sm text-white/60">
+                    No roster yet. Click <b>Build Roster</b>.
+                  </div>
                 ) : (
                   <div className="mt-3 grid gap-3">
                     {rosterA.map((p) => (
                       <div key={`A-${p.player_id}`} className="rounded-2xl border border-white/10 bg-black/20 p-4">
                         <div className="font-black">{p.player_name}</div>
+
+                        {/* totals row */}
+                        <div className="mt-2 flex flex-wrap gap-2 text-xs text-white/80">
+                          {statKeys.map((k) => (
+                            <div key={`A-${p.player_id}-${k}`} className="rounded-lg border border-white/10 bg-white/5 px-2 py-1">
+                              <span className="font-extrabold">{k}</span>{" "}
+                              <span className="tabular-nums">{getTotal(p.player_id, k)}</span>
+                            </div>
+                          ))}
+                        </div>
+
+                        {/* buttons */}
                         <div className="mt-3 flex flex-wrap gap-2">
                           {statKeys.map((k) => (
                             <button
-                              key={k}
+                              key={`A-btn-${p.player_id}-${k}`}
                               onClick={() => addStat(p, k, 1)}
                               className="rounded-xl border border-white/10 bg-white/10 px-3 py-2 text-sm font-extrabold hover:bg-white/15"
                             >
@@ -324,16 +390,30 @@ export default function PostDraftEditorPage() {
               <div>
                 <div className="text-base font-black">{game.team_b1} Players</div>
                 {!rosterB.length ? (
-                  <div className="mt-2 text-sm text-white/60">No roster yet. Click <b>Build Roster</b>.</div>
+                  <div className="mt-2 text-sm text-white/60">
+                    No roster yet. Click <b>Build Roster</b>.
+                  </div>
                 ) : (
                   <div className="mt-3 grid gap-3">
                     {rosterB.map((p) => (
                       <div key={`B-${p.player_id}`} className="rounded-2xl border border-white/10 bg-black/20 p-4">
                         <div className="font-black">{p.player_name}</div>
+
+                        {/* totals row */}
+                        <div className="mt-2 flex flex-wrap gap-2 text-xs text-white/80">
+                          {statKeys.map((k) => (
+                            <div key={`B-${p.player_id}-${k}`} className="rounded-lg border border-white/10 bg-white/5 px-2 py-1">
+                              <span className="font-extrabold">{k}</span>{" "}
+                              <span className="tabular-nums">{getTotal(p.player_id, k)}</span>
+                            </div>
+                          ))}
+                        </div>
+
+                        {/* buttons */}
                         <div className="mt-3 flex flex-wrap gap-2">
                           {statKeys.map((k) => (
                             <button
-                              key={k}
+                              key={`B-btn-${p.player_id}-${k}`}
                               onClick={() => addStat(p, k, 1)}
                               className="rounded-xl border border-white/10 bg-white/10 px-3 py-2 text-sm font-extrabold hover:bg-white/15"
                             >
