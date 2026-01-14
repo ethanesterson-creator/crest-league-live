@@ -62,7 +62,7 @@ export default function RootLayout({ children }) {
             </div>
 
             <div className="bc-faint" style={{ fontSize: 12 }}>
-              Bauercrest • Navy / White
+              Created By Ethan Esterson
             </div>
 
             {/* Nav links */}

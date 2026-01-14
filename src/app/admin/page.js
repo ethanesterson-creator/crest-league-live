@@ -191,7 +191,7 @@ export default function AdminPage() {
       <div className="mt-6">
         <div className="text-2xl font-black">Admin Tools</div>
         <div className="text-sm text-white/70">
-          Danger zone. Use for start-of-camp resets and fixing drift.
+          Used For Deleting Games and Fixing Snapshots.
         </div>
       </div>
 
@@ -211,7 +211,7 @@ export default function AdminPage() {
         <div className="mt-6 rounded-2xl border border-white/10 bg-white/5 p-5">
           <div className="text-lg font-black">Unlock Admin</div>
           <div className="mt-1 text-sm text-white/70">
-            Enter the admin password (from your Vercel Environment Variables).
+            Enter the admin password
           </div>
 
           <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-end">
@@ -236,8 +236,7 @@ export default function AdminPage() {
           </div>
 
           <div className="mt-3 text-xs text-white/50">
-            Note: This is a frontend guardrail while RLS is off. Later we’ll
-            secure with real auth.
+            Contact Ethan Esterson If Password Needed
           </div>
         </div>
       ) : (
