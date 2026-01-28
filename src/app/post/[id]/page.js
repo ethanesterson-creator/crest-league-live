@@ -45,7 +45,6 @@ export default function PostDraftEditorPage() {
   const [rosterA, setRosterA] = useState([]);
   const [rosterB, setRosterB] = useState([]);
 
-  // statTotals[playerId][statKey] = number
   const [statTotals, setStatTotals] = useState({});
 
   const statKeys = useMemo(() => getStatKeysForSport(game?.sport), [game?.sport]);
@@ -75,7 +74,6 @@ export default function PostDraftEditorPage() {
     setScoreAInput(String(Number(g.score_a || 0)));
     setScoreBInput(String(Number(g.score_b || 0)));
 
-    // ✅ Roster includes team_name now
     const { data: r, error: rErr } = await supabase.from("game_roster").select("*").eq("game_id", id);
     if (rErr) {
       setRosterA([]);
@@ -92,7 +90,6 @@ export default function PostDraftEditorPage() {
     setRosterA(a);
     setRosterB(b);
 
-    // Stat totals for this draft (so buttons show numbers)
     const { data: ev, error: evErr } = await supabase
       .from("live_events")
       .select("player_id, stat_key, delta")
@@ -155,7 +152,6 @@ export default function PostDraftEditorPage() {
     setErr("");
     setMsg("");
 
-    // ✅ Correct team attribution: use roster row's team_name
     const teamName = String(player?.team_name || "");
 
     const { error } = await supabase.rpc("rpc_add_stat", {
@@ -174,7 +170,6 @@ export default function PostDraftEditorPage() {
       return;
     }
 
-    // ✅ instant UI tick (no waiting)
     setStatTotals((prev) => {
       const pid = String(player.player_id ?? player.id ?? "");
       const key = String(statKey ?? "").toUpperCase();
@@ -231,7 +226,7 @@ export default function PostDraftEditorPage() {
         player_id: String(p.id),
         player_name: fullName || "Unknown",
         team_side: side,
-        team_name: tn, // ✅ store actual team (A1/A2/B1/B2)
+        team_name: tn,
         is_playing: true,
       };
     });
@@ -277,7 +272,9 @@ export default function PostDraftEditorPage() {
       <div className="min-h-screen bg-slate-950 text-slate-100">
         <div className="mx-auto max-w-4xl px-4 py-6">
           <div className="text-lg font-black">Loading draft…</div>
-          {err ? <div className="mt-4 rounded-xl border border-red-700 bg-red-950/40 p-3 text-sm text-red-200">{err}</div> : null}
+          {err ? (
+            <div className="mt-4 rounded-xl border border-red-700 bg-red-950/40 p-3 text-sm text-red-200">{err}</div>
+          ) : null}
         </div>
       </div>
     );
@@ -286,12 +283,22 @@ export default function PostDraftEditorPage() {
   const leftLabel = game.matchup_type === "two_team" ? matchupLabel(game.team_a1, game.team_a2) : game.team_a1;
   const rightLabel = game.matchup_type === "two_team" ? matchupLabel(game.team_b1, game.team_b2) : game.team_b1;
 
+  const isStaff = !!game.is_staff_game;
+
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100">
       <div className="mx-auto max-w-6xl px-4 py-6">
         <div className="flex items-center justify-between gap-4">
           <div>
-            <div className="text-2xl font-black tracking-tight">Post Game Draft</div>
+            <div className="flex items-center gap-2">
+              <div className="text-2xl font-black tracking-tight">{isStaff ? "Staff Game Draft" : "Post Game Draft"}</div>
+              {isStaff ? (
+                <span className="rounded-full border border-purple-400/30 bg-purple-500/10 px-2 py-1 text-[11px] font-black text-purple-100">
+                  STAFF
+                </span>
+              ) : null}
+            </div>
+
             <div className="mt-1 text-sm text-white/70">
               {game.played_on} • {game.league_key} • {game.sport} • Level {game.level} •{" "}
               <span className="font-bold text-yellow-300">draft</span>
