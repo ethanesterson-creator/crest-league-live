@@ -8,6 +8,17 @@ const SPORTS = ["Hoop", "Soccer", "Softball", "Volleyball", "Football", "Speedba
 const FALLBACK_LEVELS = ["A", "B", "C", "D", "ALL"];
 const MODES = ["5v5", "6v6", "7v7", "8v8", "9v9", "10v10", "11v11"];
 
+// Fixed reasons (based on proposal themes + Other)
+const NON_GAME_REASONS = [
+  "Spirit",
+  "Cheering / Loudest Section",
+  "Sportsmanship",
+  "Friday Night Songs",
+  "Community / Bunk Pride",
+  "Neb Events",
+  "Other",
+];
+
 function norm(s) {
   return String(s ?? "").trim().toLowerCase();
 }
@@ -23,6 +34,13 @@ export default function PostGamesPage() {
   const [err, setErr] = useState("");
   const [msg, setMsg] = useState("");
 
+  // Entry type for Phase 2
+  // post = camper post game (draft -> /post/[id])
+  // staff = staff game (draft -> /post/[id] but tagged)
+  // non_game = points entry
+  const [entryType, setEntryType] = useState("post");
+
+  // Shared selectors (games)
   const [leagueKey, setLeagueKey] = useState("seniors");
   const [sport, setSport] = useState("Hoop");
 
@@ -46,7 +64,18 @@ export default function PostGamesPage() {
     return d.toISOString().slice(0, 10);
   });
 
+  // drafts list (post + staff)
   const [drafts, setDrafts] = useState([]);
+
+  // Non-game points form
+  const [ngLeagueKey, setNgLeagueKey] = useState("seniors"); // context only
+  const [ngTeam, setNgTeam] = useState("");
+  const [ngPoints, setNgPoints] = useState("10");
+  const [ngReason, setNgReason] = useState(NON_GAME_REASONS[0]);
+  const [ngOther, setNgOther] = useState("");
+  const [ngNotes, setNgNotes] = useState("");
+  const [ngDate, setNgDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [ngAllTeams, setNgAllTeams] = useState([]);
 
   async function fetchRuleRow(lk, sp, lv) {
     const league_id = norm(lk);
@@ -125,10 +154,33 @@ export default function PostGamesPage() {
     }
   }
 
+  // For non-game points: team list across camp (same 4 names across leagues)
+  async function loadAllTeams() {
+    const { data, error } = await supabase
+      .from("players")
+      .select("team_name")
+      .limit(5000);
+
+    if (error) {
+      setNgAllTeams([]);
+      return;
+    }
+
+    const uniq = new Set();
+    for (const p of data || []) {
+      const t = norm(p.team_name);
+      if (t) uniq.add(t);
+    }
+
+    const list = Array.from(uniq).sort((a, b) => a.localeCompare(b));
+    setNgAllTeams(list);
+    if (list.length) setNgTeam((prev) => (norm(prev) ? prev : list[0]));
+  }
+
   async function loadDrafts() {
     const { data, error } = await supabase
       .from("live_games")
-      .select("id, created_at, played_on, league_key, sport, level, mode, matchup_type, team_a1, team_a2, team_b1, team_b2, score_a, score_b, status")
+      .select("id, created_at, played_on, league_key, sport, level, mode, matchup_type, team_a1, team_a2, team_b1, team_b2, score_a, score_b, status, is_staff_game")
       .eq("status", "draft")
       .order("created_at", { ascending: false })
       .limit(200);
@@ -176,6 +228,7 @@ export default function PostGamesPage() {
 
   useEffect(() => {
     loadDrafts();
+    loadAllTeams();
   }, []);
 
   function validateTeams() {
@@ -197,7 +250,7 @@ export default function PostGamesPage() {
     return "";
   }
 
-  async function createDraft() {
+  async function createDraft({ staff = false } = {}) {
     setErr("");
     setMsg("");
 
@@ -228,12 +281,15 @@ export default function PostGamesPage() {
 
         score_a: 0,
         score_b: 0,
+
+        // Phase 2: staff game tagging (requires column on live_games; if missing you'll see an error)
+        is_staff_game: !!staff,
       };
 
       const { data, error } = await supabase.from("live_games").insert([row]).select("id").single();
       if (error) throw error;
 
-      setMsg("✅ Draft created.");
+      setMsg(staff ? "✅ Staff game draft created." : "✅ Draft created.");
       await loadDrafts();
       window.location.href = `/post/${data.id}`;
     } catch (e) {
@@ -241,14 +297,61 @@ export default function PostGamesPage() {
     }
   }
 
+  async function submitNonGamePoints({ asDraft = false } = {}) {
+    setErr("");
+    setMsg("");
+
+    try {
+      const t = norm(ngTeam);
+      if (!ngDate) throw new Error("Pick a date.");
+      if (!t) throw new Error("Pick a team.");
+      const pts = Math.floor(Number(ngPoints));
+      if (!Number.isFinite(pts) || pts < 0) throw new Error("Points must be a number 0 or higher.");
+
+      let reason = String(ngReason || "").trim();
+      if (!reason) throw new Error("Pick a reason.");
+      if (reason === "Other") {
+        const o = String(ngOther || "").trim();
+        if (!o) throw new Error("If reason is Other, type what it is.");
+        reason = `Other: ${o}`;
+      }
+
+      const row = {
+        entry_date: ngDate,
+        league_id: norm(ngLeagueKey), // context only
+        team_name: t,
+        points: pts,
+        reason,
+        notes: String(ngNotes || "").trim() || null,
+        status: asDraft ? "draft" : "final",
+        deleted: false,
+      };
+
+      const { error } = await supabase.from("non_game_points").insert([row]);
+      if (error) throw error;
+
+      setMsg(asDraft ? "✅ Non-game points saved as draft." : "✅ Non-game points added.");
+      setNgNotes("");
+      setNgOther("");
+      setNgPoints("10");
+    } catch (e) {
+      setErr(e?.message ?? String(e));
+    }
+  }
+
+  const filteredDrafts = drafts.filter((d) => {
+    // Show both camper + staff drafts here; label them
+    return true;
+  });
+
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100">
       <div className="mx-auto max-w-6xl px-4 py-6">
         <div className="flex items-center justify-between gap-4">
           <div>
-            <div className="text-2xl font-black tracking-tight">Post Games</div>
+            <div className="text-2xl font-black tracking-tight">Add Results</div>
             <div className="mt-1 text-sm text-white/70">
-              Create a past game as a <b>draft</b>, enter score (stats optional), then finalize.
+              Enter results after the fact: <b>Post Games</b>, <b>Staff Games</b>, and <b>Non-Game Points</b>.
             </div>
           </div>
 
@@ -268,170 +371,337 @@ export default function PostGamesPage() {
           <div className="mt-4 rounded-xl border border-emerald-400/30 bg-emerald-500/10 p-3 text-sm text-emerald-100">{msg}</div>
         ) : null}
 
+        {/* Entry Type Switch */}
         <div className="mt-6 rounded-2xl border border-white/10 bg-white/5 p-5">
-          <div className="text-lg font-black">Create Past Game Draft</div>
+          <div className="text-lg font-black">What are you adding?</div>
+          <div className="mt-3 grid gap-3 md:grid-cols-3">
+            <button
+              onClick={() => setEntryType("post")}
+              className={`rounded-xl border px-4 py-3 text-left ${
+                entryType === "post"
+                  ? "border-emerald-400/30 bg-emerald-500/10"
+                  : "border-white/10 bg-black/20 hover:bg-black/30"
+              }`}
+            >
+              <div className="font-black">Camper Post Game</div>
+              <div className="text-xs text-white/60">Create draft → enter score/stats → finalize</div>
+            </button>
 
-          <div className="mt-4 grid gap-4 md:grid-cols-2">
-            <label className="text-sm">
-              <div className="mb-1 text-slate-300">Date</div>
-              <input
-                type="date"
-                className="w-full rounded-xl border border-slate-800 bg-slate-950 px-3 py-2 outline-none focus:border-slate-500"
-                value={playedOn}
-                onChange={(e) => setPlayedOn(e.target.value)}
-              />
-            </label>
+            <button
+              onClick={() => setEntryType("staff")}
+              className={`rounded-xl border px-4 py-3 text-left ${
+                entryType === "staff"
+                  ? "border-emerald-400/30 bg-emerald-500/10"
+                  : "border-white/10 bg-black/20 hover:bg-black/30"
+              }`}
+            >
+              <div className="font-black">Staff Game</div>
+              <div className="text-xs text-white/60">Same as post game, but tagged as staff</div>
+            </button>
 
-            <label className="text-sm">
-              <div className="mb-1 text-slate-300">League</div>
-              <select
-                className="w-full rounded-xl border border-slate-800 bg-slate-950 px-3 py-2 outline-none focus:border-slate-500"
-                value={leagueKey}
-                onChange={(e) => setLeagueKey(e.target.value)}
-              >
-                <option value="sophomores">Sophomores</option>
-                <option value="juniors">Juniors</option>
-                <option value="seniors">Seniors</option>
-              </select>
-            </label>
-
-            <label className="text-sm">
-              <div className="mb-1 text-slate-300">Sport</div>
-              <select
-                className="w-full rounded-xl border border-slate-800 bg-slate-950 px-3 py-2 outline-none focus:border-slate-500"
-                value={sport}
-                onChange={(e) => setSport(e.target.value)}
-              >
-                {SPORTS.map((s) => (
-                  <option key={s} value={s}>
-                    {s}
-                  </option>
-                ))}
-              </select>
-            </label>
-
-            {/* Matchup type */}
-            <label className="text-sm">
-              <div className="mb-1 text-slate-300">Matchup</div>
-              <select
-                className="w-full rounded-xl border border-slate-800 bg-slate-950 px-3 py-2 outline-none focus:border-slate-500"
-                value={matchupType}
-                onChange={(e) => setMatchupType(e.target.value)}
-              >
-                <option value="single">1 team vs 1 team</option>
-                <option value="two_team">2 teams vs 2 teams</option>
-              </select>
-            </label>
-
-            <label className="text-sm">
-              <div className="mb-1 text-slate-300">Level</div>
-              <select
-                className="w-full rounded-xl border border-slate-800 bg-slate-950 px-3 py-2 outline-none focus:border-slate-500"
-                value={String(level).toUpperCase()}
-                onChange={(e) => setLevel(e.target.value)}
-                disabled={norm(sport) === "evening activity"}
-              >
-                {(availableLevels?.length ? availableLevels : FALLBACK_LEVELS).map((l) => (
-                  <option key={l} value={l}>
-                    {l}
-                  </option>
-                ))}
-              </select>
-            </label>
-
-            <label className="text-sm">
-              <div className="mb-1 text-slate-300">Mode</div>
-              <select
-                className="w-full rounded-xl border border-slate-800 bg-slate-950 px-3 py-2 outline-none focus:border-slate-500"
-                value={mode}
-                onChange={(e) => {
-                  setMode(e.target.value);
-                  setModeDirty(true);
-                }}
-              >
-                {MODES.map((m) => (
-                  <option key={m} value={m}>
-                    {m}
-                  </option>
-                ))}
-              </select>
-            </label>
-
-            <div />
-
-            <label className="text-sm">
-              <div className="mb-1 text-slate-300">Team A1</div>
-              <select
-                className="w-full rounded-xl border border-slate-800 bg-slate-950 px-3 py-2 outline-none focus:border-slate-500"
-                value={teamA}
-                onChange={(e) => setTeamA(e.target.value)}
-              >
-                {teams.map((t) => (
-                  <option key={t} value={t}>
-                    {t}
-                  </option>
-                ))}
-              </select>
-            </label>
-
-            <label className="text-sm">
-              <div className="mb-1 text-slate-300">Team B1</div>
-              <select
-                className="w-full rounded-xl border border-slate-800 bg-slate-950 px-3 py-2 outline-none focus:border-slate-500"
-                value={teamB}
-                onChange={(e) => setTeamB(e.target.value)}
-              >
-                {teams.map((t) => (
-                  <option key={t} value={t}>
-                    {t}
-                  </option>
-                ))}
-              </select>
-            </label>
-
-            {matchupType === "two_team" ? (
-              <>
-                <label className="text-sm">
-                  <div className="mb-1 text-slate-300">Team A2</div>
-                  <select
-                    className="w-full rounded-xl border border-slate-800 bg-slate-950 px-3 py-2 outline-none focus:border-slate-500"
-                    value={teamA2}
-                    onChange={(e) => setTeamA2(e.target.value)}
-                  >
-                    {teams.map((t) => (
-                      <option key={t} value={t}>
-                        {t}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-
-                <label className="text-sm">
-                  <div className="mb-1 text-slate-300">Team B2</div>
-                  <select
-                    className="w-full rounded-xl border border-slate-800 bg-slate-950 px-3 py-2 outline-none focus:border-slate-500"
-                    value={teamB2}
-                    onChange={(e) => setTeamB2(e.target.value)}
-                  >
-                    {teams.map((t) => (
-                      <option key={t} value={t}>
-                        {t}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-              </>
-            ) : null}
+            <button
+              onClick={() => setEntryType("non_game")}
+              className={`rounded-xl border px-4 py-3 text-left ${
+                entryType === "non_game"
+                  ? "border-emerald-400/30 bg-emerald-500/10"
+                  : "border-white/10 bg-black/20 hover:bg-black/30"
+              }`}
+            >
+              <div className="font-black">Non-Game Points</div>
+              <div className="text-xs text-white/60">Spirit/cheering/etc. (single team per entry)</div>
+            </button>
           </div>
-
-          <button
-            onClick={createDraft}
-            className="mt-5 w-full rounded-xl bg-emerald-500 px-4 py-3 text-sm font-extrabold text-slate-950 hover:bg-emerald-400"
-          >
-            Create Draft
-          </button>
         </div>
 
+        {/* GAMES FORM (post + staff) */}
+        {entryType === "post" || entryType === "staff" ? (
+          <div className="mt-6 rounded-2xl border border-white/10 bg-white/5 p-5">
+            <div className="text-lg font-black">
+              {entryType === "staff" ? "Create Staff Game Draft" : "Create Past Game Draft"}
+            </div>
+
+            <div className="mt-4 grid gap-4 md:grid-cols-2">
+              <label className="text-sm">
+                <div className="mb-1 text-slate-300">Date</div>
+                <input
+                  type="date"
+                  className="w-full rounded-xl border border-slate-800 bg-slate-950 px-3 py-2 outline-none focus:border-slate-500"
+                  value={playedOn}
+                  onChange={(e) => setPlayedOn(e.target.value)}
+                />
+              </label>
+
+              <label className="text-sm">
+                <div className="mb-1 text-slate-300">League</div>
+                <select
+                  className="w-full rounded-xl border border-slate-800 bg-slate-950 px-3 py-2 outline-none focus:border-slate-500"
+                  value={leagueKey}
+                  onChange={(e) => setLeagueKey(e.target.value)}
+                >
+                  <option value="sophomores">Sophomores</option>
+                  <option value="juniors">Juniors</option>
+                  <option value="seniors">Seniors</option>
+                </select>
+              </label>
+
+              <label className="text-sm">
+                <div className="mb-1 text-slate-300">Sport</div>
+                <select
+                  className="w-full rounded-xl border border-slate-800 bg-slate-950 px-3 py-2 outline-none focus:border-slate-500"
+                  value={sport}
+                  onChange={(e) => setSport(e.target.value)}
+                >
+                  {SPORTS.map((s) => (
+                    <option key={s} value={s}>
+                      {s}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              {/* Matchup type */}
+              <label className="text-sm">
+                <div className="mb-1 text-slate-300">Matchup</div>
+                <select
+                  className="w-full rounded-xl border border-slate-800 bg-slate-950 px-3 py-2 outline-none focus:border-slate-500"
+                  value={matchupType}
+                  onChange={(e) => setMatchupType(e.target.value)}
+                >
+                  <option value="single">1 team vs 1 team</option>
+                  <option value="two_team">2 teams vs 2 teams</option>
+                </select>
+              </label>
+
+              <label className="text-sm">
+                <div className="mb-1 text-slate-300">Level</div>
+                <select
+                  className="w-full rounded-xl border border-slate-800 bg-slate-950 px-3 py-2 outline-none focus:border-slate-500"
+                  value={String(level).toUpperCase()}
+                  onChange={(e) => setLevel(e.target.value)}
+                  disabled={norm(sport) === "evening activity"}
+                >
+                  {(availableLevels?.length ? availableLevels : FALLBACK_LEVELS).map((l) => (
+                    <option key={l} value={l}>
+                      {l}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <label className="text-sm">
+                <div className="mb-1 text-slate-300">Mode</div>
+                <select
+                  className="w-full rounded-xl border border-slate-800 bg-slate-950 px-3 py-2 outline-none focus:border-slate-500"
+                  value={mode}
+                  onChange={(e) => {
+                    setMode(e.target.value);
+                    setModeDirty(true);
+                  }}
+                >
+                  {MODES.map((m) => (
+                    <option key={m} value={m}>
+                      {m}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <div />
+
+              <label className="text-sm">
+                <div className="mb-1 text-slate-300">Team A1</div>
+                <select
+                  className="w-full rounded-xl border border-slate-800 bg-slate-950 px-3 py-2 outline-none focus:border-slate-500"
+                  value={teamA}
+                  onChange={(e) => setTeamA(e.target.value)}
+                >
+                  {teams.map((t) => (
+                    <option key={t} value={t}>
+                      {t}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <label className="text-sm">
+                <div className="mb-1 text-slate-300">Team B1</div>
+                <select
+                  className="w-full rounded-xl border border-slate-800 bg-slate-950 px-3 py-2 outline-none focus:border-slate-500"
+                  value={teamB}
+                  onChange={(e) => setTeamB(e.target.value)}
+                >
+                  {teams.map((t) => (
+                    <option key={t} value={t}>
+                      {t}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              {matchupType === "two_team" ? (
+                <>
+                  <label className="text-sm">
+                    <div className="mb-1 text-slate-300">Team A2</div>
+                    <select
+                      className="w-full rounded-xl border border-slate-800 bg-slate-950 px-3 py-2 outline-none focus:border-slate-500"
+                      value={teamA2}
+                      onChange={(e) => setTeamA2(e.target.value)}
+                    >
+                      {teams.map((t) => (
+                        <option key={t} value={t}>
+                          {t}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+
+                  <label className="text-sm">
+                    <div className="mb-1 text-slate-300">Team B2</div>
+                    <select
+                      className="w-full rounded-xl border border-slate-800 bg-slate-950 px-3 py-2 outline-none focus:border-slate-500"
+                      value={teamB2}
+                      onChange={(e) => setTeamB2(e.target.value)}
+                    >
+                      {teams.map((t) => (
+                        <option key={t} value={t}>
+                          {t}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                </>
+              ) : null}
+            </div>
+
+            <button
+              onClick={() => createDraft({ staff: entryType === "staff" })}
+              className="mt-5 w-full rounded-xl bg-emerald-500 px-4 py-3 text-sm font-extrabold text-slate-950 hover:bg-emerald-400"
+            >
+              {entryType === "staff" ? "Create Staff Draft" : "Create Draft"}
+            </button>
+
+            <div className="mt-3 text-xs text-white/60">
+              Drafts open in the same editor page. Staff drafts are labeled and will later feed the Staff standings tab.
+            </div>
+          </div>
+        ) : null}
+
+        {/* NON-GAME POINTS FORM */}
+        {entryType === "non_game" ? (
+          <div className="mt-6 rounded-2xl border border-white/10 bg-white/5 p-5">
+            <div className="text-lg font-black">Add Non-Game Points</div>
+            <div className="mt-1 text-sm text-white/70">Single team per entry. Use multiple entries for multiple teams.</div>
+
+            <div className="mt-4 grid gap-4 md:grid-cols-2">
+              <label className="text-sm">
+                <div className="mb-1 text-slate-300">Date</div>
+                <input
+                  type="date"
+                  className="w-full rounded-xl border border-slate-800 bg-slate-950 px-3 py-2 outline-none focus:border-slate-500"
+                  value={ngDate}
+                  onChange={(e) => setNgDate(e.target.value)}
+                />
+              </label>
+
+              <label className="text-sm">
+                <div className="mb-1 text-slate-300">League (context)</div>
+                <select
+                  className="w-full rounded-xl border border-slate-800 bg-slate-950 px-3 py-2 outline-none focus:border-slate-500"
+                  value={ngLeagueKey}
+                  onChange={(e) => setNgLeagueKey(e.target.value)}
+                >
+                  <option value="sophomores">Sophomores</option>
+                  <option value="juniors">Juniors</option>
+                  <option value="seniors">Seniors</option>
+                </select>
+              </label>
+
+              <label className="text-sm">
+                <div className="mb-1 text-slate-300">Team</div>
+                <select
+                  className="w-full rounded-xl border border-slate-800 bg-slate-950 px-3 py-2 outline-none focus:border-slate-500"
+                  value={ngTeam}
+                  onChange={(e) => setNgTeam(e.target.value)}
+                >
+                  {(ngAllTeams?.length ? ngAllTeams : teams).map((t) => (
+                    <option key={t} value={t}>
+                      {t}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <label className="text-sm">
+                <div className="mb-1 text-slate-300">Points</div>
+                <input
+                  type="number"
+                  min="0"
+                  className="w-full rounded-xl border border-slate-800 bg-slate-950 px-3 py-2 outline-none focus:border-slate-500"
+                  value={ngPoints}
+                  onChange={(e) => setNgPoints(e.target.value)}
+                />
+              </label>
+
+              <label className="text-sm">
+                <div className="mb-1 text-slate-300">Reason</div>
+                <select
+                  className="w-full rounded-xl border border-slate-800 bg-slate-950 px-3 py-2 outline-none focus:border-slate-500"
+                  value={ngReason}
+                  onChange={(e) => setNgReason(e.target.value)}
+                >
+                  {NON_GAME_REASONS.map((r) => (
+                    <option key={r} value={r}>
+                      {r}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              {ngReason === "Other" ? (
+                <label className="text-sm">
+                  <div className="mb-1 text-slate-300">Other (type it)</div>
+                  <input
+                    type="text"
+                    className="w-full rounded-xl border border-slate-800 bg-slate-950 px-3 py-2 outline-none focus:border-slate-500"
+                    value={ngOther}
+                    onChange={(e) => setNgOther(e.target.value)}
+                    placeholder="Example: Best banner"
+                  />
+                </label>
+              ) : (
+                <div />
+              )}
+
+              <label className="text-sm md:col-span-2">
+                <div className="mb-1 text-slate-300">Notes (optional)</div>
+                <input
+                  type="text"
+                  className="w-full rounded-xl border border-slate-800 bg-slate-950 px-3 py-2 outline-none focus:border-slate-500"
+                  value={ngNotes}
+                  onChange={(e) => setNgNotes(e.target.value)}
+                  placeholder="Example: Loudest section during finals"
+                />
+              </label>
+            </div>
+
+            <div className="mt-5 grid gap-3 md:grid-cols-2">
+              <button
+                onClick={() => submitNonGamePoints({ asDraft: true })}
+                className="w-full rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-sm font-extrabold hover:bg-white/10"
+              >
+                Save as Draft
+              </button>
+              <button
+                onClick={() => submitNonGamePoints({ asDraft: false })}
+                className="w-full rounded-xl bg-emerald-500 px-4 py-3 text-sm font-extrabold text-slate-950 hover:bg-emerald-400"
+              >
+                Add Points
+              </button>
+            </div>
+          </div>
+        ) : null}
+
+        {/* Draft list */}
         <div className="mt-8 rounded-2xl border border-white/10 bg-white/5 p-5">
           <div className="flex items-center justify-between gap-3">
             <div className="text-lg font-black">Draft Games</div>
@@ -443,11 +713,11 @@ export default function PostGamesPage() {
             </button>
           </div>
 
-          {!drafts.length ? (
+          {!filteredDrafts.length ? (
             <div className="mt-4 text-sm text-white/60">No drafts yet.</div>
           ) : (
             <div className="mt-4 grid gap-4">
-              {drafts.map((g) => {
+              {filteredDrafts.map((g) => {
                 const left =
                   g.matchup_type === "two_team" ? matchupLabel(g.team_a1, g.team_a2) : norm(g.team_a1);
                 const right =
@@ -459,7 +729,15 @@ export default function PostGamesPage() {
                     href={`/post/${g.id}`}
                     className="block rounded-2xl border border-white/10 bg-black/20 p-4 hover:bg-black/30"
                   >
-                    <div className="text-xs text-white/60">{g.played_on ?? "—"}</div>
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="text-xs text-white/60">{g.played_on ?? "—"}</div>
+                      {g.is_staff_game ? (
+                        <span className="rounded-full border border-purple-400/30 bg-purple-500/10 px-2 py-1 text-[11px] font-black text-purple-100">
+                          STAFF
+                        </span>
+                      ) : null}
+                    </div>
+
                     <div className="mt-1 text-xl font-black">
                       {left} vs {right}
                     </div>
