@@ -40,9 +40,10 @@ export default function LiveGamePage() {
   const [confirmFinalizeOpen, setConfirmFinalizeOpen] = useState(false);
   const [clockMode, setClockMode] = useState("");
 
-  // Bench collapse toggles (big scroll saver)
-  const [showBenchA, setShowBenchA] = useState(false);
-  const [showBenchB, setShowBenchB] = useState(false);
+  // Bench collapse toggles
+  // ✅ Bench-first: start open so counselors can pick who is in
+  const [showBenchA, setShowBenchA] = useState(true);
+  const [showBenchB, setShowBenchB] = useState(true);
 
   // Optional: compact stat chips even tighter on phones
   const [superCompact, setSuperCompact] = useState(true);
@@ -112,7 +113,6 @@ export default function LiveGamePage() {
   async function ensureRoster(g) {
     setErr("");
 
-    // ✅ include team_name so stats can be credited to the correct team in 2-team games
     const { data: r1, error: rErr } = await supabase
       .from("game_roster")
       .select("game_id, player_id, player_name, team_side, team_name, is_playing")
@@ -125,8 +125,15 @@ export default function LiveGamePage() {
     }
 
     if (r1 && r1.length) {
-      setRosterA(r1.filter((x) => x.team_side === "A"));
-      setRosterB(r1.filter((x) => x.team_side === "B"));
+      const a = r1.filter((x) => x.team_side === "A");
+      const b = r1.filter((x) => x.team_side === "B");
+      setRosterA(a);
+      setRosterB(b);
+
+      // ✅ Bench-first: if nobody is in game yet, keep bench open
+      if (a.filter((p) => p.is_playing).length === 0) setShowBenchA(true);
+      if (b.filter((p) => p.is_playing).length === 0) setShowBenchB(true);
+
       return;
     }
 
@@ -136,7 +143,7 @@ export default function LiveGamePage() {
     const a1 = norm(g.team_a1 || g.team_a || "");
     const b1 = norm(g.team_b1 || g.team_b || "");
 
-    // ✅ 2-team support
+    // 2-team support
     const a2 = norm(g.team_a2 || "");
     const b2 = norm(g.team_b2 || "");
     const matchupType = String(g.matchup_type || "single");
@@ -170,8 +177,9 @@ export default function LiveGamePage() {
         player_id: String(p.id),
         player_name: `${p.first_name ?? ""} ${p.last_name ?? ""}`.trim(),
         team_side: side,
-        team_name: tn, // ✅ store actual team
-        is_playing: true,
+        team_name: tn,
+        // ✅ Phase 1A: everyone starts BENCHED
+        is_playing: false,
       };
     });
 
@@ -197,8 +205,14 @@ export default function LiveGamePage() {
       return;
     }
 
-    setRosterA((r2 || []).filter((x) => x.team_side === "A"));
-    setRosterB((r2 || []).filter((x) => x.team_side === "B"));
+    const a = (r2 || []).filter((x) => x.team_side === "A");
+    const b = (r2 || []).filter((x) => x.team_side === "B");
+    setRosterA(a);
+    setRosterB(b);
+
+    // ✅ Bench-first: brand new roster → bench should be open
+    setShowBenchA(true);
+    setShowBenchB(true);
   }
 
   function uniqNonEmpty(arr) {
@@ -336,7 +350,6 @@ export default function LiveGamePage() {
     const leagueId = norm(game.league_key);
     const sport = norm(game.sport);
 
-    // ✅ Correct team attribution: use roster row's team_name
     const teamName = String(player?.team_name || "");
 
     const { error } = await supabase.rpc("rpc_add_stat", {
@@ -373,10 +386,17 @@ export default function LiveGamePage() {
       return;
     }
 
-    const apply = (arr) => arr.map((p) => (p.player_id === player.player_id ? { ...p, is_playing: next } : p));
+    const apply = (arr) =>
+      arr.map((p) => (p.player_id === player.player_id ? { ...p, is_playing: next } : p));
 
-    setRosterA((r) => apply(r));
-    setRosterB((r) => apply(r));
+    if (player.team_side === "A") {
+      setRosterA((r) => apply(r));
+      // ✅ auto-collapse bench when you add someone in
+      if (next) setShowBenchA(false);
+    } else {
+      setRosterB((r) => apply(r));
+      if (next) setShowBenchB(false);
+    }
   }
 
   async function finalizeGame() {
@@ -414,9 +434,14 @@ export default function LiveGamePage() {
 
   const header = `${game.league_key} • ${game.sport} • Level ${game.level} • ${game.mode}`;
 
-  // ✅ show combined team labels in 2-team mode
-  const leftLabel = game.matchup_type === "two_team" ? matchupLabel(game.team_a1, game.team_a2) : norm(game.team_a1);
-  const rightLabel = game.matchup_type === "two_team" ? matchupLabel(game.team_b1, game.team_b2) : norm(game.team_b1);
+  const leftLabel =
+    game.matchup_type === "two_team"
+      ? matchupLabel(game.team_a1, game.team_a2)
+      : norm(game.team_a1);
+  const rightLabel =
+    game.matchup_type === "two_team"
+      ? matchupLabel(game.team_b1, game.team_b2)
+      : norm(game.team_b1);
 
   const scoreA = Number(game.score_a || 0);
   const scoreB = Number(game.score_b || 0);
@@ -470,9 +495,7 @@ export default function LiveGamePage() {
         <div className="flex items-center justify-between gap-2">
           <div className="min-w-0">
             <div className="truncate text-base font-extrabold">{p.player_name || p.player_id}</div>
-            {p.team_name ? (
-              <div className="mt-0.5 text-xs text-white/50">Team: {p.team_name}</div>
-            ) : null}
+            {p.team_name ? <div className="mt-0.5 text-xs text-white/50">Team: {p.team_name}</div> : null}
           </div>
 
           <button
@@ -579,7 +602,9 @@ export default function LiveGamePage() {
             </div>
 
             <div className="mt-4 rounded-xl border border-white/10 bg-black/20 p-3">
-              <div className="text-[10px] tracking-widest opacity-70">{rules?.clock?.enabled ? "GAME CLOCK" : "NO CLOCK"}</div>
+              <div className="text-[10px] tracking-widest opacity-70">
+                {rules?.clock?.enabled ? "GAME CLOCK" : "NO CLOCK"}
+              </div>
 
               {rules?.clock?.enabled ? (
                 <>
@@ -661,7 +686,9 @@ export default function LiveGamePage() {
               {playingA.length ? (
                 playingA.map((p) => <PlayerRow key={p.player_id} p={p} sideLabel="A" />)
               ) : (
-                <div className="rounded-xl border border-white/10 bg-white/5 p-3 text-sm opacity-70">No playing roster found.</div>
+                <div className="rounded-xl border border-white/10 bg-white/5 p-3 text-sm opacity-70">
+                  No one is in the game yet. Open the bench and tap <b>Add</b>.
+                </div>
               )}
             </div>
 
@@ -687,7 +714,9 @@ export default function LiveGamePage() {
               {playingB.length ? (
                 playingB.map((p) => <PlayerRow key={p.player_id} p={p} sideLabel="B" />)
               ) : (
-                <div className="rounded-xl border border-white/10 bg-white/5 p-3 text-sm opacity-70">No playing roster found.</div>
+                <div className="rounded-xl border border-white/10 bg-white/5 p-3 text-sm opacity-70">
+                  No one is in the game yet. Open the bench and tap <b>Add</b>.
+                </div>
               )}
             </div>
 
@@ -713,7 +742,10 @@ export default function LiveGamePage() {
             ) : null}
 
             <div className="mt-4 flex gap-2">
-              <button className="flex-1 rounded-xl border border-white/15 bg-white/5 px-4 py-3 font-bold" onClick={() => setConfirmFinalizeOpen(false)}>
+              <button
+                className="flex-1 rounded-xl border border-white/15 bg-white/5 px-4 py-3 font-bold"
+                onClick={() => setConfirmFinalizeOpen(false)}
+              >
                 Cancel
               </button>
               <button
