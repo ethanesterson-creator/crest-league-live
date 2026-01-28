@@ -16,6 +16,17 @@ function fmtClock(seconds) {
   return `${mm}:${ss}`;
 }
 
+function parseMMSS(input) {
+  const t = String(input ?? "").trim();
+  if (!t) return null;
+  const m = t.match(/^(\d{1,3}):([0-5]\d)$/);
+  if (!m) return null;
+  const mm = Number(m[1]);
+  const ss = Number(m[2]);
+  if (!Number.isFinite(mm) || !Number.isFinite(ss)) return null;
+  return mm * 60 + ss;
+}
+
 function matchupLabel(a1, a2) {
   const x1 = norm(a1);
   const x2 = norm(a2);
@@ -40,13 +51,17 @@ export default function LiveGamePage() {
   const [confirmFinalizeOpen, setConfirmFinalizeOpen] = useState(false);
   const [clockMode, setClockMode] = useState("");
 
-  // Bench collapse toggles
-  // ✅ Bench-first: start open so counselors can pick who is in
+  // Bench toggles
+  // Bench-first: start open so counselors can pick who is in
   const [showBenchA, setShowBenchA] = useState(true);
   const [showBenchB, setShowBenchB] = useState(true);
 
-  // Optional: compact stat chips even tighter on phones
+  // Compact toggle
   const [superCompact, setSuperCompact] = useState(true);
+
+  // ✅ Phase 1B: editable time modal
+  const [setTimeOpen, setSetTimeOpen] = useState(false);
+  const [timeInput, setTimeInput] = useState("00:00");
 
   // UI clock tick
   const [nowMs, setNowMs] = useState(Date.now());
@@ -130,7 +145,7 @@ export default function LiveGamePage() {
       setRosterA(a);
       setRosterB(b);
 
-      // ✅ Bench-first: if nobody is in game yet, keep bench open
+      // Bench-first: if nobody is in game yet, keep bench open
       if (a.filter((p) => p.is_playing).length === 0) setShowBenchA(true);
       if (b.filter((p) => p.is_playing).length === 0) setShowBenchB(true);
 
@@ -143,7 +158,6 @@ export default function LiveGamePage() {
     const a1 = norm(g.team_a1 || g.team_a || "");
     const b1 = norm(g.team_b1 || g.team_b || "");
 
-    // 2-team support
     const a2 = norm(g.team_a2 || "");
     const b2 = norm(g.team_b2 || "");
     const matchupType = String(g.matchup_type || "single");
@@ -178,7 +192,7 @@ export default function LiveGamePage() {
         player_name: `${p.first_name ?? ""} ${p.last_name ?? ""}`.trim(),
         team_side: side,
         team_name: tn,
-        // ✅ Phase 1A: everyone starts BENCHED
+        // Phase 1A: everyone starts BENCHED
         is_playing: false,
       };
     });
@@ -210,7 +224,6 @@ export default function LiveGamePage() {
     setRosterA(a);
     setRosterB(b);
 
-    // ✅ Bench-first: brand new roster → bench should be open
     setShowBenchA(true);
     setShowBenchB(true);
   }
@@ -319,6 +332,32 @@ export default function LiveGamePage() {
     });
   }
 
+  // ✅ Phase 1B: set remaining time precisely, without changing duration_seconds
+  async function setExactRemaining(seconds) {
+    if (!game) return;
+    const s = Math.max(0, Math.floor(Number(seconds)));
+
+    await updateLiveGame({
+      timer_running: false,
+      timer_anchor_ts: null,
+      timer_remaining_at_anchor: s,
+      timer_remaining_seconds: s,
+    });
+  }
+
+  async function openSetTimeModal() {
+    if (!rules?.clock?.enabled) return;
+
+    // If running, pause first so we freeze the time
+    if (derived.isRunning) {
+      await onPause();
+    }
+
+    // Populate input with current remaining time
+    setTimeInput(fmtClock(derived.remaining));
+    setSetTimeOpen(true);
+  }
+
   async function bumpScore(side, delta) {
     if (!game) return;
     setErr("");
@@ -389,14 +428,9 @@ export default function LiveGamePage() {
     const apply = (arr) =>
       arr.map((p) => (p.player_id === player.player_id ? { ...p, is_playing: next } : p));
 
-    if (player.team_side === "A") {
-      setRosterA((r) => apply(r));
-      // ✅ auto-collapse bench when you add someone in
-      if (next) setShowBenchA(false);
-    } else {
-      setRosterB((r) => apply(r));
-      if (next) setShowBenchB(false);
-    }
+    // ✅ Bench stays open until counselor collapses manually
+    if (player.team_side === "A") setRosterA((r) => apply(r));
+    else setRosterB((r) => apply(r));
   }
 
   async function finalizeGame() {
@@ -608,7 +642,16 @@ export default function LiveGamePage() {
 
               {rules?.clock?.enabled ? (
                 <>
-                  <div className="mt-1 text-center text-5xl font-black tabular-nums">{fmtClock(derived.remaining)}</div>
+                  {/* ✅ Tap-to-edit clock */}
+                  <button
+                    type="button"
+                    onClick={openSetTimeModal}
+                    className="mt-1 w-full rounded-xl border border-white/10 bg-white/5 py-2 text-center text-5xl font-black tabular-nums active:scale-[0.99]"
+                    title="Tap to set exact time (mm:ss)"
+                  >
+                    {fmtClock(derived.remaining)}
+                  </button>
+                  <div className="mt-1 text-center text-xs text-white/60">Tap clock to set exact time</div>
 
                   {rules?.clock?.modes?.length ? (
                     <div className="mt-2 flex items-center justify-center gap-2">
@@ -730,6 +773,48 @@ export default function LiveGamePage() {
 
         <div className="mt-6 pb-10 text-xs opacity-50">Live Game ID: {String(game.id)}</div>
       </div>
+
+      {/* ✅ Set Time Modal */}
+      {setTimeOpen && (
+        <div className="fixed inset-0 z-50 grid place-items-center bg-black/60 p-4">
+          <div className="w-full max-w-sm rounded-2xl border border-white/15 bg-[#08172c] p-5">
+            <div className="text-lg font-black">Set Clock Time</div>
+            <div className="mt-1 text-sm text-white/70">Enter time as <b>mm:ss</b>. Clock will remain paused.</div>
+
+            <input
+              value={timeInput}
+              onChange={(e) => setTimeInput(e.target.value)}
+              inputMode="numeric"
+              placeholder="mm:ss"
+              className="mt-4 w-full rounded-xl border border-white/15 bg-white/5 px-4 py-3 text-center text-3xl font-black tracking-widest text-white outline-none focus:border-white/30"
+            />
+
+            <div className="mt-4 flex gap-2">
+              <button
+                className="flex-1 rounded-xl border border-white/15 bg-white/5 px-4 py-3 font-bold"
+                onClick={() => setSetTimeOpen(false)}
+              >
+                Cancel
+              </button>
+              <button
+                className="flex-1 rounded-xl border border-emerald-400/30 bg-emerald-500/15 px-4 py-3 font-black"
+                onClick={async () => {
+                  const seconds = parseMMSS(timeInput);
+                  if (seconds === null) {
+                    setErr("Time must be in mm:ss format (example: 11:05).");
+                    return;
+                  }
+                  setSetTimeOpen(false);
+                  await setExactRemaining(seconds);
+                  await refreshGame();
+                }}
+              >
+                Set Time
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {confirmFinalizeOpen && (
         <div className="fixed inset-0 z-50 grid place-items-center bg-black/60 p-4">
