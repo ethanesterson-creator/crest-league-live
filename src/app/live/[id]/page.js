@@ -27,6 +27,20 @@ function parseMMSS(input) {
   return mm * 60 + ss;
 }
 
+function formatMMSSFromDigits(raw) {
+  // keep only digits
+  const digits = String(raw ?? "").replace(/\D/g, "").slice(0, 5); // allow up to 999:59 eventually
+  if (!digits) return "00:00";
+
+  // last 2 digits are seconds
+  const secPart = digits.slice(-2).padStart(2, "0");
+  const minPart = digits.slice(0, -2) || "0";
+
+  const mm = String(Number(minPart)).padStart(2, "0");
+  const ss = String(Math.min(59, Number(secPart))).padStart(2, "0");
+  return `${mm}:${ss}`;
+}
+
 function matchupLabel(a1, a2) {
   const x1 = norm(a1);
   const x2 = norm(a2);
@@ -783,7 +797,7 @@ export default function LiveGamePage() {
 
             <input
               value={timeInput}
-              onChange={(e) => setTimeInput(e.target.value)}
+              onChange={(e) => setTimeInput(formatMMSSFromDigits(e.target.value))}
               inputMode="numeric"
               placeholder="mm:ss"
               className="mt-4 w-full rounded-xl border border-white/15 bg-white/5 px-4 py-3 text-center text-3xl font-black tracking-widest text-white outline-none focus:border-white/30"
