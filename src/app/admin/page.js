@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabase";
 
 export default function AdminPage() {
@@ -17,9 +17,12 @@ export default function AdminPage() {
   const [finalGames, setFinalGames] = useState([]);
   const [loadingFinal, setLoadingFinal] = useState(false);
 
-  // NEW: non-game points list
+  // non-game points list
   const [ngRows, setNgRows] = useState([]);
   const [loadingNG, setLoadingNG] = useState(false);
+
+  // NEW: export status
+  const [exporting, setExporting] = useState(false);
 
   const adminPw = process.env.NEXT_PUBLIC_ADMIN_PASSWORD || "";
 
@@ -233,6 +236,146 @@ export default function AdminPage() {
     return `${g.team_a1} vs ${g.team_b1}`;
   }
 
+  // ----------------------------
+  // CSV EXPORT (PLAYER TOTALS)
+  // ----------------------------
+
+  function csvEscape(v) {
+    const s = v === null || v === undefined ? "" : String(v);
+    if (/[",\n\r]/.test(s)) return `"${s.replace(/"/g, '""')}"`;
+    return s;
+  }
+
+  function downloadTextFile(filename, text) {
+    const blob = new Blob([text], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  }
+
+  async function exportPlayerTotalsCsv() {
+    resetMessages();
+    setExporting(true);
+
+    try {
+      // 1) Load all players (so we include zeros)
+      // NOTE: we select "*" because schemas differ. We normalize below.
+      const { data: players, error: pErr } = await supabase.from("players").select("*");
+      if (pErr) throw pErr;
+
+      // 2) Load all player_totals
+      const { data: totals, error: tErr } = await supabase
+        .from("player_totals")
+        .select("league_id, sport, player_id, stat_key, value");
+      if (tErr) throw tErr;
+
+      const playersArr = players || [];
+      const totalsArr = totals || [];
+
+      // Helpers to normalize schema differences
+      const getPlayerId = (r) => r.player_id ?? r.id ?? r.pid ?? "";
+      const getPlayerName = (r) => r.player_name ?? r.name ?? r.full_name ?? "";
+      const getTeamName = (r) => r.team_name ?? r.team ?? r.teamKey ?? "";
+      const getLeagueId = (r) => r.league_id ?? r.league_key ?? r.league ?? "";
+
+      // Build list of columns from totals: Sport_StatKey
+      const colSet = new Set();
+      for (const row of totalsArr) {
+        const sport = String(row.sport || "").trim();
+        const stat = String(row.stat_key || "").trim();
+        if (!sport || !stat) continue;
+        colSet.add(`${sport}__${stat}`);
+      }
+
+      // Sort columns: by sport then stat_key
+      const dynamicCols = Array.from(colSet).sort((a, b) => {
+        const [as, ak] = a.split("__");
+        const [bs, bk] = b.split("__");
+        const sCmp = as.localeCompare(bs);
+        if (sCmp !== 0) return sCmp;
+        return ak.localeCompare(bk);
+      });
+
+      // Map totals by (league_id|player_id) -> { colKey: value }
+      const totalsByPlayer = new Map();
+      for (const row of totalsArr) {
+        const league = String(row.league_id || "").trim();
+        const pid = String(row.player_id || "").trim();
+        const sport = String(row.sport || "").trim();
+        const stat = String(row.stat_key || "").trim();
+        const val = Number(row.value || 0);
+
+        if (!league || !pid || !sport || !stat) continue;
+
+        const key = `${league}||${pid}`;
+        if (!totalsByPlayer.has(key)) totalsByPlayer.set(key, {});
+        totalsByPlayer.get(key)[`${sport}__${stat}`] = val;
+      }
+
+      // Build CSV rows
+      const header = [
+        "league_id",
+        "team_name",
+        "player_id",
+        "player_name",
+        ...dynamicCols.map((c) => {
+          const [sport, stat] = c.split("__");
+          return `${sport}_${stat}`;
+        }),
+      ];
+
+      const lines = [];
+      lines.push(header.map(csvEscape).join(","));
+
+      // Sort players for readability
+      const sortedPlayers = [...playersArr].sort((a, b) => {
+        const la = String(getLeagueId(a)).localeCompare(String(getLeagueId(b)));
+        if (la !== 0) return la;
+        const ta = String(getTeamName(a)).localeCompare(String(getTeamName(b)));
+        if (ta !== 0) return ta;
+        return String(getPlayerName(a)).localeCompare(String(getPlayerName(b)));
+      });
+
+      for (const p of sortedPlayers) {
+        const league_id = getLeagueId(p);
+        const team_name = getTeamName(p);
+        const player_id = getPlayerId(p);
+        const player_name = getPlayerName(p);
+
+        const key = `${String(league_id).trim()}||${String(player_id).trim()}`;
+        const map = totalsByPlayer.get(key) || {};
+
+        const row = [
+          league_id,
+          team_name,
+          player_id,
+          player_name,
+          ...dynamicCols.map((c) => map[c] ?? 0),
+        ];
+
+        lines.push(row.map(csvEscape).join(","));
+      }
+
+      const today = new Date();
+      const y = today.getFullYear();
+      const m = String(today.getMonth() + 1).padStart(2, "0");
+      const d = String(today.getDate()).padStart(2, "0");
+      const filename = `crest-league-player-stats-${y}-${m}-${d}.csv`;
+
+      downloadTextFile(filename, lines.join("\n"));
+      setMsg(`✅ Exported CSV with ${sortedPlayers.length} players and ${dynamicCols.length} stat columns.`);
+    } catch (e) {
+      setErr(e?.message ?? String(e));
+    } finally {
+      setExporting(false);
+    }
+  }
+
   return (
     <div className="pb-10">
       <div className="mt-6">
@@ -280,6 +423,26 @@ export default function AdminPage() {
                 onChange={(e) => setConfirmText(e.target.value)}
                 placeholder='Type "CLEAR", "RESET", "REBUILD", or "DELETE"'
               />
+            </div>
+          </div>
+
+          {/* NEW: Export CSV */}
+          <div className="mt-6 rounded-2xl border border-white/10 bg-white/5 p-5">
+            <div className="text-lg font-black">Export Player Stats (CSV)</div>
+            <div className="mt-1 text-sm text-white/70">
+              Downloads a CSV of every player across all leagues with their total stats (from <b>player_totals</b>).
+            </div>
+
+            <button
+              disabled={busy || exporting}
+              onClick={exportPlayerTotalsCsv}
+              className="mt-4 w-full rounded-2xl border border-white/15 bg-white/5 px-4 py-3 text-sm font-black hover:bg-white/10 disabled:opacity-60"
+            >
+              {exporting ? "Exporting…" : "Download Player Stats CSV"}
+            </button>
+
+            <div className="mt-2 text-xs text-white/50">
+              Tip: If the CSV is missing player names or team names, tell me what columns exist in your <b>players</b> table and I’ll map them perfectly.
             </div>
           </div>
 
