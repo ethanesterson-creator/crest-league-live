@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
 
 export default function AdminPage() {
@@ -21,7 +21,7 @@ export default function AdminPage() {
   const [ngRows, setNgRows] = useState([]);
   const [loadingNG, setLoadingNG] = useState(false);
 
-  // NEW: export status
+  // export
   const [exporting, setExporting] = useState(false);
 
   const adminPw = process.env.NEXT_PUBLIC_ADMIN_PASSWORD || "";
@@ -46,7 +46,9 @@ export default function AdminPage() {
     try {
       const { data, error } = await supabase
         .from("live_games")
-        .select("id, created_at, league_key, sport, level, mode, matchup_type, team_a1, team_a2, team_b1, team_b2, score_a, score_b, status, is_staff_game")
+        .select(
+          "id, created_at, league_key, sport, level, mode, matchup_type, team_a1, team_a2, team_b1, team_b2, score_a, score_b, status, is_staff_game"
+        )
         .eq("status", "final")
         .order("created_at", { ascending: false })
         .limit(200);
@@ -237,7 +239,7 @@ export default function AdminPage() {
   }
 
   // ----------------------------
-  // CSV EXPORT (PLAYER TOTALS)
+  // CSV EXPORT (WIDE FORMAT)
   // ----------------------------
 
   function csvEscape(v) {
@@ -259,129 +261,107 @@ export default function AdminPage() {
   }
 
   async function exportPlayerStatsCSV() {
-  try {
-    setErr("");
-    setMsg("Building CSV...");
+    resetMessages();
+    setExporting(true);
 
-    // 1) Pull ALL players (source of truth for player_name)
-    const { data: players, error: pErr } = await supabase
-      .from("players")
-      .select("id, league_id, team_name, first_name, last_name")
-      .order("league_id", { ascending: true })
-      .order("team_name", { ascending: true })
-      .order("last_name", { ascending: true });
+    try {
+      setMsg("Building CSV...");
 
-    if (pErr) throw pErr;
+      const norm = (s) => String(s ?? "").trim().toLowerCase();
 
-    // 2) Pull rules so we know which stat columns should exist (even if nobody has stats yet)
-    const { data: rules, error: rErr } = await supabase
-      .from("points_rules")
-      .select("league_id, sport, stat_keys");
+      // 1) Players (source of truth for names/teams)
+      const { data: players, error: pErr } = await supabase
+        .from("players")
+        .select("id, league_id, team_name, first_name, last_name")
+        .order("league_id", { ascending: true })
+        .order("team_name", { ascending: true })
+        .order("last_name", { ascending: true });
 
-    if (rErr) throw rErr;
+      if (pErr) throw pErr;
 
-    // 3) Pull totals (actual recorded stats)
-    const { data: totals, error: tErr } = await supabase
-      .from("player_totals")
-      .select("league_id, sport, player_id, stat_key, value");
+      // 2) Rules: stat keys per sport (to build columns even if empty)
+      const { data: rules, error: rErr } = await supabase
+        .from("points_rules")
+        .select("league_id, sport, stat_keys");
 
-    if (tErr) throw tErr;
+      if (rErr) throw rErr;
 
-    const norm = (s) => String(s ?? "").trim().toLowerCase();
+      // 3) Totals: actual values
+      const { data: totals, error: tErr } = await supabase
+        .from("player_totals")
+        .select("league_id, sport, player_id, stat_key, value");
 
-    // Build the full set of columns from points_rules.stat_keys
-    // Column format: "<sport>_<statkey>"  e.g. "hoop_pts", "soccer_g"
-    const statColSet = new Set();
-    for (const rr of rules || []) {
-      const sport = norm(rr.sport);
-      const keys = String(rr.stat_keys ?? "")
-        .split(",")
-        .map((x) => x.trim())
-        .filter(Boolean);
+      if (tErr) throw tErr;
 
-      for (const k of keys) {
-        statColSet.add(`${sport}_${norm(k)}`);
-      }
-    }
+      // columns: "<sport>_<statkey>" like "hoop_pts"
+      const statColSet = new Set();
 
-    // Also include any columns that exist in totals (just in case)
-    for (const tt of totals || []) {
-      statColSet.add(`${norm(tt.sport)}_${norm(tt.stat_key)}`);
-    }
+      for (const rr of rules || []) {
+        const sport = norm(rr.sport);
+        const keys = String(rr.stat_keys ?? "")
+          .split(",")
+          .map((x) => x.trim())
+          .filter(Boolean);
 
-    const statCols = Array.from(statColSet).sort();
-
-    // Quick lookup: totalsMap[league|player|sport|stat] = value
-    const totalsMap = new Map();
-    for (const t of totals || []) {
-      const key = `${norm(t.league_id)}|${String(t.player_id)}|${norm(t.sport)}|${norm(t.stat_key)}`;
-      totalsMap.set(key, Number(t.value || 0));
-    }
-
-    // CSV header
-    const header = ["league_id", "team_name", "player_id", "player_name", ...statCols];
-
-    // Build rows
-    const rows = [];
-    for (const p of players || []) {
-      const league = norm(p.league_id);
-      const playerId = String(p.id);
-
-      const playerName = (
-        `${String(p.first_name ?? "").trim()} ${String(p.last_name ?? "").trim()}`
-      ).trim() || playerId;
-
-      const base = {
-        league_id: league,
-        team_name: String(p.team_name ?? ""),
-        player_id: playerId,
-        player_name: playerName,
-      };
-
-      // fill stat columns with 0
-      for (const col of statCols) base[col] = 0;
-
-      // set actual totals where present
-      for (const col of statCols) {
-        const [sport, stat] = col.split("_");
-        const k = `${league}|${playerId}|${sport}|${stat}`;
-        if (totalsMap.has(k)) base[col] = totalsMap.get(k);
+        for (const k of keys) statColSet.add(`${sport}_${norm(k)}`);
       }
 
-      rows.push(base);
+      // also include any stat combos that exist in totals (safety)
+      for (const tt of totals || []) {
+        statColSet.add(`${norm(tt.sport)}_${norm(tt.stat_key)}`);
+      }
+
+      const statCols = Array.from(statColSet).sort();
+
+      // totalsMap: league|player|sport|stat => value
+      const totalsMap = new Map();
+      for (const t of totals || []) {
+        const key = `${norm(t.league_id)}|${String(t.player_id)}|${norm(t.sport)}|${norm(t.stat_key)}`;
+        totalsMap.set(key, Number(t.value || 0));
+      }
+
+      const header = ["league_id", "team_name", "player_id", "player_name", ...statCols];
+
+      const lines = [];
+      lines.push(header.join(","));
+
+      for (const p of players || []) {
+        const league = norm(p.league_id);
+        const playerId = String(p.id);
+
+        const playerName =
+          `${String(p.first_name ?? "").trim()} ${String(p.last_name ?? "").trim()}`.trim() || playerId;
+
+        const row = {};
+        row.league_id = league;
+        row.team_name = String(p.team_name ?? "");
+        row.player_id = playerId;
+        row.player_name = playerName;
+
+        // default zeros
+        for (const col of statCols) row[col] = 0;
+
+        // fill actual totals
+        for (const col of statCols) {
+          const [sport, stat] = col.split("_");
+          const k = `${league}|${playerId}|${sport}|${stat}`;
+          if (totalsMap.has(k)) row[col] = totalsMap.get(k);
+        }
+
+        lines.push(header.map((h) => csvEscape(row[h])).join(","));
+      }
+
+      const csv = lines.join("\n");
+      downloadTextFile(`crest_player_stats_${new Date().toISOString().slice(0, 10)}.csv`, csv);
+
+      setMsg("✅ CSV downloaded.");
+    } catch (e) {
+      setErr(e?.message ?? String(e));
+      setMsg("");
+    } finally {
+      setExporting(false);
     }
-
-    // CSV encode with escaping
-    const escapeCSV = (v) => {
-      const s = String(v ?? "");
-      if (/[",\n]/.test(s)) return `"${s.replace(/"/g, '""')}"`;
-      return s;
-    };
-
-    const csv = [
-      header.join(","),
-      ...rows.map((row) => header.map((h) => escapeCSV(row[h])).join(",")),
-    ].join("\n");
-
-    // Download in browser
-    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
-    const url = URL.createObjectURL(blob);
-
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `crest_player_stats_${new Date().toISOString().slice(0, 10)}.csv`;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    URL.revokeObjectURL(url);
-
-    setMsg("CSV downloaded ✅");
-  } catch (e) {
-    setErr(e?.message ?? String(e));
-    setMsg("");
   }
-}
-
 
   return (
     <div className="pb-10">
@@ -390,8 +370,14 @@ export default function AdminPage() {
         <div className="text-sm text-white/70">Used For Deleting Games and Fixing Snapshots.</div>
       </div>
 
-      {err ? <div className="mt-4 rounded-xl border border-red-700 bg-red-950/40 p-3 text-sm text-red-200">{err}</div> : null}
-      {msg ? <div className="mt-4 rounded-xl border border-emerald-400/30 bg-emerald-500/10 p-3 text-sm text-emerald-100">{msg}</div> : null}
+      {err ? (
+        <div className="mt-4 rounded-xl border border-red-700 bg-red-950/40 p-3 text-sm text-red-200">{err}</div>
+      ) : null}
+      {msg ? (
+        <div className="mt-4 rounded-xl border border-emerald-400/30 bg-emerald-500/10 p-3 text-sm text-emerald-100">
+          {msg}
+        </div>
+      ) : null}
 
       {!authed ? (
         <div className="mt-6 rounded-2xl border border-white/10 bg-white/5 p-5">
@@ -433,20 +419,20 @@ export default function AdminPage() {
             </div>
           </div>
 
-          {/* NEW: Export CSV */}
+          {/* Export CSV */}
           <div className="mt-6 rounded-2xl border border-white/10 bg-white/5 p-5">
             <div className="text-lg font-black">Export Player Stats (CSV)</div>
             <div className="mt-1 text-sm text-white/70">
               Downloads a CSV of every player across all leagues with their total stats (from <b>player_totals</b>).
             </div>
 
-            <button onClick={exportPlayerStatsCSV}>Export Player Stats CSV</button>
+            <button
+              disabled={exporting}
+              onClick={exportPlayerStatsCSV}
+              className="mt-4 w-full rounded-2xl border border-white/15 bg-white/5 px-4 py-3 text-sm font-black hover:bg-white/10 disabled:opacity-60"
+            >
               {exporting ? "Exporting…" : "Download Player Stats CSV"}
             </button>
-
-            <div className="mt-2 text-xs text-white/50">
-              Tip: If the CSV is missing player names or team names, tell me what columns exist in your <b>players</b> table and I’ll map them perfectly.
-            </div>
           </div>
 
           <div className="mt-6 grid gap-6 md:grid-cols-2">
@@ -495,9 +481,7 @@ export default function AdminPage() {
 
           <div className="mt-6 rounded-2xl border border-white/10 bg-white/5 p-5">
             <div className="text-lg font-black">Rebuild Leaderboards</div>
-            <div className="mt-1 text-sm text-white/70">
-              Recalculates standings + stat leaders from all finalized games.
-            </div>
+            <div className="mt-1 text-sm text-white/70">Recalculates standings + stat leaders from all finalized games.</div>
             <div className="mt-3 text-xs text-white/60">
               Required confirmation word: <b>REBUILD</b>
             </div>
