@@ -144,8 +144,10 @@ export default function LiveGamePage() {
 
     const { data: r1, error: rErr } = await supabase
       .from("game_roster")
-      .select("game_id, player_id, player_name, team_side, team_name, is_playing")
+      .select("game_id, player_id, player_name, team_side, team_name, is_playing, sort_order, is_captain")
       .eq("game_id", g.id)
+      .order("team_side", { ascending: true })
+      .order("sort_order", { ascending: true })
       .limit(5000);
 
     if (rErr) {
@@ -154,6 +156,31 @@ export default function LiveGamePage() {
     }
 
     if (r1 && r1.length) {
+
+// Backfill missing sort_order for older rosters (so batting order works)
+if (r1.some((x) => x.sort_order === null || x.sort_order === undefined)) {
+  await backfillSortOrder(g.id, r1);
+  const { data: r1b, error: r1bErr } = await supabase
+    .from("game_roster")
+    .select("game_id, player_id, player_name, team_side, team_name, is_playing, sort_order, is_captain")
+    .eq("game_id", g.id)
+    .order("team_side", { ascending: true })
+    .order("sort_order", { ascending: true })
+    .limit(5000);
+
+  if (!r1bErr && r1b && r1b.length) {
+    const a0 = r1b.filter((x) => x.team_side === "A");
+    const b0 = r1b.filter((x) => x.team_side === "B");
+    setRosterA(a0);
+    setRosterB(b0);
+
+    if (a0.filter((p) => p.is_playing).length === 0) setShowBenchA(true);
+    if (b0.filter((p) => p.is_playing).length === 0) setShowBenchB(true);
+
+    return;
+  }
+}
+
       const a = r1.filter((x) => x.team_side === "A");
       const b = r1.filter((x) => x.team_side === "B");
       setRosterA(a);
@@ -197,17 +224,25 @@ export default function LiveGamePage() {
       return;
     }
 
+    const orderA = { v: 0 };
+    const orderB = { v: 0 };
+
     const rows = (players || []).map((p) => {
       const tn = norm(p.team_name);
       const side = teamsA.includes(tn) ? "A" : "B";
+      const so = side === "A" ? orderA.v++ : orderB.v++;
       return {
         game_id: g.id,
         player_id: String(p.id),
         player_name: `${p.first_name ?? ""} ${p.last_name ?? ""}`.trim(),
         team_side: side,
         team_name: tn,
-        // Phase 1A: everyone starts BENCHED
+        // everyone starts BENCHED
         is_playing: false,
+        // batting order
+        sort_order: so,
+        // captain flag
+        is_captain: false,
       };
     });
 
@@ -224,8 +259,10 @@ export default function LiveGamePage() {
 
     const { data: r2, error: r2Err } = await supabase
       .from("game_roster")
-      .select("game_id, player_id, player_name, team_side, team_name, is_playing")
+      .select("game_id, player_id, player_name, team_side, team_name, is_playing, sort_order, is_captain")
       .eq("game_id", g.id)
+      .order("team_side", { ascending: true })
+      .order("sort_order", { ascending: true })
       .limit(5000);
 
     if (r2Err) {
@@ -242,7 +279,34 @@ export default function LiveGamePage() {
     setShowBenchB(true);
   }
 
-  function uniqNonEmpty(arr) {
+  
+
+async function backfillSortOrder(gameId, rows) {
+  try {
+    const bySide = { A: [], B: [] };
+    for (const r of rows || []) {
+      const s = r.team_side === "A" ? "A" : "B";
+      bySide[s].push(r);
+    }
+    for (const side of ["A", "B"]) {
+      const list = bySide[side]
+        .slice()
+        .sort((x, y) => String(x.player_name || "").localeCompare(String(y.player_name || "")));
+      for (let i = 0; i < list.length; i++) {
+        const r = list[i];
+        await supabase
+          .from("game_roster")
+          .update({ sort_order: i })
+          .eq("game_id", gameId)
+          .eq("player_id", r.player_id);
+      }
+    }
+  } catch (e) {
+    // not fatal
+  }
+}
+
+function uniqNonEmpty(arr) {
     return Array.from(new Set((arr || []).map((x) => norm(x)).filter(Boolean)));
   }
 
@@ -447,6 +511,81 @@ export default function LiveGamePage() {
     else setRosterB((r) => apply(r));
   }
 
+async function moveInOrder(player, dir) {
+  setErr("");
+  const side = player.team_side;
+  const list = side === "A" ? rosterA : rosterB;
+  const idx = list.findIndex((p) => p.player_id === player.player_id);
+  if (idx < 0) return;
+  const j = dir === "up" ? idx - 1 : idx + 1;
+  if (j < 0 || j >= list.length) return;
+
+  const a = list[idx];
+  const b = list[j];
+
+  // swap sort_order in DB
+  const { error: e1 } = await supabase
+    .from("game_roster")
+    .update({ sort_order: b.sort_order })
+    .eq("game_id", a.game_id)
+    .eq("player_id", a.player_id);
+  if (e1) {
+    setErr(e1.message);
+    return;
+  }
+
+  const { error: e2 } = await supabase
+    .from("game_roster")
+    .update({ sort_order: a.sort_order })
+    .eq("game_id", b.game_id)
+    .eq("player_id", b.player_id);
+  if (e2) {
+    setErr(e2.message);
+    return;
+  }
+
+  // swap locally
+  const next = [...list];
+  next[idx] = { ...a, sort_order: b.sort_order };
+  next[j] = { ...b, sort_order: a.sort_order };
+  next.sort((x, y) => Number(x.sort_order || 0) - Number(y.sort_order || 0));
+  if (side === "A") setRosterA(next);
+  else setRosterB(next);
+}
+
+async function setCaptain(teamSide, playerId) {
+  setErr("");
+  // clear existing captain for that team in this game
+  const { error: e1 } = await supabase
+    .from("game_roster")
+    .update({ is_captain: false })
+    .eq("game_id", game.id)
+    .eq("team_side", teamSide);
+  if (e1) {
+    setErr(e1.message);
+    return;
+  }
+
+  const { error: e2 } = await supabase
+    .from("game_roster")
+    .update({ is_captain: true })
+    .eq("game_id", game.id)
+    .eq("player_id", playerId);
+  if (e2) {
+    setErr(e2.message);
+    return;
+  }
+
+  const apply = (arr) =>
+    arr.map((p) => ({
+      ...p,
+      is_captain: p.player_id === playerId,
+    }));
+
+  if (teamSide === "A") setRosterA((r) => apply(r));
+  else setRosterB((r) => apply(r));
+}
+
   async function finalizeGame() {
     if (!game) return;
     setErr("");
@@ -537,12 +676,41 @@ export default function LiveGamePage() {
     );
   }
 
-  function PlayerRow({ p, sideLabel }) {
+  function PlayerRow({ p, sideLabel, idx, total }) {
     return (
       <div className="rounded-xl border border-white/10 bg-black/20 p-3">
         <div className="flex items-center justify-between gap-2">
+<div className="mr-2 flex shrink-0 items-center gap-1">
+  <div className="w-6 text-center text-xs font-black opacity-70">{idx + 1}</div>
+  <button
+    onClick={() => moveInOrder(p, "up")}
+    disabled={idx === 0}
+    className="rounded-lg border border-white/10 bg-white/10 px-2 py-1 text-xs font-black disabled:opacity-40"
+    title="Move up"
+  >
+    ↑
+  </button>
+  <button
+    onClick={() => moveInOrder(p, "down")}
+    disabled={idx === total - 1}
+    className="rounded-lg border border-white/10 bg-white/10 px-2 py-1 text-xs font-black disabled:opacity-40"
+    title="Move down"
+  >
+    ↓
+  </button>
+  <button
+    onClick={() => setCaptain(p.team_side, p.player_id)}
+    className={`ml-1 rounded-lg border px-2 py-1 text-xs font-black ${
+      p.is_captain ? "border-amber-400 bg-amber-500/20 text-amber-200" : "border-white/10 bg-white/10 opacity-80"
+    }`}
+    title="Set captain"
+  >
+    {p.is_captain ? "★" : "☆"}
+  </button>
+</div>
+
           <div className="min-w-0">
-            <div className="truncate text-base font-extrabold">{p.player_name || p.player_id}</div>
+            <div className="truncate text-base font-extrabold">{p.player_name || p.player_id} {p.is_captain ? <span className="ml-2 rounded-md border border-amber-400/50 bg-amber-500/10 px-2 py-0.5 text-[10px] font-black text-amber-200">CAP</span> : null}</div>
             {p.team_name ? <div className="mt-0.5 text-xs text-white/50">Team: {p.team_name}</div> : null}
           </div>
 
@@ -564,11 +732,11 @@ export default function LiveGamePage() {
     );
   }
 
-  function BenchRow({ p, sideLabel }) {
+  function BenchRow({ p, sideLabel, idx, total }) {
     return (
       <div className="flex items-center justify-between rounded-xl border border-white/10 bg-black/10 p-3">
         <div className="min-w-0">
-          <div className="truncate font-semibold opacity-90">{p.player_name || p.player_id}</div>
+          <div className="truncate font-semibold opacity-90">{p.player_name || p.player_id} {p.is_captain ? <span className="ml-2 rounded-md border border-amber-400/50 bg-amber-500/10 px-2 py-0.5 text-[10px] font-black text-amber-200">CAP</span> : null}</div>
           {p.team_name ? <div className="mt-0.5 text-xs text-white/50">{p.team_name}</div> : null}
         </div>
         <button
@@ -741,7 +909,10 @@ export default function LiveGamePage() {
 
             <div className="mt-3 space-y-3">
               {playingA.length ? (
-                playingA.map((p) => <PlayerRow key={p.player_id} p={p} sideLabel="A" />)
+                playingA.map((p) => {
+                  const idx = rosterA.findIndex((x) => x.player_id === p.player_id);
+                  return <PlayerRow key={p.player_id} p={p} sideLabel="A" idx={Math.max(0, idx)} total={rosterA.length} />;
+                })
               ) : (
                 <div className="rounded-xl border border-white/10 bg-white/5 p-3 text-sm opacity-70">
                   No one is in the game yet. Open the bench and tap <b>Add</b>.
@@ -751,7 +922,10 @@ export default function LiveGamePage() {
 
             {showBenchA ? (
               <div className="mt-4 space-y-2">
-                {benchA.length ? benchA.map((p) => <BenchRow key={p.player_id} p={p} sideLabel="A" />) : <div className="text-xs opacity-50">No bench.</div>}
+                {benchA.length ? benchA.map((p) => {
+                  const idx = rosterA.findIndex((x) => x.player_id === p.player_id);
+                  return <BenchRow key={p.player_id} p={p} sideLabel="A" idx={Math.max(0, idx)} total={rosterA.length} />;
+                }) : <div className="text-xs opacity-50">No bench.</div>}
               </div>
             ) : null}
           </div>
@@ -769,7 +943,10 @@ export default function LiveGamePage() {
 
             <div className="mt-3 space-y-3">
               {playingB.length ? (
-                playingB.map((p) => <PlayerRow key={p.player_id} p={p} sideLabel="B" />)
+                playingB.map((p) => {
+                  const idx = rosterB.findIndex((x) => x.player_id === p.player_id);
+                  return <PlayerRow key={p.player_id} p={p} sideLabel="B" idx={Math.max(0, idx)} total={rosterB.length} />;
+                })
               ) : (
                 <div className="rounded-xl border border-white/10 bg-white/5 p-3 text-sm opacity-70">
                   No one is in the game yet. Open the bench and tap <b>Add</b>.
@@ -779,7 +956,10 @@ export default function LiveGamePage() {
 
             {showBenchB ? (
               <div className="mt-4 space-y-2">
-                {benchB.length ? benchB.map((p) => <BenchRow key={p.player_id} p={p} sideLabel="B" />) : <div className="text-xs opacity-50">No bench.</div>}
+                {benchB.length ? benchB.map((p) => {
+                  const idx = rosterB.findIndex((x) => x.player_id === p.player_id);
+                  return <BenchRow key={p.player_id} p={p} sideLabel="B" idx={Math.max(0, idx)} total={rosterB.length} />;
+                }) : <div className="text-xs opacity-50">No bench.</div>}
               </div>
             ) : null}
           </div>

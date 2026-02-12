@@ -25,7 +25,7 @@ function sortStandings(arr) {
     const bw = Number(b.wins || 0);
     if (bw !== aw) return bw - aw;
 
-    return bd - ad;
+    return String(a.team_name || "").localeCompare(String(b.team_name || ""));
   });
   return rows;
 }
@@ -327,7 +327,7 @@ export default function StandingsPage() {
                       ))
                     ) : (
                       <tr>
-                        <td className="py-4 text-white/60" colSpan={6}>
+                        <td className="py-4 text-white/60" colSpan={4}>
                           No standings yet for this league. Finalize a game to populate it.
                         </td>
                       </tr>
@@ -427,7 +427,7 @@ export default function StandingsPage() {
                       ))
                     ) : (
                       <tr>
-                        <td className="py-4 text-white/60" colSpan={6}>
+                        <td className="py-4 text-white/60" colSpan={4}>
                           No staff standings yet. Finalize a staff game to populate it.
                         </td>
                       </tr>
