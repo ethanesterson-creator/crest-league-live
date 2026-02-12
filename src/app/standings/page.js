@@ -25,8 +25,6 @@ function sortStandings(arr) {
     const bw = Number(b.wins || 0);
     if (bw !== aw) return bw - aw;
 
-    const ad = Number(a.points_for || 0) - Number(a.points_against || 0);
-    const bd = Number(b.points_for || 0) - Number(b.points_against || 0);
     return bd - ad;
   });
   return rows;
@@ -76,7 +74,7 @@ export default function StandingsPage() {
   async function loadStandingsForLeague(lid) {
     const { data, error } = await supabase
       .from("standings")
-      .select("league_id, sport, team_name, wins, losses, points_for, points_against, league_points, updated_at")
+      .select("league_id, sport, team_name, wins, losses, league_points, updated_at")
       .eq("sport", LEAGUE_SPORT_KEY)
       .eq("league_id", lid);
 
@@ -106,7 +104,7 @@ export default function StandingsPage() {
   async function loadStaffStandings() {
     const { data, error } = await supabase
       .from("standings")
-      .select("league_id, sport, team_name, wins, losses, points_for, points_against, league_points, updated_at")
+      .select("league_id, sport, team_name, wins, losses, league_points, updated_at")
       .eq("sport", STAFF_SPORT_KEY);
 
     if (error) throw error;
@@ -314,8 +312,6 @@ export default function StandingsPage() {
                       <th className="py-2">Team</th>
                       <th className="py-2">W</th>
                       <th className="py-2">L</th>
-                      <th className="py-2">PF</th>
-                      <th className="py-2">PA</th>
                       <th className="py-2">Pts</th>
                     </tr>
                   </thead>
@@ -326,8 +322,6 @@ export default function StandingsPage() {
                           <td className="py-3 font-extrabold">{r.team_name}</td>
                           <td className="py-3">{r.wins}</td>
                           <td className="py-3">{r.losses}</td>
-                          <td className="py-3">{r.points_for}</td>
-                          <td className="py-3">{r.points_against}</td>
                           <td className="py-3 font-black">{r.league_points}</td>
                         </tr>
                       ))
@@ -418,8 +412,6 @@ export default function StandingsPage() {
                       <th className="py-2">Team</th>
                       <th className="py-2">W</th>
                       <th className="py-2">L</th>
-                      <th className="py-2">PF</th>
-                      <th className="py-2">PA</th>
                       <th className="py-2">Pts</th>
                     </tr>
                   </thead>
@@ -430,8 +422,6 @@ export default function StandingsPage() {
                           <td className="py-3 font-extrabold">{r.team_name}</td>
                           <td className="py-3">{r.wins}</td>
                           <td className="py-3">{r.losses}</td>
-                          <td className="py-3">{r.points_for}</td>
-                          <td className="py-3">{r.points_against}</td>
                           <td className="py-3 font-black">{r.league_points}</td>
                         </tr>
                       ))
