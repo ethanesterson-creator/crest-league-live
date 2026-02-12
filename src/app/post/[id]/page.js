@@ -24,6 +24,7 @@ function getStatKeysForSport(sport) {
   if (s === "euro") return ["G", "A", "S"];
   if (s === "hockey") return ["G", "A", "S"];
   if (s === "softball") return ["H", "HR", "SO", "RBI"];
+  if (s === "kickball") return ["R", "HR", "RBI", "K"]; // optional; keep or adjust later
   if (s === "volleyball") return ["Aces", "Kills"];
   if (s === "football") return ["TD", "INT"];
   return [];
@@ -31,6 +32,31 @@ function getStatKeysForSport(sport) {
 
 function uniqNonEmpty(arr) {
   return Array.from(new Set((arr || []).map((x) => norm(x)).filter(Boolean)));
+}
+
+const isBattingSport = (s) => {
+  const v = String(s || "").toLowerCase().trim();
+  return v === "softball" || v === "kickball";
+};
+
+// Captains are season-long: stored on players.role (not per-game)
+async function fetchCaptainIds({ leagueId, teamNames }) {
+  if (!leagueId || !teamNames?.length) return new Set();
+
+  const { data, error } = await supabase
+    .from("players")
+    .select("id, role, team_name")
+    .eq("league_id", leagueId)
+    .in("team_name", teamNames);
+
+  if (error) throw error;
+
+  const capIds = new Set();
+  for (const p of data || []) {
+    const role = String(p.role || "").toLowerCase();
+    if (role.includes("captain")) capIds.add(String(p.id));
+  }
+  return capIds;
 }
 
 export default function PostDraftEditorPage() {
@@ -48,6 +74,7 @@ export default function PostDraftEditorPage() {
   const [statTotals, setStatTotals] = useState({});
 
   const statKeys = useMemo(() => getStatKeysForSport(game?.sport), [game?.sport]);
+  const showBatting = useMemo(() => isBattingSport(game?.sport), [game?.sport]);
 
   const [scoreAInput, setScoreAInput] = useState("0");
   const [scoreBInput, setScoreBInput] = useState("0");
@@ -55,78 +82,57 @@ export default function PostDraftEditorPage() {
   const [saving, setSaving] = useState(false);
   const [finalizing, setFinalizing] = useState(false);
 
+  // Captains (season-long)
+  const [captainIds, setCaptainIds] = useState(new Set());
+
   function getTotal(playerId, statKey) {
     const pid = String(playerId ?? "");
     const key = String(statKey ?? "").toUpperCase();
     return Number(statTotals?.[pid]?.[key] ?? 0);
   }
-async function moveInOrder(player, dir) {
-  setErr("");
-  const side = player.team_side;
-  const list = side === "A" ? rosterA : rosterB;
-  const idx = list.findIndex((p) => p.player_id === player.player_id);
-  if (idx < 0) return;
-  const j = dir === "up" ? idx - 1 : idx + 1;
-  if (j < 0 || j >= list.length) return;
 
-  const a = list[idx];
-  const b = list[j];
+  async function moveInOrder(player, dir) {
+    // Batting order only for softball/kickball
+    if (!showBatting) return;
 
-  const { error: e1 } = await supabase
-    .from("game_roster")
-    .update({ sort_order: b.sort_order })
-    .eq("game_id", id)
-    .eq("player_id", a.player_id);
-  if (e1) {
-    setErr(e1.message);
-    return;
+    setErr("");
+    const side = player.team_side;
+    const list = side === "A" ? rosterA : rosterB;
+    const idx = list.findIndex((p) => p.player_id === player.player_id);
+    if (idx < 0) return;
+    const j = dir === "up" ? idx - 1 : idx + 1;
+    if (j < 0 || j >= list.length) return;
+
+    const a = list[idx];
+    const b = list[j];
+
+    const { error: e1 } = await supabase
+      .from("game_roster")
+      .update({ sort_order: b.sort_order })
+      .eq("game_id", id)
+      .eq("player_id", a.player_id);
+    if (e1) {
+      setErr(e1.message);
+      return;
+    }
+
+    const { error: e2 } = await supabase
+      .from("game_roster")
+      .update({ sort_order: a.sort_order })
+      .eq("game_id", id)
+      .eq("player_id", b.player_id);
+    if (e2) {
+      setErr(e2.message);
+      return;
+    }
+
+    const next = [...list];
+    next[idx] = { ...a, sort_order: b.sort_order };
+    next[j] = { ...b, sort_order: a.sort_order };
+    next.sort((x, y) => Number(x.sort_order || 0) - Number(y.sort_order || 0));
+    if (side === "A") setRosterA(next);
+    else setRosterB(next);
   }
-
-  const { error: e2 } = await supabase
-    .from("game_roster")
-    .update({ sort_order: a.sort_order })
-    .eq("game_id", id)
-    .eq("player_id", b.player_id);
-  if (e2) {
-    setErr(e2.message);
-    return;
-  }
-
-  const next = [...list];
-  next[idx] = { ...a, sort_order: b.sort_order };
-  next[j] = { ...b, sort_order: a.sort_order };
-  next.sort((x, y) => Number(x.sort_order || 0) - Number(y.sort_order || 0));
-  if (side === "A") setRosterA(next);
-  else setRosterB(next);
-}
-
-async function setCaptain(teamSide, playerId) {
-  setErr("");
-  const { error: e1 } = await supabase
-    .from("game_roster")
-    .update({ is_captain: false })
-    .eq("game_id", id)
-    .eq("team_side", teamSide);
-  if (e1) {
-    setErr(e1.message);
-    return;
-  }
-
-  const { error: e2 } = await supabase
-    .from("game_roster")
-    .update({ is_captain: true })
-    .eq("game_id", id)
-    .eq("player_id", playerId);
-  if (e2) {
-    setErr(e2.message);
-    return;
-  }
-
-  const apply = (arr) => arr.map((p) => ({ ...p, is_captain: p.player_id === playerId }));
-  if (teamSide === "A") setRosterA((r) => apply(r));
-  else setRosterB((r) => apply(r));
-}
-
 
   async function load() {
     setErr("");
@@ -143,51 +149,66 @@ async function setCaptain(teamSide, playerId) {
 
     let { data: r, error: rErr } = await supabase
       .from("game_roster")
-      .select("game_id, player_id, player_name, team_side, team_name, sort_order, is_captain")
+      .select("game_id, player_id, player_name, team_side, team_name, sort_order")
       .eq("game_id", id)
       .order("team_side", { ascending: true })
       .order("sort_order", { ascending: true });
+
     if (rErr) {
       setRosterA([]);
       setRosterB([]);
       return;
     }
 
+    // Backfill missing sort_order for older rosters (only matters for batting sports,
+    // but harmless to store for all)
+    if ((r || []).some((x) => x.sort_order === null || x.sort_order === undefined)) {
+      const bySide = { A: [], B: [] };
+      for (const rr of r || []) {
+        const s = rr.team_side === "A" ? "A" : "B";
+        bySide[s].push(rr);
+      }
+      for (const side of ["A", "B"]) {
+        const list = bySide[side]
+          .slice()
+          .sort((x, y) => String(x.player_name || "").localeCompare(String(y.player_name || "")));
+        for (let i = 0; i < list.length; i++) {
+          const rr = list[i];
+          await supabase
+            .from("game_roster")
+            .update({ sort_order: i })
+            .eq("game_id", id)
+            .eq("player_id", rr.player_id);
+        }
+      }
+      // reload ordered roster
+      const { data: r2 } = await supabase
+        .from("game_roster")
+        .select("game_id, player_id, player_name, team_side, team_name, sort_order")
+        .eq("game_id", id)
+        .order("team_side", { ascending: true })
+        .order("sort_order", { ascending: true });
+      r = r2 || r;
+    }
+
     const a = [];
     const b = [];
-    
-
-// Backfill missing sort_order for older rosters
-if ((r || []).some((x) => x.sort_order === null || x.sort_order === undefined)) {
-  const bySide = { A: [], B: [] };
-  for (const rr of r || []) {
-    const s = rr.team_side === "A" ? "A" : "B";
-    bySide[s].push(rr);
-  }
-  for (const side of ["A", "B"]) {
-    const list = bySide[side]
-      .slice()
-      .sort((x, y) => String(x.player_name || "").localeCompare(String(y.player_name || "")));
-    for (let i = 0; i < list.length; i++) {
-      const rr = list[i];
-      await supabase.from("game_roster").update({ sort_order: i }).eq("game_id", id).eq("player_id", rr.player_id);
-    }
-  }
-  // reload ordered roster
-  const { data: r2 } = await supabase
-    .from("game_roster")
-    .select("game_id, player_id, player_name, team_side, team_name, sort_order, is_captain")
-    .eq("game_id", id)
-    .order("team_side", { ascending: true })
-    .order("sort_order", { ascending: true });
-  r = r2 || r;
-}
-for (const row of r || []) {
+    for (const row of r || []) {
       if (row.team_side === "A") a.push(row);
       else if (row.team_side === "B") b.push(row);
     }
     setRosterA(a);
     setRosterB(b);
+
+    // Load captains for these teams in this league (season-long)
+    try {
+      const leagueId = norm(g.league_key);
+      const teamNames = uniqNonEmpty([g.team_a1 || g.team_a, g.team_b1 || g.team_b]);
+      const caps = await fetchCaptainIds({ leagueId, teamNames });
+      setCaptainIds(caps);
+    } catch {
+      setCaptainIds(new Set());
+    }
 
     const { data: ev, error: evErr } = await supabase
       .from("live_events")
@@ -315,10 +336,15 @@ for (const row of r || []) {
       return;
     }
 
+    // IMPORTANT: include sort_order so batting order works for softball/kickball
+    const orderA = { v: 0 };
+    const orderB = { v: 0 };
+
     const rows = (players || []).map((p) => {
       const fullName = `${p.first_name ?? ""} ${p.last_name ?? ""}`.trim();
       const tn = norm(p.team_name);
       const side = teamsA.includes(tn) ? "A" : "B";
+      const so = side === "A" ? orderA.v++ : orderB.v++;
 
       return {
         game_id: id,
@@ -327,6 +353,7 @@ for (const row of r || []) {
         team_side: side,
         team_name: tn,
         is_playing: true,
+        sort_order: so,
       };
     });
 
@@ -384,6 +411,32 @@ for (const row of r || []) {
 
   const isStaff = !!game.is_staff_game;
 
+  const isCap = (playerId) => (captainIds instanceof Set ? captainIds.has(String(playerId)) : false);
+
+  const RowHeaderRightControls = ({ list, p, side }) => {
+    if (!showBatting) return null;
+    const idx = list.findIndex((x) => x.player_id === p.player_id);
+    return (
+      <div className="shrink-0 flex items-center gap-1">
+        <div className="w-6 text-center text-xs font-black opacity-70">{idx + 1}</div>
+        <button
+          onClick={() => moveInOrder(p, "up")}
+          disabled={idx === 0}
+          className="rounded-lg border border-white/10 bg-white/10 px-2 py-1 text-xs font-black disabled:opacity-40"
+        >
+          ↑
+        </button>
+        <button
+          onClick={() => moveInOrder(p, "down")}
+          disabled={idx === list.length - 1}
+          className="rounded-lg border border-white/10 bg-white/10 px-2 py-1 text-xs font-black disabled:opacity-40"
+        >
+          ↓
+        </button>
+      </div>
+    );
+  };
+
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100">
       <div className="mx-auto max-w-6xl px-4 py-6">
@@ -405,17 +458,27 @@ for (const row of r || []) {
           </div>
 
           <div className="flex gap-2">
-            <Link href="/post" className="rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-sm font-semibold hover:bg-white/10">
+            <Link
+              href="/post"
+              className="rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-sm font-semibold hover:bg-white/10"
+            >
               Back
             </Link>
-            <Link href="/" className="rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-sm font-semibold hover:bg-white/10">
+            <Link
+              href="/"
+              className="rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-sm font-semibold hover:bg-white/10"
+            >
               Home
             </Link>
           </div>
         </div>
 
-        {err ? <div className="mt-4 rounded-xl border border-red-700 bg-red-950/40 p-3 text-sm text-red-200">{err}</div> : null}
-        {msg ? <div className="mt-4 rounded-xl border border-emerald-400/30 bg-emerald-500/10 p-3 text-sm text-emerald-100">{msg}</div> : null}
+        {err ? (
+          <div className="mt-4 rounded-xl border border-red-700 bg-red-950/40 p-3 text-sm text-red-200">{err}</div>
+        ) : null}
+        {msg ? (
+          <div className="mt-4 rounded-xl border border-emerald-400/30 bg-emerald-500/10 p-3 text-sm text-emerald-100">{msg}</div>
+        ) : null}
 
         {/* Score Entry */}
         <div className="mt-6 rounded-2xl border border-white/10 bg-white/5 p-5">
@@ -495,20 +558,21 @@ for (const row of r || []) {
                     {rosterA.map((p) => (
                       <div key={`A-${p.player_id}`} className="rounded-2xl border border-white/10 bg-black/20 p-4">
                         <div className="flex items-center justify-between gap-2">
-                          <div className="min-w-0 truncate font-black">{p.player_name} {p.is_captain ? <span className="ml-2 rounded-md border border-amber-400/50 bg-amber-500/10 px-2 py-0.5 text-[10px] font-black text-amber-200">CAP</span> : null}</div>
-                          <div className="shrink-0 flex items-center gap-1">
-                            <div className="w-6 text-center text-xs font-black opacity-70">{(rosterA.findIndex((x)=>x.player_id===p.player_id))+1}</div>
-                            <button onClick={() => moveInOrder(p,"up")} disabled={(rosterA.findIndex((x)=>x.player_id===p.player_id))===0} className="rounded-lg border border-white/10 bg-white/10 px-2 py-1 text-xs font-black disabled:opacity-40">↑</button>
-                            <button onClick={() => moveInOrder(p,"down")} disabled={(rosterA.findIndex((x)=>x.player_id===p.player_id))===rosterA.length-1} className="rounded-lg border border-white/10 bg-white/10 px-2 py-1 text-xs font-black disabled:opacity-40">↓</button>
-                            <button onClick={() => setCaptain("A", p.player_id)} className={`ml-1 rounded-lg border px-2 py-1 text-xs font-black ${p.is_captain ? "border-amber-400 bg-amber-500/20 text-amber-200" : "border-white/10 bg-white/10 opacity-80"}`}>{p.is_captain ? "★" : "☆"}</button>
+                          <div className="min-w-0 truncate font-black">
+                            {isCap(p.player_id) ? "⭐ " : ""}
+                            {p.player_name}
                           </div>
+
+                          <RowHeaderRightControls list={rosterA} p={p} side="A" />
                         </div>
+
                         {p.team_name ? <div className="mt-1 text-xs text-white/50">{p.team_name}</div> : null}
 
                         <div className="mt-2 flex flex-wrap gap-2 text-xs text-white/80">
                           {statKeys.map((k) => (
                             <div key={`A-${p.player_id}-${k}`} className="rounded-lg border border-white/10 bg-white/5 px-2 py-1">
-                              <span className="font-extrabold">{k}</span> <span className="tabular-nums">{getTotal(p.player_id, k)}</span>
+                              <span className="font-extrabold">{k}</span>{" "}
+                              <span className="tabular-nums">{getTotal(p.player_id, k)}</span>
                             </div>
                           ))}
                         </div>
@@ -541,20 +605,21 @@ for (const row of r || []) {
                     {rosterB.map((p) => (
                       <div key={`B-${p.player_id}`} className="rounded-2xl border border-white/10 bg-black/20 p-4">
                         <div className="flex items-center justify-between gap-2">
-                          <div className="min-w-0 truncate font-black">{p.player_name} {p.is_captain ? <span className="ml-2 rounded-md border border-amber-400/50 bg-amber-500/10 px-2 py-0.5 text-[10px] font-black text-amber-200">CAP</span> : null}</div>
-                          <div className="shrink-0 flex items-center gap-1">
-                            <div className="w-6 text-center text-xs font-black opacity-70">{(rosterA.findIndex((x)=>x.player_id===p.player_id))+1}</div>
-                            <button onClick={() => moveInOrder(p,"up")} disabled={(rosterA.findIndex((x)=>x.player_id===p.player_id))===0} className="rounded-lg border border-white/10 bg-white/10 px-2 py-1 text-xs font-black disabled:opacity-40">↑</button>
-                            <button onClick={() => moveInOrder(p,"down")} disabled={(rosterA.findIndex((x)=>x.player_id===p.player_id))===rosterA.length-1} className="rounded-lg border border-white/10 bg-white/10 px-2 py-1 text-xs font-black disabled:opacity-40">↓</button>
-                            <button onClick={() => setCaptain("A", p.player_id)} className={`ml-1 rounded-lg border px-2 py-1 text-xs font-black ${p.is_captain ? "border-amber-400 bg-amber-500/20 text-amber-200" : "border-white/10 bg-white/10 opacity-80"}`}>{p.is_captain ? "★" : "☆"}</button>
+                          <div className="min-w-0 truncate font-black">
+                            {isCap(p.player_id) ? "⭐ " : ""}
+                            {p.player_name}
                           </div>
+
+                          <RowHeaderRightControls list={rosterB} p={p} side="B" />
                         </div>
+
                         {p.team_name ? <div className="mt-1 text-xs text-white/50">{p.team_name}</div> : null}
 
                         <div className="mt-2 flex flex-wrap gap-2 text-xs text-white/80">
                           {statKeys.map((k) => (
                             <div key={`B-${p.player_id}-${k}`} className="rounded-lg border border-white/10 bg-white/5 px-2 py-1">
-                              <span className="font-extrabold">{k}</span> <span className="tabular-nums">{getTotal(p.player_id, k)}</span>
+                              <span className="font-extrabold">{k}</span>{" "}
+                              <span className="tabular-nums">{getTotal(p.player_id, k)}</span>
                             </div>
                           ))}
                         </div>

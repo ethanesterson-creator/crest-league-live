@@ -48,6 +48,31 @@ function matchupLabel(a1, a2) {
   return x1 || "—";
 }
 
+const isBattingSport = (s) => {
+  const v = String(s || "").toLowerCase().trim();
+  return v === "softball" || v === "kickball";
+};
+
+// Captains are season-long: stored on players.role (not per-game)
+async function fetchCaptainIds({ leagueId, teamNames }) {
+  if (!leagueId || !teamNames?.length) return new Set();
+
+  const { data, error } = await supabase
+    .from("players")
+    .select("id, role, team_name")
+    .eq("league_id", leagueId)
+    .in("team_name", teamNames);
+
+  if (error) throw error;
+
+  const capIds = new Set();
+  for (const p of data || []) {
+    const role = String(p.role || "").toLowerCase();
+    if (role.includes("captain")) capIds.add(String(p.id));
+  }
+  return capIds;
+}
+
 export default function LiveGamePage() {
   const params = useParams();
   const router = useRouter();
@@ -76,6 +101,9 @@ export default function LiveGamePage() {
   // ✅ Phase 1B: editable time modal
   const [setTimeOpen, setSetTimeOpen] = useState(false);
   const [timeInput, setTimeInput] = useState("00:00");
+
+  // Captains (season-long)
+  const [captainIds, setCaptainIds] = useState(new Set());
 
   // UI clock tick
   const [nowMs, setNowMs] = useState(Date.now());
@@ -139,12 +167,41 @@ export default function LiveGamePage() {
     await loadGame({ quiet: true });
   }
 
+  async function backfillSortOrder(gameId2, rows) {
+    try {
+      const bySide = { A: [], B: [] };
+      for (const r of rows || []) {
+        const s = r.team_side === "A" ? "A" : "B";
+        bySide[s].push(r);
+      }
+      for (const side of ["A", "B"]) {
+        const list = bySide[side]
+          .slice()
+          .sort((x, y) => String(x.player_name || "").localeCompare(String(y.player_name || "")));
+        for (let i = 0; i < list.length; i++) {
+          const r = list[i];
+          await supabase
+            .from("game_roster")
+            .update({ sort_order: i })
+            .eq("game_id", gameId2)
+            .eq("player_id", r.player_id);
+        }
+      }
+    } catch {
+      // not fatal
+    }
+  }
+
+  function uniqNonEmpty(arr) {
+    return Array.from(new Set((arr || []).map((x) => norm(x)).filter(Boolean)));
+  }
+
   async function ensureRoster(g) {
     setErr("");
 
     const { data: r1, error: rErr } = await supabase
       .from("game_roster")
-      .select("game_id, player_id, player_name, team_side, team_name, is_playing, sort_order, is_captain")
+      .select("game_id, player_id, player_name, team_side, team_name, is_playing, sort_order")
       .eq("game_id", g.id)
       .order("team_side", { ascending: true })
       .order("sort_order", { ascending: true })
@@ -156,30 +213,28 @@ export default function LiveGamePage() {
     }
 
     if (r1 && r1.length) {
+      // Backfill missing sort_order for older rosters (only matters for batting sports)
+      if (r1.some((x) => x.sort_order === null || x.sort_order === undefined)) {
+        await backfillSortOrder(g.id, r1);
+        const { data: r1b, error: r1bErr } = await supabase
+          .from("game_roster")
+          .select("game_id, player_id, player_name, team_side, team_name, is_playing, sort_order")
+          .eq("game_id", g.id)
+          .order("team_side", { ascending: true })
+          .order("sort_order", { ascending: true })
+          .limit(5000);
 
-// Backfill missing sort_order for older rosters (so batting order works)
-if (r1.some((x) => x.sort_order === null || x.sort_order === undefined)) {
-  await backfillSortOrder(g.id, r1);
-  const { data: r1b, error: r1bErr } = await supabase
-    .from("game_roster")
-    .select("game_id, player_id, player_name, team_side, team_name, is_playing, sort_order, is_captain")
-    .eq("game_id", g.id)
-    .order("team_side", { ascending: true })
-    .order("sort_order", { ascending: true })
-    .limit(5000);
+        if (!r1bErr && r1b && r1b.length) {
+          const a0 = r1b.filter((x) => x.team_side === "A");
+          const b0 = r1b.filter((x) => x.team_side === "B");
+          setRosterA(a0);
+          setRosterB(b0);
 
-  if (!r1bErr && r1b && r1b.length) {
-    const a0 = r1b.filter((x) => x.team_side === "A");
-    const b0 = r1b.filter((x) => x.team_side === "B");
-    setRosterA(a0);
-    setRosterB(b0);
-
-    if (a0.filter((p) => p.is_playing).length === 0) setShowBenchA(true);
-    if (b0.filter((p) => p.is_playing).length === 0) setShowBenchB(true);
-
-    return;
-  }
-}
+          if (a0.filter((p) => p.is_playing).length === 0) setShowBenchA(true);
+          if (b0.filter((p) => p.is_playing).length === 0) setShowBenchB(true);
+          return;
+        }
+      }
 
       const a = r1.filter((x) => x.team_side === "A");
       const b = r1.filter((x) => x.team_side === "B");
@@ -189,7 +244,6 @@ if (r1.some((x) => x.sort_order === null || x.sort_order === undefined)) {
       // Bench-first: if nobody is in game yet, keep bench open
       if (a.filter((p) => p.is_playing).length === 0) setShowBenchA(true);
       if (b.filter((p) => p.is_playing).length === 0) setShowBenchB(true);
-
       return;
     }
 
@@ -239,10 +293,8 @@ if (r1.some((x) => x.sort_order === null || x.sort_order === undefined)) {
         team_name: tn,
         // everyone starts BENCHED
         is_playing: false,
-        // batting order
+        // batting order (exists for all games; UI shows only softball/kickball)
         sort_order: so,
-        // captain flag
-        is_captain: false,
       };
     });
 
@@ -259,7 +311,7 @@ if (r1.some((x) => x.sort_order === null || x.sort_order === undefined)) {
 
     const { data: r2, error: r2Err } = await supabase
       .from("game_roster")
-      .select("game_id, player_id, player_name, team_side, team_name, is_playing, sort_order, is_captain")
+      .select("game_id, player_id, player_name, team_side, team_name, is_playing, sort_order")
       .eq("game_id", g.id)
       .order("team_side", { ascending: true })
       .order("sort_order", { ascending: true })
@@ -277,37 +329,6 @@ if (r1.some((x) => x.sort_order === null || x.sort_order === undefined)) {
 
     setShowBenchA(true);
     setShowBenchB(true);
-  }
-
-  
-
-async function backfillSortOrder(gameId, rows) {
-  try {
-    const bySide = { A: [], B: [] };
-    for (const r of rows || []) {
-      const s = r.team_side === "A" ? "A" : "B";
-      bySide[s].push(r);
-    }
-    for (const side of ["A", "B"]) {
-      const list = bySide[side]
-        .slice()
-        .sort((x, y) => String(x.player_name || "").localeCompare(String(y.player_name || "")));
-      for (let i = 0; i < list.length; i++) {
-        const r = list[i];
-        await supabase
-          .from("game_roster")
-          .update({ sort_order: i })
-          .eq("game_id", gameId)
-          .eq("player_id", r.player_id);
-      }
-    }
-  } catch (e) {
-    // not fatal
-  }
-}
-
-function uniqNonEmpty(arr) {
-    return Array.from(new Set((arr || []).map((x) => norm(x)).filter(Boolean)));
   }
 
   async function loadEventTotals(g) {
@@ -351,6 +372,15 @@ function uniqNonEmpty(arr) {
     (async () => {
       await ensureRoster(game);
       await loadEventTotals(game);
+
+      // Load captains (season-long) for the teams in this game
+      try {
+        const teamNames = uniqNonEmpty([game.team_a1 || game.team_a, game.team_b1 || game.team_b]);
+        const caps = await fetchCaptainIds({ leagueId: norm(game.league_key), teamNames });
+        setCaptainIds(caps);
+      } catch (e) {
+        // Not fatal; just don't show stars if this fails
+      }
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [game?.id]);
@@ -511,80 +541,50 @@ function uniqNonEmpty(arr) {
     else setRosterB((r) => apply(r));
   }
 
-async function moveInOrder(player, dir) {
-  setErr("");
-  const side = player.team_side;
-  const list = side === "A" ? rosterA : rosterB;
-  const idx = list.findIndex((p) => p.player_id === player.player_id);
-  if (idx < 0) return;
-  const j = dir === "up" ? idx - 1 : idx + 1;
-  if (j < 0 || j >= list.length) return;
+  // Batting order: only allow moving for softball/kickball
+  async function moveInOrder(player, dir) {
+    if (!isBattingSport(game?.sport)) return;
 
-  const a = list[idx];
-  const b = list[j];
+    setErr("");
+    const side = player.team_side;
+    const list = side === "A" ? rosterA : rosterB;
+    const idx = list.findIndex((p) => p.player_id === player.player_id);
+    if (idx < 0) return;
+    const j = dir === "up" ? idx - 1 : idx + 1;
+    if (j < 0 || j >= list.length) return;
 
-  // swap sort_order in DB
-  const { error: e1 } = await supabase
-    .from("game_roster")
-    .update({ sort_order: b.sort_order })
-    .eq("game_id", a.game_id)
-    .eq("player_id", a.player_id);
-  if (e1) {
-    setErr(e1.message);
-    return;
+    const a = list[idx];
+    const b = list[j];
+
+    // swap sort_order in DB
+    const { error: e1 } = await supabase
+      .from("game_roster")
+      .update({ sort_order: b.sort_order })
+      .eq("game_id", a.game_id)
+      .eq("player_id", a.player_id);
+    if (e1) {
+      setErr(e1.message);
+      return;
+    }
+
+    const { error: e2 } = await supabase
+      .from("game_roster")
+      .update({ sort_order: a.sort_order })
+      .eq("game_id", b.game_id)
+      .eq("player_id", b.player_id);
+    if (e2) {
+      setErr(e2.message);
+      return;
+    }
+
+    // swap locally
+    const next = [...list];
+    next[idx] = { ...a, sort_order: b.sort_order };
+    next[j] = { ...b, sort_order: a.sort_order };
+    next.sort((x, y) => Number(x.sort_order || 0) - Number(y.sort_order || 0));
+    if (side === "A") setRosterA(next);
+    else setRosterB(next);
   }
-
-  const { error: e2 } = await supabase
-    .from("game_roster")
-    .update({ sort_order: a.sort_order })
-    .eq("game_id", b.game_id)
-    .eq("player_id", b.player_id);
-  if (e2) {
-    setErr(e2.message);
-    return;
-  }
-
-  // swap locally
-  const next = [...list];
-  next[idx] = { ...a, sort_order: b.sort_order };
-  next[j] = { ...b, sort_order: a.sort_order };
-  next.sort((x, y) => Number(x.sort_order || 0) - Number(y.sort_order || 0));
-  if (side === "A") setRosterA(next);
-  else setRosterB(next);
-}
-
-async function setCaptain(teamSide, playerId) {
-  setErr("");
-  // clear existing captain for that team in this game
-  const { error: e1 } = await supabase
-    .from("game_roster")
-    .update({ is_captain: false })
-    .eq("game_id", game.id)
-    .eq("team_side", teamSide);
-  if (e1) {
-    setErr(e1.message);
-    return;
-  }
-
-  const { error: e2 } = await supabase
-    .from("game_roster")
-    .update({ is_captain: true })
-    .eq("game_id", game.id)
-    .eq("player_id", playerId);
-  if (e2) {
-    setErr(e2.message);
-    return;
-  }
-
-  const apply = (arr) =>
-    arr.map((p) => ({
-      ...p,
-      is_captain: p.player_id === playerId,
-    }));
-
-  if (teamSide === "A") setRosterA((r) => apply(r));
-  else setRosterB((r) => apply(r));
-}
 
   async function finalizeGame() {
     if (!game) return;
@@ -677,40 +677,39 @@ async function setCaptain(teamSide, playerId) {
   }
 
   function PlayerRow({ p, sideLabel, idx, total }) {
+    const showBatting = isBattingSport(game?.sport);
+    const isCap = captainIds instanceof Set ? captainIds.has(String(p.player_id)) : false;
+
     return (
       <div className="rounded-xl border border-white/10 bg-black/20 p-3">
         <div className="flex items-center justify-between gap-2">
-<div className="mr-2 flex shrink-0 items-center gap-1">
-  <div className="w-6 text-center text-xs font-black opacity-70">{idx + 1}</div>
-  <button
-    onClick={() => moveInOrder(p, "up")}
-    disabled={idx === 0}
-    className="rounded-lg border border-white/10 bg-white/10 px-2 py-1 text-xs font-black disabled:opacity-40"
-    title="Move up"
-  >
-    ↑
-  </button>
-  <button
-    onClick={() => moveInOrder(p, "down")}
-    disabled={idx === total - 1}
-    className="rounded-lg border border-white/10 bg-white/10 px-2 py-1 text-xs font-black disabled:opacity-40"
-    title="Move down"
-  >
-    ↓
-  </button>
-  <button
-    onClick={() => setCaptain(p.team_side, p.player_id)}
-    className={`ml-1 rounded-lg border px-2 py-1 text-xs font-black ${
-      p.is_captain ? "border-amber-400 bg-amber-500/20 text-amber-200" : "border-white/10 bg-white/10 opacity-80"
-    }`}
-    title="Set captain"
-  >
-    {p.is_captain ? "★" : "☆"}
-  </button>
-</div>
+          {showBatting ? (
+            <div className="mr-2 flex shrink-0 items-center gap-1">
+              <div className="w-6 text-center text-xs font-black opacity-70">{idx + 1}</div>
+              <button
+                onClick={() => moveInOrder(p, "up")}
+                disabled={idx === 0}
+                className="rounded-lg border border-white/10 bg-white/10 px-2 py-1 text-xs font-black disabled:opacity-40"
+                title="Move up"
+              >
+                ↑
+              </button>
+              <button
+                onClick={() => moveInOrder(p, "down")}
+                disabled={idx === total - 1}
+                className="rounded-lg border border-white/10 bg-white/10 px-2 py-1 text-xs font-black disabled:opacity-40"
+                title="Move down"
+              >
+                ↓
+              </button>
+            </div>
+          ) : null}
 
           <div className="min-w-0">
-            <div className="truncate text-base font-extrabold">{p.player_name || p.player_id} {p.is_captain ? <span className="ml-2 rounded-md border border-amber-400/50 bg-amber-500/10 px-2 py-0.5 text-[10px] font-black text-amber-200">CAP</span> : null}</div>
+            <div className="truncate text-base font-extrabold">
+              {isCap ? "⭐ " : ""}
+              {p.player_name || p.player_id}
+            </div>
             {p.team_name ? <div className="mt-0.5 text-xs text-white/50">Team: {p.team_name}</div> : null}
           </div>
 
@@ -732,11 +731,16 @@ async function setCaptain(teamSide, playerId) {
     );
   }
 
-  function BenchRow({ p, sideLabel, idx, total }) {
+  function BenchRow({ p, sideLabel }) {
+    const isCap = captainIds instanceof Set ? captainIds.has(String(p.player_id)) : false;
+
     return (
       <div className="flex items-center justify-between rounded-xl border border-white/10 bg-black/10 p-3">
         <div className="min-w-0">
-          <div className="truncate font-semibold opacity-90">{p.player_name || p.player_id} {p.is_captain ? <span className="ml-2 rounded-md border border-amber-400/50 bg-amber-500/10 px-2 py-0.5 text-[10px] font-black text-amber-200">CAP</span> : null}</div>
+          <div className="truncate font-semibold opacity-90">
+            {isCap ? "⭐ " : ""}
+            {p.player_name || p.player_id}
+          </div>
           {p.team_name ? <div className="mt-0.5 text-xs text-white/50">{p.team_name}</div> : null}
         </div>
         <button
@@ -854,11 +858,17 @@ async function setCaptain(teamSide, playerId) {
 
                   <div className="mt-2 flex flex-wrap items-center justify-center gap-2">
                     {game.timer_running ? (
-                      <button onClick={onPause} className="rounded-xl bg-white px-4 py-2 text-sm font-black text-black active:scale-95">
+                      <button
+                        onClick={onPause}
+                        className="rounded-xl bg-white px-4 py-2 text-sm font-black text-black active:scale-95"
+                      >
                         Pause
                       </button>
                     ) : (
-                      <button onClick={onStart} className="rounded-xl bg-white px-4 py-2 text-sm font-black text-black active:scale-95">
+                      <button
+                        onClick={onStart}
+                        className="rounded-xl bg-white px-4 py-2 text-sm font-black text-black active:scale-95"
+                      >
                         Start
                       </button>
                     )}
@@ -922,10 +932,11 @@ async function setCaptain(teamSide, playerId) {
 
             {showBenchA ? (
               <div className="mt-4 space-y-2">
-                {benchA.length ? benchA.map((p) => {
-                  const idx = rosterA.findIndex((x) => x.player_id === p.player_id);
-                  return <BenchRow key={p.player_id} p={p} sideLabel="A" idx={Math.max(0, idx)} total={rosterA.length} />;
-                }) : <div className="text-xs opacity-50">No bench.</div>}
+                {benchA.length ? (
+                  benchA.map((p) => <BenchRow key={p.player_id} p={p} sideLabel="A" />)
+                ) : (
+                  <div className="text-xs opacity-50">No bench.</div>
+                )}
               </div>
             ) : null}
           </div>
@@ -956,10 +967,11 @@ async function setCaptain(teamSide, playerId) {
 
             {showBenchB ? (
               <div className="mt-4 space-y-2">
-                {benchB.length ? benchB.map((p) => {
-                  const idx = rosterB.findIndex((x) => x.player_id === p.player_id);
-                  return <BenchRow key={p.player_id} p={p} sideLabel="B" idx={Math.max(0, idx)} total={rosterB.length} />;
-                }) : <div className="text-xs opacity-50">No bench.</div>}
+                {benchB.length ? (
+                  benchB.map((p) => <BenchRow key={p.player_id} p={p} sideLabel="B" />)
+                ) : (
+                  <div className="text-xs opacity-50">No bench.</div>
+                )}
               </div>
             ) : null}
           </div>
@@ -973,7 +985,9 @@ async function setCaptain(teamSide, playerId) {
         <div className="fixed inset-0 z-50 grid place-items-center bg-black/60 p-4">
           <div className="w-full max-w-sm rounded-2xl border border-white/15 bg-[#08172c] p-5">
             <div className="text-lg font-black">Set Clock Time</div>
-            <div className="mt-1 text-sm text-white/70">Enter time as <b>mm:ss</b>. Clock will remain paused.</div>
+            <div className="mt-1 text-sm text-white/70">
+              Enter time as <b>mm:ss</b>. Clock will remain paused.
+            </div>
 
             <input
               value={timeInput}
