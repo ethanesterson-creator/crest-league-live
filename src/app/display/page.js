@@ -96,8 +96,6 @@ export default function DisplayBoardPage() {
       const bw = Number(b.wins || 0);
       if (bw !== aw) return bw - aw;
 
-      const ad = Number(a.points_for || 0) - Number(a.points_against || 0);
-      const bd = Number(b.points_for || 0) - Number(b.points_against || 0);
       return bd - ad;
     });
   }
@@ -105,7 +103,7 @@ export default function DisplayBoardPage() {
   async function loadLeagueStandings(lid) {
     const { data, error } = await supabase
       .from("standings")
-      .select("league_id, sport, team_name, wins, losses, points_for, points_against, league_points")
+      .select("league_id, sport, team_name, wins, losses, league_points")
       .eq("league_id", norm(lid))
       .eq("sport", OVERALL_SPORT_KEY);
 
@@ -116,7 +114,7 @@ export default function DisplayBoardPage() {
   async function loadAllStandings() {
     const { data, error } = await supabase
       .from("standings")
-      .select("league_id, sport, team_name, wins, losses, points_for, points_against, league_points")
+      .select("league_id, sport, team_name, wins, losses, league_points")
       .eq("sport", OVERALL_SPORT_KEY);
 
     if (error) throw error;
@@ -132,14 +130,10 @@ export default function DisplayBoardPage() {
         league_points: 0,
         wins: 0,
         losses: 0,
-        points_for: 0,
-        points_against: 0,
       };
       cur.league_points += Number(r.league_points || 0);
       cur.wins += Number(r.wins || 0);
       cur.losses += Number(r.losses || 0);
-      cur.points_for += Number(r.points_for || 0);
-      cur.points_against += Number(r.points_against || 0);
       map.set(key, cur);
     }
     return sortStandings(Array.from(map.values()));
@@ -455,8 +449,6 @@ function BoardStandings({ title, rows }) {
               <th className="py-3">Team</th>
               <th className="py-3 text-right">W</th>
               <th className="py-3 text-right">L</th>
-              <th className="py-3 text-right">PF</th>
-              <th className="py-3 text-right">PA</th>
               <th className="py-3 text-right">Pts</th>
             </tr>
           </thead>
@@ -467,8 +459,6 @@ function BoardStandings({ title, rows }) {
                   <td className="py-4 font-extrabold">{r.team_name}</td>
                   <td className="py-4 text-right font-black tabular-nums">{r.wins}</td>
                   <td className="py-4 text-right font-black tabular-nums">{r.losses}</td>
-                  <td className="py-4 text-right font-black tabular-nums">{r.points_for}</td>
-                  <td className="py-4 text-right font-black tabular-nums">{r.points_against}</td>
                   <td className="py-4 text-right font-black tabular-nums">{r.league_points}</td>
                 </tr>
               ))
