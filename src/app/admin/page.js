@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabase";
 
 export default function AdminPage() {
@@ -24,6 +24,19 @@ export default function AdminPage() {
   // export
   const [exporting, setExporting] = useState(false);
 
+  // ----------------------------
+  // TRADES (within league only)
+  // ----------------------------
+  const [loadingTradeMeta, setLoadingTradeMeta] = useState(false);
+  const [tradeLeague, setTradeLeague] = useState("");
+  const [tradeFromTeam, setTradeFromTeam] = useState("");
+  const [tradeToTeam, setTradeToTeam] = useState("");
+  const [tradeSearch, setTradeSearch] = useState("");
+
+  const [leagueOptions, setLeagueOptions] = useState([]); // [{league_id}]
+  const [teamOptions, setTeamOptions] = useState([]); // ["red","blue"...]
+  const [fromPlayers, setFromPlayers] = useState([]); // players on from team
+
   const adminPw = process.env.NEXT_PUBLIC_ADMIN_PASSWORD || "";
 
   useEffect(() => {
@@ -39,6 +52,14 @@ export default function AdminPage() {
 
   function requireConfirm(word) {
     return confirmText.trim().toUpperCase() === word;
+  }
+
+  function norm(s) {
+    return String(s ?? "").trim();
+  }
+
+  function normLower(s) {
+    return String(s ?? "").trim().toLowerCase();
   }
 
   async function loadFinalGames() {
@@ -81,12 +102,199 @@ export default function AdminPage() {
     }
   }
 
+  // -------- TRADES HELPERS --------
+
+  async function loadTradeMeta() {
+    setLoadingTradeMeta(true);
+    try {
+      // Distinct league_id values from players
+      const { data: leagues, error: lErr } = await supabase
+        .from("players")
+        .select("league_id")
+        .order("league_id", { ascending: true });
+
+      if (lErr) throw lErr;
+
+      const uniqLeagues = Array.from(new Set((leagues || []).map((r) => norm(r.league_id)).filter(Boolean)));
+      setLeagueOptions(uniqLeagues);
+
+      // Default league selection if empty
+      if (!tradeLeague && uniqLeagues.length) {
+        setTradeLeague(uniqLeagues[0]);
+      }
+    } catch (e) {
+      setErr(e?.message ?? String(e));
+    } finally {
+      setLoadingTradeMeta(false);
+    }
+  }
+
+  async function loadTeamsForLeague(leagueId) {
+    if (!leagueId) {
+      setTeamOptions([]);
+      return;
+    }
+
+    try {
+      const { data, error } = await supabase
+        .from("players")
+        .select("team_name")
+        .eq("league_id", leagueId)
+        .order("team_name", { ascending: true });
+
+      if (error) throw error;
+
+      const uniqTeams = Array.from(new Set((data || []).map((r) => norm(r.team_name)).filter(Boolean)));
+      setTeamOptions(uniqTeams);
+
+      // keep selections valid
+      if (tradeFromTeam && !uniqTeams.includes(tradeFromTeam)) setTradeFromTeam("");
+      if (tradeToTeam && !uniqTeams.includes(tradeToTeam)) setTradeToTeam("");
+    } catch (e) {
+      setErr(e?.message ?? String(e));
+    }
+  }
+
+  async function loadPlayersForFromTeam(leagueId, fromTeam) {
+    if (!leagueId || !fromTeam) {
+      setFromPlayers([]);
+      return;
+    }
+
+    try {
+      const { data, error } = await supabase
+        .from("players")
+        .select("id, first_name, last_name, team_name, league_id, role")
+        .eq("league_id", leagueId)
+        .eq("team_name", fromTeam)
+        .order("last_name", { ascending: true })
+        .order("first_name", { ascending: true })
+        .limit(5000);
+
+      if (error) throw error;
+      setFromPlayers(data || []);
+    } catch (e) {
+      setErr(e?.message ?? String(e));
+    }
+  }
+
+  async function playerInActiveLiveGame(playerId) {
+    // “Active” = live_games.status = 'live'
+    const { data: liveIds, error: lErr } = await supabase
+      .from("live_games")
+      .select("id")
+      .eq("status", "live")
+      .limit(500);
+
+    if (lErr) throw lErr;
+
+    const ids = (liveIds || []).map((r) => r.id);
+    if (!ids.length) return false;
+
+    // Is player on any roster for those games?
+    const { data: rosterHit, error: rErr } = await supabase
+      .from("game_roster")
+      .select("game_id, player_id")
+      .eq("player_id", String(playerId))
+      .in("game_id", ids)
+      .limit(1);
+
+    if (rErr) throw rErr;
+    return !!(rosterHit && rosterHit.length);
+  }
+
+  async function doTradePlayer(player) {
+    resetMessages();
+
+    if (!requireConfirm("TRADE")) {
+      setErr('Type "TRADE" in the confirmation box to run a trade.');
+      return;
+    }
+
+    if (!tradeLeague || !tradeFromTeam || !tradeToTeam) {
+      setErr("Choose league, FROM team, and TO team.");
+      return;
+    }
+    if (tradeFromTeam === tradeToTeam) {
+      setErr("FROM team and TO team must be different.");
+      return;
+    }
+
+    const fullName =
+      `${String(player.first_name ?? "").trim()} ${String(player.last_name ?? "").trim()}`.trim() || String(player.id);
+
+    const ok = confirm(
+      `Trade this player?\n\n${fullName}\n${tradeLeague}: ${tradeFromTeam} → ${tradeToTeam}\n\nThis only affects FUTURE rosters. Past games stay unchanged.`
+    );
+    if (!ok) return;
+
+    setBusy(true);
+    try {
+      // Safety: block if player is in an active live game roster
+      const inLive = await playerInActiveLiveGame(player.id);
+      if (inLive) {
+        setErr("This player is currently in an active live game roster. End that game (or delete it) before trading.");
+        return;
+      }
+
+      // Trade = update players.team_name (within same league only)
+      const { data: updated, error } = await supabase
+        .from("players")
+        .update({ team_name: tradeToTeam, updated_at: new Date().toISOString() })
+        .eq("id", player.id)
+        .eq("league_id", tradeLeague)
+        .eq("team_name", tradeFromTeam)
+        .select("id, first_name, last_name, league_id, team_name, role")
+        .single();
+
+      if (error) throw error;
+
+      setMsg(`✅ Traded ${fullName}: ${tradeFromTeam} → ${tradeToTeam} (${updated.league_id}).`);
+      setConfirmText("");
+
+      // refresh list so they disappear from FROM team
+      await loadPlayersForFromTeam(tradeLeague, tradeFromTeam);
+    } catch (e) {
+      setErr(e?.message ?? String(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  // ---- auth + initial loads ----
+
   useEffect(() => {
     if (!authed) return;
     loadFinalGames();
     loadNonGamePoints();
+    loadTradeMeta();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [authed]);
+
+  useEffect(() => {
+    if (!authed) return;
+    if (!tradeLeague) return;
+    loadTeamsForLeague(tradeLeague);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tradeLeague, authed]);
+
+  useEffect(() => {
+    if (!authed) return;
+    loadPlayersForFromTeam(tradeLeague, tradeFromTeam);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tradeLeague, tradeFromTeam, authed]);
+
+  const filteredFromPlayers = useMemo(() => {
+    const q = normLower(tradeSearch);
+    if (!q) return fromPlayers;
+
+    return (fromPlayers || []).filter((p) => {
+      const full = `${p.first_name ?? ""} ${p.last_name ?? ""}`.toLowerCase();
+      const id = String(p.id ?? "").toLowerCase();
+      const role = String(p.role ?? "").toLowerCase();
+      return full.includes(q) || id.includes(q) || role.includes(q);
+    });
+  }, [fromPlayers, tradeSearch]);
 
   async function doClearSnapshots() {
     resetMessages();
@@ -267,7 +475,7 @@ export default function AdminPage() {
     try {
       setMsg("Building CSV...");
 
-      const norm = (s) => String(s ?? "").trim().toLowerCase();
+      const norm2 = (s) => String(s ?? "").trim().toLowerCase();
 
       // 1) Players (source of truth for names/teams)
       const { data: players, error: pErr } = await supabase
@@ -280,43 +488,36 @@ export default function AdminPage() {
       if (pErr) throw pErr;
 
       // 2) Rules: stat keys per sport (to build columns even if empty)
-      const { data: rules, error: rErr } = await supabase
-        .from("points_rules")
-        .select("league_id, sport, stat_keys");
-
+      const { data: rules, error: rErr } = await supabase.from("points_rules").select("league_id, sport, stat_keys");
       if (rErr) throw rErr;
 
       // 3) Totals: actual values
       const { data: totals, error: tErr } = await supabase
         .from("player_totals")
         .select("league_id, sport, player_id, stat_key, value");
-
       if (tErr) throw tErr;
 
-      // columns: "<sport>_<statkey>" like "hoop_pts"
       const statColSet = new Set();
 
       for (const rr of rules || []) {
-        const sport = norm(rr.sport);
+        const sport = norm2(rr.sport);
         const keys = String(rr.stat_keys ?? "")
           .split(",")
           .map((x) => x.trim())
           .filter(Boolean);
 
-        for (const k of keys) statColSet.add(`${sport}_${norm(k)}`);
+        for (const k of keys) statColSet.add(`${sport}_${norm2(k)}`);
       }
 
-      // also include any stat combos that exist in totals (safety)
       for (const tt of totals || []) {
-        statColSet.add(`${norm(tt.sport)}_${norm(tt.stat_key)}`);
+        statColSet.add(`${norm2(tt.sport)}_${norm2(tt.stat_key)}`);
       }
 
       const statCols = Array.from(statColSet).sort();
 
-      // totalsMap: league|player|sport|stat => value
       const totalsMap = new Map();
       for (const t of totals || []) {
-        const key = `${norm(t.league_id)}|${String(t.player_id)}|${norm(t.sport)}|${norm(t.stat_key)}`;
+        const key = `${norm2(t.league_id)}|${String(t.player_id)}|${norm2(t.sport)}|${norm2(t.stat_key)}`;
         totalsMap.set(key, Number(t.value || 0));
       }
 
@@ -326,7 +527,7 @@ export default function AdminPage() {
       lines.push(header.join(","));
 
       for (const p of players || []) {
-        const league = norm(p.league_id);
+        const league = norm2(p.league_id);
         const playerId = String(p.id);
 
         const playerName =
@@ -338,10 +539,8 @@ export default function AdminPage() {
         row.player_id = playerId;
         row.player_name = playerName;
 
-        // default zeros
         for (const col of statCols) row[col] = 0;
 
-        // fill actual totals
         for (const col of statCols) {
           const [sport, stat] = col.split("_");
           const k = `${league}|${playerId}|${sport}|${stat}`;
@@ -414,9 +613,129 @@ export default function AdminPage() {
                 className="w-full rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm font-bold text-white placeholder:text-white/30"
                 value={confirmText}
                 onChange={(e) => setConfirmText(e.target.value)}
-                placeholder='Type "CLEAR", "RESET", "REBUILD", or "DELETE"'
+                placeholder='Type "CLEAR", "RESET", "REBUILD", "DELETE", or "TRADE"'
               />
             </div>
+          </div>
+
+          {/* Trades */}
+          <div className="mt-6 rounded-2xl border border-white/10 bg-white/5 p-5">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <div className="text-lg font-black">Trades</div>
+                <div className="mt-1 text-sm text-white/70">
+                  Trade players <b>within the same age league</b>. This only changes which team they appear on for{" "}
+                  <b>future rosters</b>.
+                </div>
+                <div className="mt-2 text-xs text-white/60">
+                  Required confirmation word: <b>TRADE</b>
+                </div>
+              </div>
+
+              <button
+                onClick={loadTradeMeta}
+                disabled={busy || loadingTradeMeta}
+                className="rounded-xl border border-white/15 bg-white/5 px-4 py-2 text-sm font-black hover:bg-white/10 disabled:opacity-60"
+              >
+                {loadingTradeMeta ? "Loading…" : "Refresh Lists"}
+              </button>
+            </div>
+
+            <div className="mt-4 grid gap-3 md:grid-cols-3">
+              <div>
+                <div className="mb-1 text-xs font-bold text-white/60">League</div>
+                <select
+                  value={tradeLeague}
+                  onChange={(e) => setTradeLeague(e.target.value)}
+                  className="w-full rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm font-bold text-white"
+                >
+                  <option value="">Select league…</option>
+                  {leagueOptions.map((l) => (
+                    <option key={l} value={l}>
+                      {l}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <div className="mb-1 text-xs font-bold text-white/60">From Team</div>
+                <select
+                  value={tradeFromTeam}
+                  onChange={(e) => setTradeFromTeam(e.target.value)}
+                  className="w-full rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm font-bold text-white"
+                >
+                  <option value="">Select team…</option>
+                  {teamOptions.map((t) => (
+                    <option key={t} value={t}>
+                      {t}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <div className="mb-1 text-xs font-bold text-white/60">To Team</div>
+                <select
+                  value={tradeToTeam}
+                  onChange={(e) => setTradeToTeam(e.target.value)}
+                  className="w-full rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm font-bold text-white"
+                >
+                  <option value="">Select team…</option>
+                  {teamOptions
+                    .filter((t) => t !== tradeFromTeam)
+                    .map((t) => (
+                      <option key={t} value={t}>
+                        {t}
+                      </option>
+                    ))}
+                </select>
+              </div>
+            </div>
+
+            <div className="mt-4">
+              <div className="mb-1 text-xs font-bold text-white/60">Search Players (name/id/role)</div>
+              <input
+                value={tradeSearch}
+                onChange={(e) => setTradeSearch(e.target.value)}
+                placeholder="Search…"
+                className="w-full rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm font-bold text-white placeholder:text-white/30"
+              />
+            </div>
+
+            {!tradeLeague || !tradeFromTeam ? (
+              <div className="mt-4 text-sm text-white/60">Choose a League and From Team to load players.</div>
+            ) : !filteredFromPlayers.length ? (
+              <div className="mt-4 text-sm text-white/60">No players found on that team.</div>
+            ) : (
+              <div className="mt-4 grid gap-2">
+                {filteredFromPlayers.map((p) => {
+                  const full =
+                    `${String(p.first_name ?? "").trim()} ${String(p.last_name ?? "").trim()}`.trim() || String(p.id);
+                  const role = String(p.role ?? "");
+                  return (
+                    <div key={p.id} className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-white/10 bg-black/20 p-4">
+                      <div className="min-w-0">
+                        <div className="truncate text-base font-black">{full}</div>
+                        <div className="mt-1 text-xs text-white/60">
+                          {p.league_id} • {p.team_name} • ID: {p.id}
+                          {role ? <span className="ml-2 text-white/50">• Role: {role}</span> : null}
+                        </div>
+                      </div>
+
+                      <button
+                        disabled={busy || !tradeToTeam || tradeToTeam === tradeFromTeam}
+                        onClick={() => doTradePlayer(p)}
+                        className="rounded-2xl border border-amber-400/30 bg-amber-500/10 px-4 py-3 text-sm font-black text-amber-100 hover:bg-amber-500/15 disabled:opacity-60"
+                        title="Trade player"
+                      >
+                        Trade → {tradeToTeam || "Select TO team"}
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
 
           {/* Export CSV */}
