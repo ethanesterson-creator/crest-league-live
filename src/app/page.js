@@ -47,10 +47,7 @@ function fmtClock(seconds) {
 }
 
 async function loadLeagues(setLeagues) {
-  const { data, error } = await supabase
-    .from("leagues")
-    .select("id, name")
-    .order("id", { ascending: true });
+  const { data, error } = await supabase.from("leagues").select("id, name").order("id", { ascending: true });
 
   if (error) {
     setLeagues([
@@ -118,6 +115,13 @@ export default function HomePage() {
   const [teamA2, setTeamA2] = useState("");
   const [teamB2, setTeamB2] = useState("");
 
+  // -------------------------
+  // BOWL GAME FIELDS
+  // -------------------------
+  const [isBowlGame, setIsBowlGame] = useState(false);
+  const [bowlName, setBowlName] = useState("");
+  const [bowlCounts, setBowlCounts] = useState(true);
+
   // ---- points_rules helpers ----
   async function fetchRuleRow(lk, sp, lv) {
     const league_id = norm(lk);
@@ -149,20 +153,14 @@ export default function HomePage() {
       return;
     }
 
-    const { data, error } = await supabase
-      .from("points_rules")
-      .select("level")
-      .eq("league_id", league_id)
-      .eq("sport", sport_key);
+    const { data, error } = await supabase.from("points_rules").select("level").eq("league_id", league_id).eq("sport", sport_key);
 
     if (error) {
       setAvailableLevels(FALLBACK_LEVELS);
       return;
     }
 
-    const uniq = Array.from(
-      new Set((data || []).map((r) => String(r.level || "").trim().toUpperCase()).filter(Boolean))
-    );
+    const uniq = Array.from(new Set((data || []).map((r) => String(r.level || "").trim().toUpperCase()).filter(Boolean)));
 
     // Sort levels in a sensible order
     const order = { A: 1, B: 2, C: 3, D: 4, ALL: 99 };
@@ -213,14 +211,11 @@ export default function HomePage() {
           return;
         }
 
-        const fallbackStyle =
-          rules?.clock?.defaultMode || (clockModes.length ? clockModes[0].id : "countdown");
+        const fallbackStyle = rules?.clock?.defaultMode || (clockModes.length ? clockModes[0].id : "countdown");
         if (!clockStyleDirty) setClockStyle(fallbackStyle);
 
         const modeObj = clockModes.find((m) => m.id === fallbackStyle) ?? clockModes[0] ?? null;
-        const presets = modeObj?.presets?.length
-          ? modeObj.presets
-          : FALLBACK_TIMER_PRESETS.map((p) => p.seconds);
+        const presets = modeObj?.presets?.length ? modeObj.presets : FALLBACK_TIMER_PRESETS.map((p) => p.seconds);
 
         if (!presetDirty) setPreset(presets[presets.length - 1] ?? 1800);
         return;
@@ -247,9 +242,7 @@ export default function HomePage() {
       // If dbSeconds is 0 but clock is enabled, fall back to some preset
       if (!presetDirty && !(dbSeconds > 0)) {
         const modeObj = clockModes.find((m) => m.id === dbStyle) ?? clockModes[0] ?? null;
-        const presets = modeObj?.presets?.length
-          ? modeObj.presets
-          : FALLBACK_TIMER_PRESETS.map((p) => p.seconds);
+        const presets = modeObj?.presets?.length ? modeObj.presets : FALLBACK_TIMER_PRESETS.map((p) => p.seconds);
         setPreset(presets[presets.length - 1] ?? 1800);
       }
     })();
@@ -261,9 +254,7 @@ export default function HomePage() {
 
     const modeObj = clockModes.find((m) => m.id === clockStyle) ?? clockModes[0] ?? null;
 
-    const secondsList = modeObj?.presets?.length
-      ? modeObj.presets
-      : FALLBACK_TIMER_PRESETS.map((p) => p.seconds);
+    const secondsList = modeObj?.presets?.length ? modeObj.presets : FALLBACK_TIMER_PRESETS.map((p) => p.seconds);
 
     // Ensure the DB default is present in list
     const list = Array.from(new Set([...secondsList, Number(preset || 0)].filter((n) => n > 0)));
@@ -284,11 +275,7 @@ export default function HomePage() {
 
   async function loadTeamsFromPlayers() {
     const lk = norm(leagueKey);
-    const { data, error } = await supabase
-      .from("players")
-      .select("team_name, league_id")
-      .eq("league_id", lk)
-      .limit(5000);
+    const { data, error } = await supabase.from("players").select("team_name, league_id").eq("league_id", lk).limit(5000);
 
     if (error) return;
 
@@ -358,13 +345,14 @@ export default function HomePage() {
   async function createGame() {
     setErr("");
 
-    // extra guardrails (nice error messages)
     if (!canCreate) {
-      setErr(
-        matchupType === "two_team"
-          ? "Pick 4 different teams (A1, A2, B1, B2). No duplicates."
-          : "Pick two different teams."
-      );
+      setErr(matchupType === "two_team" ? "Pick 4 different teams (A1, A2, B1, B2). No duplicates." : "Pick two different teams.");
+      return;
+    }
+
+    // Bowl validation
+    if (isBowlGame && bowlName.trim().length === 0) {
+      setErr("Enter a Bowl name (example: 'Session 1 Bowl').");
       return;
     }
 
@@ -396,6 +384,11 @@ export default function HomePage() {
 
       status: "active",
       notes: "",
+
+      // ✅ bowl fields
+      is_bowl_game: !!isBowlGame,
+      bowl_name: isBowlGame ? bowlName.trim() : null,
+      bowl_counts: isBowlGame ? !!bowlCounts : true,
     };
 
     const { data, error } = await supabase.from("live_games").insert(payload).select("*").single();
@@ -541,6 +534,55 @@ export default function HomePage() {
               </select>
             </label>
 
+            {/* ✅ Bowl controls */}
+            <div className="sm:col-span-2 rounded-2xl border border-white/10 bg-black/20 p-4">
+              <label className="flex items-center gap-3 text-sm font-bold">
+                <input
+                  type="checkbox"
+                  checked={isBowlGame}
+                  onChange={(e) => {
+                    const on = e.target.checked;
+                    setIsBowlGame(on);
+                    if (!on) {
+                      setBowlName("");
+                      setBowlCounts(true);
+                    }
+                  }}
+                />
+                Bowl game?
+              </label>
+
+              {isBowlGame ? (
+                <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                  <label className="text-sm">
+                    <div className="mb-1 text-slate-300">Bowl name</div>
+                    <input
+                      value={bowlName}
+                      onChange={(e) => setBowlName(e.target.value)}
+                      placeholder="Session 1 Bowl"
+                      className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 outline-none focus:border-slate-500"
+                    />
+                  </label>
+
+                  <label className="text-sm">
+                    <div className="mb-1 text-slate-300">Counts for standings?</div>
+                    <select
+                      value={bowlCounts ? "yes" : "no"}
+                      onChange={(e) => setBowlCounts(e.target.value === "yes")}
+                      className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 outline-none focus:border-slate-500"
+                    >
+                      <option value="yes">Yes (normal points)</option>
+                      <option value="no">No (exhibition)</option>
+                    </select>
+                  </label>
+
+                  <div className="text-xs text-slate-400 sm:col-span-2">
+                    Bowl games are tagged for display. If “No,” the game finalizes normally but does not change standings.
+                  </div>
+                </div>
+              ) : null}
+            </div>
+
             {/* Team picks */}
             <label className="text-sm">
               <div className="mb-1 text-slate-300">Team A1</div>
@@ -673,9 +715,7 @@ export default function HomePage() {
             Create Game
           </button>
 
-          {err ? (
-            <div className="mt-3 rounded-xl border border-red-900 bg-red-950/50 p-3 text-sm text-red-200">{err}</div>
-          ) : null}
+          {err ? <div className="mt-3 rounded-xl border border-red-900 bg-red-950/50 p-3 text-sm text-red-200">{err}</div> : null}
         </div>
 
         {/* Recent games */}
@@ -690,14 +730,34 @@ export default function HomePage() {
                 const left = g.matchup_type === "two_team" ? matchupLabel(g.team_a1, g.team_a2) : norm(g.team_a1);
                 const right = g.matchup_type === "two_team" ? matchupLabel(g.team_b1, g.team_b2) : norm(g.team_b1);
 
+                const bowlOn = !!g.is_bowl_game;
+                const bowlLabel = String(g.bowl_name || "").trim();
+                const counts = g.bowl_counts !== false;
+
                 return (
                   <div key={g.id} className="rounded-2xl border border-slate-800 bg-slate-950/60 p-4">
                     <div className="flex items-start justify-between gap-3">
                       <div>
                         <div className="text-xs text-slate-400">{new Date(g.created_at).toLocaleString()}</div>
-                        <div className="mt-1 text-xl font-extrabold">
-                          {left} vs {right}
+
+                        <div className="mt-1 flex flex-wrap items-center gap-2">
+                          <div className="text-xl font-extrabold">
+                            {left} vs {right}
+                          </div>
+
+                          {bowlOn ? (
+                            <span className="rounded-full border border-amber-400/30 bg-amber-500/10 px-2 py-0.5 text-[11px] font-black text-amber-100">
+                              BOWL{bowlLabel ? `: ${bowlLabel}` : ""}
+                            </span>
+                          ) : null}
+
+                          {bowlOn && !counts ? (
+                            <span className="rounded-full border border-slate-400/30 bg-slate-500/10 px-2 py-0.5 text-[11px] font-black text-slate-100">
+                              EXHIBITION
+                            </span>
+                          ) : null}
                         </div>
+
                         <div className="mt-1 text-sm text-slate-300">
                           {g.league_key} • {g.sport} • Level {g.level} • {g.mode} •{" "}
                           <span className="text-emerald-400 font-semibold">{g.status}</span>
@@ -714,10 +774,7 @@ export default function HomePage() {
                         </div>
 
                         <div className="flex gap-2">
-                          <Link
-                            className="rounded-xl bg-emerald-500 px-4 py-2 text-sm font-extrabold text-slate-950 hover:bg-emerald-400"
-                            href={`/live/${g.id}`}
-                          >
+                          <Link className="rounded-xl bg-emerald-500 px-4 py-2 text-sm font-extrabold text-slate-950 hover:bg-emerald-400" href={`/live/${g.id}`}>
                             Open
                           </Link>
 
