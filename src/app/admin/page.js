@@ -240,7 +240,7 @@ export default function AdminPage() {
       // Trade = update players.team_name (within same league only)
       const { data: updated, error } = await supabase
         .from("players")
-        .update({ team_name: tradeToTeam, updated_at: new Date().toISOString() })
+        .update({ team_name: tradeToTeam })
         .eq("id", player.id)
         .eq("league_id", tradeLeague)
         .eq("team_name", tradeFromTeam)
