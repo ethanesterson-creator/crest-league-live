@@ -28,11 +28,9 @@ function parseMMSS(input) {
 }
 
 function formatMMSSFromDigits(raw) {
-  // keep only digits
-  const digits = String(raw ?? "").replace(/\D/g, "").slice(0, 5); // allow up to 999:59 eventually
+  const digits = String(raw ?? "").replace(/\D/g, "").slice(0, 5);
   if (!digits) return "00:00";
 
-  // last 2 digits are seconds
   const secPart = digits.slice(-2).padStart(2, "0");
   const minPart = digits.slice(0, -2) || "0";
 
@@ -90,22 +88,16 @@ export default function LiveGamePage() {
   const [confirmFinalizeOpen, setConfirmFinalizeOpen] = useState(false);
   const [clockMode, setClockMode] = useState("");
 
-  // Bench toggles
-  // Bench-first: start open so counselors can pick who is in
   const [showBenchA, setShowBenchA] = useState(true);
   const [showBenchB, setShowBenchB] = useState(true);
 
-  // Compact toggle
   const [superCompact, setSuperCompact] = useState(true);
 
-  // ✅ Phase 1B: editable time modal
   const [setTimeOpen, setSetTimeOpen] = useState(false);
   const [timeInput, setTimeInput] = useState("00:00");
 
-  // Captains (season-long)
   const [captainIds, setCaptainIds] = useState(new Set());
 
-  // UI clock tick
   const [nowMs, setNowMs] = useState(Date.now());
   useEffect(() => {
     const t = setInterval(() => setNowMs(Date.now()), 250);
@@ -130,7 +122,7 @@ export default function LiveGamePage() {
     if (!game) return { remaining: 0, isRunning: false };
 
     const running = !!game.timer_running;
-    const anchorTs = Number(game.timer_anchor_ts ?? 0); // float8 seconds
+    const anchorTs = Number(game.timer_anchor_ts ?? 0);
     const atAnchor = Number(game.timer_remaining_at_anchor ?? game.timer_remaining_seconds ?? 0);
     const remainingStored = Number(game.timer_remaining_seconds ?? atAnchor ?? 0);
 
@@ -213,7 +205,6 @@ export default function LiveGamePage() {
     }
 
     if (r1 && r1.length) {
-      // Backfill missing sort_order for older rosters (only matters for batting sports)
       if (r1.some((x) => x.sort_order === null || x.sort_order === undefined)) {
         await backfillSortOrder(g.id, r1);
         const { data: r1b, error: r1bErr } = await supabase
@@ -241,13 +232,11 @@ export default function LiveGamePage() {
       setRosterA(a);
       setRosterB(b);
 
-      // Bench-first: if nobody is in game yet, keep bench open
       if (a.filter((p) => p.is_playing).length === 0) setShowBenchA(true);
       if (b.filter((p) => p.is_playing).length === 0) setShowBenchB(true);
       return;
     }
 
-    // Build roster if missing
     const lk = norm(g.league_key);
 
     const a1 = norm(g.team_a1 || g.team_a || "");
@@ -291,9 +280,7 @@ export default function LiveGamePage() {
         player_name: `${p.first_name ?? ""} ${p.last_name ?? ""}`.trim(),
         team_side: side,
         team_name: tn,
-        // everyone starts BENCHED
         is_playing: false,
-        // batting order (exists for all games; UI shows only softball/kickball)
         sort_order: so,
       };
     });
@@ -373,13 +360,12 @@ export default function LiveGamePage() {
       await ensureRoster(game);
       await loadEventTotals(game);
 
-      // Load captains (season-long) for the teams in this game
       try {
         const teamNames = uniqNonEmpty([game.team_a1 || game.team_a, game.team_b1 || game.team_b]);
         const caps = await fetchCaptainIds({ leagueId: norm(game.league_key), teamNames });
         setCaptainIds(caps);
       } catch (e) {
-        // Not fatal; just don't show stars if this fails
+        // ignore
       }
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -440,7 +426,6 @@ export default function LiveGamePage() {
     });
   }
 
-  // ✅ Phase 1B: set remaining time precisely, without changing duration_seconds
   async function setExactRemaining(seconds) {
     if (!game) return;
     const s = Math.max(0, Math.floor(Number(seconds)));
@@ -456,12 +441,10 @@ export default function LiveGamePage() {
   async function openSetTimeModal() {
     if (!rules?.clock?.enabled) return;
 
-    // If running, pause first so we freeze the time
     if (derived.isRunning) {
       await onPause();
     }
 
-    // Populate input with current remaining time
     setTimeInput(fmtClock(derived.remaining));
     setSetTimeOpen(true);
   }
@@ -496,7 +479,6 @@ export default function LiveGamePage() {
 
     const leagueId = norm(game.league_key);
     const sport = norm(game.sport);
-
     const teamName = String(player?.team_name || "");
 
     const { error } = await supabase.rpc("rpc_add_stat", {
@@ -536,12 +518,10 @@ export default function LiveGamePage() {
     const apply = (arr) =>
       arr.map((p) => (p.player_id === player.player_id ? { ...p, is_playing: next } : p));
 
-    // ✅ Bench stays open until counselor collapses manually
     if (player.team_side === "A") setRosterA((r) => apply(r));
     else setRosterB((r) => apply(r));
   }
 
-  // Batting order: only allow moving for softball/kickball
   async function moveInOrder(player, dir) {
     if (!isBattingSport(game?.sport)) return;
 
@@ -556,7 +536,6 @@ export default function LiveGamePage() {
     const a = list[idx];
     const b = list[j];
 
-    // swap sort_order in DB
     const { error: e1 } = await supabase
       .from("game_roster")
       .update({ sort_order: b.sort_order })
@@ -577,7 +556,6 @@ export default function LiveGamePage() {
       return;
     }
 
-    // swap locally
     const next = [...list];
     next[idx] = { ...a, sort_order: b.sort_order };
     next[j] = { ...b, sort_order: a.sort_order };
@@ -754,6 +732,128 @@ export default function LiveGamePage() {
     );
   }
 
+  function ScoreboardPanel({ desktop = false }) {
+    return (
+      <div className={`rounded-2xl border border-white/10 bg-[#08172c]/85 p-4 backdrop-blur ${desktop ? "hidden md:block" : "md:hidden"}`}>
+        <div className={`grid gap-3 ${desktop ? "grid-cols-2" : "grid-cols-2"}`}>
+          <div>
+            <div className="text-[10px] tracking-widest opacity-70">HOME</div>
+            <div className={`${desktop ? "mt-2 text-2xl" : "mt-1 text-lg"} truncate font-extrabold`}>{leftLabel}</div>
+            <div className={`${desktop ? "mt-2 text-6xl" : "mt-1 text-4xl"} font-black tabular-nums`}>{scoreA}</div>
+            <div className="mt-3 flex flex-wrap gap-2">
+              {scoreButtons.map((d) => (
+                <button
+                  key={`${desktop ? "d" : "m"}A-${d}`}
+                  onClick={() => bumpScore("A", d)}
+                  className={`${desktop ? "px-4 py-3 text-lg" : "px-3 py-2 text-base"} rounded-xl border border-white/10 bg-white/10 font-extrabold active:scale-95`}
+                >
+                  +{d}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="text-right">
+            <div className="text-[10px] tracking-widest opacity-70">AWAY</div>
+            <div className={`${desktop ? "mt-2 text-2xl" : "mt-1 text-lg"} truncate font-extrabold`}>{rightLabel}</div>
+            <div className={`${desktop ? "mt-2 text-6xl" : "mt-1 text-4xl"} font-black tabular-nums`}>{scoreB}</div>
+            <div className="mt-3 flex flex-wrap justify-end gap-2">
+              {scoreButtons.map((d) => (
+                <button
+                  key={`${desktop ? "d" : "m"}B-${d}`}
+                  onClick={() => bumpScore("B", d)}
+                  className={`${desktop ? "px-4 py-3 text-lg" : "px-3 py-2 text-base"} rounded-xl border border-white/10 bg-white/10 font-extrabold active:scale-95`}
+                >
+                  +{d}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        <div className="mt-4 rounded-xl border border-white/10 bg-black/20 p-4">
+          <div className="text-[10px] tracking-widest opacity-70">
+            {rules?.clock?.enabled ? "GAME CLOCK" : "NO CLOCK"}
+          </div>
+
+          {rules?.clock?.enabled ? (
+            <>
+              <button
+                type="button"
+                onClick={openSetTimeModal}
+                className={`mt-2 w-full rounded-xl border border-white/10 bg-white/5 py-3 text-center ${desktop ? "text-6xl" : "text-5xl"} font-black tabular-nums active:scale-[0.99]`}
+                title="Tap to set exact time (mm:ss)"
+              >
+                {fmtClock(derived.remaining)}
+              </button>
+              <div className="mt-1 text-center text-xs text-white/60">Tap clock to set exact time</div>
+
+              {rules?.clock?.modes?.length ? (
+                <div className="mt-3 flex items-center justify-center gap-2">
+                  <div className="text-[11px] font-bold text-white/60">Style</div>
+                  <select
+                    className="rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm font-bold text-white"
+                    value={clockMode}
+                    onChange={(e) => setClockMode(e.target.value)}
+                  >
+                    {rules.clock.modes.map((m) => (
+                      <option key={m.id} value={m.id}>
+                        {m.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              ) : null}
+
+              <div className="mt-3 flex flex-wrap items-center justify-center gap-2">
+                {game.timer_running ? (
+                  <button
+                    onClick={onPause}
+                    className="rounded-xl bg-white px-4 py-2 text-sm font-black text-black active:scale-95"
+                  >
+                    Pause
+                  </button>
+                ) : (
+                  <button
+                    onClick={onStart}
+                    className="rounded-xl bg-white px-4 py-2 text-sm font-black text-black active:scale-95"
+                  >
+                    Start
+                  </button>
+                )}
+                <button
+                  onClick={() => onReset(game.duration_seconds || clockPresets[clockPresets.length - 1] || 1800)}
+                  className="rounded-xl border border-white/15 bg-white/5 px-4 py-2 text-sm font-black active:scale-95"
+                >
+                  Reset
+                </button>
+
+                {clockPresets.map((s) => (
+                  <button
+                    key={`${desktop ? "d" : "m"}Preset-${s}`}
+                    onClick={() => onReset(s)}
+                    className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm font-bold active:scale-95"
+                  >
+                    {fmtClock(s)}
+                  </button>
+                ))}
+              </div>
+            </>
+          ) : (
+            <div className="mt-2 text-center text-sm text-white/70">This sport does not use a game clock.</div>
+          )}
+
+          <button
+            onClick={() => setConfirmFinalizeOpen(true)}
+            className="mt-4 w-full rounded-xl border border-emerald-400/30 bg-emerald-500/10 px-4 py-3 text-sm font-black text-emerald-100 hover:bg-emerald-500/15 active:scale-95"
+          >
+            Finalize Game
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-transparent text-white">
       {err ? (
@@ -782,126 +882,14 @@ export default function LiveGamePage() {
           </div>
         </div>
 
-        {/* Compact scoreboard (mobile) */}
-        <div className="mt-4 md:hidden">
-          <div className="rounded-2xl border border-white/10 bg-[#08172c]/85 p-4 backdrop-blur">
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <div className="text-[10px] tracking-widest opacity-70">HOME</div>
-                <div className="mt-1 truncate text-lg font-extrabold">{leftLabel}</div>
-                <div className="mt-1 text-4xl font-black tabular-nums">{scoreA}</div>
-                <div className="mt-2 flex flex-wrap gap-2">
-                  {scoreButtons.map((d) => (
-                    <button
-                      key={`mA-${d}`}
-                      onClick={() => bumpScore("A", d)}
-                      className="rounded-xl border border-white/10 bg-white/10 px-3 py-2 text-base font-extrabold active:scale-95"
-                    >
-                      +{d}
-                    </button>
-                  ))}
-                </div>
-              </div>
+        {/* Desktop scoreboard */}
+        <div className="mt-4">
+          <ScoreboardPanel desktop />
+        </div>
 
-              <div className="text-right">
-                <div className="text-[10px] tracking-widest opacity-70">AWAY</div>
-                <div className="mt-1 truncate text-lg font-extrabold">{rightLabel}</div>
-                <div className="mt-1 text-4xl font-black tabular-nums">{scoreB}</div>
-                <div className="mt-2 flex flex-wrap justify-end gap-2">
-                  {scoreButtons.map((d) => (
-                    <button
-                      key={`mB-${d}`}
-                      onClick={() => bumpScore("B", d)}
-                      className="rounded-xl border border-white/10 bg-white/10 px-3 py-2 text-base font-extrabold active:scale-95"
-                    >
-                      +{d}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            </div>
-
-            <div className="mt-4 rounded-xl border border-white/10 bg-black/20 p-3">
-              <div className="text-[10px] tracking-widest opacity-70">
-                {rules?.clock?.enabled ? "GAME CLOCK" : "NO CLOCK"}
-              </div>
-
-              {rules?.clock?.enabled ? (
-                <>
-                  {/* ✅ Tap-to-edit clock */}
-                  <button
-                    type="button"
-                    onClick={openSetTimeModal}
-                    className="mt-1 w-full rounded-xl border border-white/10 bg-white/5 py-2 text-center text-5xl font-black tabular-nums active:scale-[0.99]"
-                    title="Tap to set exact time (mm:ss)"
-                  >
-                    {fmtClock(derived.remaining)}
-                  </button>
-                  <div className="mt-1 text-center text-xs text-white/60">Tap clock to set exact time</div>
-
-                  {rules?.clock?.modes?.length ? (
-                    <div className="mt-2 flex items-center justify-center gap-2">
-                      <div className="text-[11px] font-bold text-white/60">Style</div>
-                      <select
-                        className="rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm font-bold text-white"
-                        value={clockMode}
-                        onChange={(e) => setClockMode(e.target.value)}
-                      >
-                        {rules.clock.modes.map((m) => (
-                          <option key={m.id} value={m.id}>
-                            {m.label}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                  ) : null}
-
-                  <div className="mt-2 flex flex-wrap items-center justify-center gap-2">
-                    {game.timer_running ? (
-                      <button
-                        onClick={onPause}
-                        className="rounded-xl bg-white px-4 py-2 text-sm font-black text-black active:scale-95"
-                      >
-                        Pause
-                      </button>
-                    ) : (
-                      <button
-                        onClick={onStart}
-                        className="rounded-xl bg-white px-4 py-2 text-sm font-black text-black active:scale-95"
-                      >
-                        Start
-                      </button>
-                    )}
-                    <button
-                      onClick={() => onReset(game.duration_seconds || clockPresets[clockPresets.length - 1] || 1800)}
-                      className="rounded-xl border border-white/15 bg-white/5 px-4 py-2 text-sm font-black active:scale-95"
-                    >
-                      Reset
-                    </button>
-
-                    {clockPresets.map((s) => (
-                      <button
-                        key={`mPreset-${s}`}
-                        onClick={() => onReset(s)}
-                        className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm font-bold active:scale-95"
-                      >
-                        {fmtClock(s)}
-                      </button>
-                    ))}
-                  </div>
-                </>
-              ) : (
-                <div className="mt-2 text-center text-sm text-white/70">This sport does not use a game clock.</div>
-              )}
-
-              <button
-                onClick={() => setConfirmFinalizeOpen(true)}
-                className="mt-3 w-full rounded-xl border border-emerald-400/30 bg-emerald-500/10 px-4 py-2 text-sm font-black text-emerald-100 hover:bg-emerald-500/15 active:scale-95"
-              >
-                Finalize Game
-              </button>
-            </div>
-          </div>
+        {/* Mobile scoreboard */}
+        <div className="mt-4">
+          <ScoreboardPanel />
         </div>
 
         {/* Players */}
@@ -980,7 +968,6 @@ export default function LiveGamePage() {
         <div className="mt-6 pb-10 text-xs opacity-50">Live Game ID: {String(game.id)}</div>
       </div>
 
-      {/* ✅ Set Time Modal */}
       {setTimeOpen && (
         <div className="fixed inset-0 z-50 grid place-items-center bg-black/60 p-4">
           <div className="w-full max-w-sm rounded-2xl border border-white/15 bg-[#08172c] p-5">
