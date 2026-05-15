@@ -73,7 +73,7 @@ export default function DisplayPage() {
       .select("*")
       .eq("league_id", league)
       .eq("sport", "overall")
-      .order("points", { ascending: false });
+      .order("league_points", { ascending: false });
 
     setStandings(standingsData || []);
 
@@ -82,16 +82,16 @@ export default function DisplayPage() {
       .from("standings")
       .select("*")
       .eq("sport", "overall")
-      .order("points", { ascending: false });
+      .order("league_points", { ascending: false });
 
     setCampStandings(allStandings || []);
 
     // live games
     const { data: live } = await supabase
-      .from("games")
+      .from("live_games")
       .select("*")
       .eq("status", "active")
-      .eq("is_deleted", false)
+      .is("played_on", null)
       .order("updated_at", { ascending: false });
 
     setLiveGames(live || []);
@@ -149,18 +149,30 @@ export default function DisplayPage() {
     return () => clearInterval(t);
   }, [autoRefresh, league]);
 
-  useEffect(() => {
-    if (!autoRotate) return;
+ useEffect(() => {
+  if (!autoRotate) return;
 
-    const t = setInterval(() => {
-      setScene((prev) => {
-        const idx = SCENES.indexOf(prev);
-        return SCENES[(idx + 1) % SCENES.length];
-      });
-    }, rotateSeconds * 1000);
+  const leagueCycle = ["seniors", "juniors", "sophomores"];
 
-    return () => clearInterval(t);
-  }, [autoRotate, rotateSeconds]);
+  const t = setInterval(() => {
+    setScene((prev) => {
+      const idx = SCENES.indexOf(prev);
+      const nextScene = SCENES[(idx + 1) % SCENES.length];
+
+      // Every time we wrap back to first scene, move to next league
+      if (idx === SCENES.length - 1) {
+        setLeague((cur) => {
+          const li = leagueCycle.indexOf(cur);
+          return leagueCycle[(li + 1) % leagueCycle.length];
+        });
+      }
+
+      return nextScene;
+    });
+  }, rotateSeconds * 1000);
+
+  return () => clearInterval(t);
+}, [autoRotate, rotateSeconds]);
 
  const tickerItems = useMemo(() => {
   const live = liveGames.slice(0, 4).map((g) => {
