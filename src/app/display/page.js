@@ -21,13 +21,7 @@ const SCENE_LABELS = {
   highlights: "Highlights",
 };
 
-const TICKER_MESSAGES = [
-  "WELCOME TO CREST LEAGUE LIVE",
-  "FINALIZE GAMES IMMEDIATELY AFTER THE WHISTLE",
-  "SOFTBALL + KICKBALL SUPPORT BATTING ORDER",
-  "CAPTAINS ARE MARKED WITH A STAR",
-  "BOWL GAMES ARE LIVE",
-];
+const TICKER_MESSAGES = [];
 
 function cx(...x) {
   return x.filter(Boolean).join(" ");
@@ -168,17 +162,33 @@ export default function DisplayPage() {
     return () => clearInterval(t);
   }, [autoRotate, rotateSeconds]);
 
-  const tickerItems = useMemo(() => {
-    const finals = finalGames.slice(0, 5).map((g) => {
-      return `${g.team_a} defeats ${g.team_b} ${g.score_a}-${g.score_b}`;
-    });
+ const tickerItems = useMemo(() => {
+  const live = liveGames.slice(0, 4).map((g) => {
+    const left = g.team_a || g.team_a1 || "Team A";
+    const right = g.team_b || g.team_b1 || "Team B";
+    const leagueName = fmtLeague(g.league_id || g.league_key);
+    return `LIVE: ${leagueName} ${fmtSport(g.sport)} — ${left} ${Number(g.score_a || 0)}-${Number(g.score_b || 0)} ${right}`;
+  });
 
-    const live = liveGames.slice(0, 3).map((g) => {
-      return `LIVE NOW: ${fmtLeague(g.league_id)} ${g.sport} — ${g.team_a} ${g.score_a}-${g.score_b} ${g.team_b}`;
-    });
+  const finals = finalGames.slice(0, 6).map((g) => {
+    const a = Number(g.score_a || 0);
+    const b = Number(g.score_b || 0);
+    const winner = a > b ? g.team_a : g.team_b;
+    const loser = a > b ? g.team_b : g.team_a;
+    const bowl = g.is_bowl_game ? `${String(g.bowl_name || "BOWL").toUpperCase()}: ` : "";
+    return `FINAL: ${bowl}${winner} defeats ${loser}, ${Math.max(a, b)}-${Math.min(a, b)}`;
+  });
 
-    return [...TICKER_MESSAGES, ...live, ...finals];
-  }, [finalGames, liveGames]);
+  const topStandings = standings.slice(0, 3).map((t, i) => {
+    return `${fmtLeague(league)} STANDINGS: #${i + 1} ${t.team_name} — ${Number(t.league_points || 0)} pts`;
+  });
+
+  const topLeaders = leaders.slice(0, 4).map((p) => {
+    return `LEADER: ${p.player_name} — ${Number(p.value || 0)} ${String(p.stat_key || "").toUpperCase()} (${p.team_name || "—"})`;
+  });
+
+  return [...live, ...finals, ...topStandings, ...topLeaders].filter(Boolean);
+}, [liveGames, finalGames, standings, leaders, league]);
 
   async function goFullscreen() {
     if (!document.fullscreenElement) {
@@ -243,7 +253,7 @@ export default function DisplayPage() {
                     </td>
 
                     <td className="px-6 py-6 text-center text-4xl font-black text-red-400">
-                      {t.points}
+                      {Number(t.league_points || 0)}
                     </td>
                   </tr>
                 ))}
@@ -618,7 +628,7 @@ export default function DisplayPage() {
                         POINTS
                       </div>
                       <div className="text-6xl font-black text-red-400">
-                        {t.points}
+                        {Number(t.league_points || 0)}
                       </div>
                     </div>
                   </div>
@@ -649,8 +659,8 @@ export default function DisplayPage() {
 
 /* ===== BOTTOM COMPONENTS ===== */
 function Ticker({ items }) {
-  const text = (items && items.length ? items : TICKER_MESSAGES).join("     •     ");
-
+  const text = items && items.length ? items.join("     •     ") : "";
+  if (!text) return null;
   return (
     <footer className="absolute bottom-0 left-0 right-0 z-20 flex h-[52px] overflow-hidden border-t border-red-500/40 bg-red-700 shadow-2xl">
       <div className="flex shrink-0 items-center bg-black px-5">
