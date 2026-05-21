@@ -77,15 +77,25 @@ export default function DisplayPage() {
 
     setStandings(standingsData || []);
 
-    // camp standings
-    const { data: allStandings } = await supabase
-      .from("standings")
-      .select("*")
-      .eq("sport", "overall")
-      .order("league_points", { ascending: false });
+   // camp standings — aggregate points across all leagues per team
+   const { data: allStandings } = await supabase
+  .from("standings")
+  .select("team_name, league_points")
+  .eq("sport", "overall");
 
-    setCampStandings(allStandings || []);
+ // Sum league_points per team_name across all leagues
+ const totalsMap = {};
+ (allStandings || []).forEach((row) => {
+  const name = String(row.team_name || "").trim().toLowerCase();
+  if (!name) return;
+  totalsMap[name] = (totalsMap[name] || 0) + Number(row.league_points || 0);
+ });
 
+ const aggregated = Object.entries(totalsMap)
+  .map(([team_name, league_points]) => ({ team_name, league_points }))
+  .sort((a, b) => b.league_points - a.league_points);
+
+ setCampStandings(aggregated);
     // live games
     const { data: live } = await supabase
       .from("live_games")
@@ -628,8 +638,8 @@ export default function DisplayPage() {
                   >
                     <div>
                       <div className="text-sm font-black uppercase tracking-[0.2em] text-white/40">
-                        #{i + 1} • {fmtLeague(t.league_id)}
-                      </div>
+                        #{i + 1} • ALL LEAGUES
+                       </div>
                       <div className="mt-1 text-4xl font-black text-white">
                         {t.team_name}
                       </div>
