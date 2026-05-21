@@ -18,17 +18,16 @@ export const SPORT_RULES = {
     label: "Hoop",
     clock: {
       enabled: true,
-      // "quarters or halves" + lots of presets
       modes: [
         {
           id: "quarters",
           label: "Quarters",
-          presets: [300, 360, 420, 480, 600, 720, 900, 1200, 1800], // 5–30 min
+          presets: [300, 360, 420, 480, 600, 720, 900, 1200, 1800],
         },
         {
           id: "halves",
           label: "Halves",
-          presets: [600, 720, 900, 1200, 1500, 1800], // 10–30 min
+          presets: [600, 720, 900, 1200, 1500, 1800],
         },
       ],
       defaultMode: "quarters",
@@ -53,14 +52,14 @@ export const SPORT_RULES = {
     stats: [
       { key: "g", label: "G", deltas: [1] },
       { key: "a", label: "A", deltas: [1] },
-      { key: "s", label: "S", deltas: [1] }, // saves
+      { key: "s", label: "S", deltas: [1] },
     ],
   },
 
   softball: {
     label: "Softball",
     clock: { enabled: false },
-    scoreButtons: [1], // runs
+    scoreButtons: [1],
     stats: [
       { key: "h", label: "H", deltas: [1] },
       { key: "hr", label: "HR", deltas: [1] },
@@ -72,7 +71,7 @@ export const SPORT_RULES = {
   volleyball: {
     label: "Volleyball",
     clock: { enabled: false },
-    scoreButtons: [1], // points
+    scoreButtons: [1],
     stats: [
       { key: "ace", label: "Aces", deltas: [1] },
       { key: "kill", label: "Kills", deltas: [1] },
@@ -104,7 +103,7 @@ export const SPORT_RULES = {
         {
           id: "periods",
           label: "8 Periods",
-          presets: [240, 300, 360, 420, 480, 540, 600], // 4–10 min
+          presets: [240, 300, 360, 420, 480, 540, 600],
         },
       ],
       defaultMode: "periods",
@@ -151,12 +150,18 @@ export const SPORT_RULES = {
       { key: "s", label: "S", deltas: [1] },
     ],
   },
+
+  newcomb: {
+    label: "Newcomb",
+    clock: { enabled: false },
+    scoreButtons: [1],
+    stats: [],
+  },
 };
 
 export function getSportRules(sport) {
   const k = key(sport);
 
-  // common aliases just in case
   const aliases = {
     basketball: "hoop",
     bb: "hoop",

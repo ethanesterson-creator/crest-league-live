@@ -11,6 +11,7 @@ const SPORTS = [
   "Softball",
   "Volleyball",
   "Football",
+  "Newcomb",
   "Speedball",
   "Euro",
   "Soccer",
