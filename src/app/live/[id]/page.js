@@ -469,7 +469,55 @@ export default function LiveGamePage() {
 
     await refreshGame();
   }
+async function undoScore(side) {
+    if (!game) return;
+    setErr("");
 
+    const current = side === "A" ? Number(game.score_a || 0) : Number(game.score_b || 0);
+    if (current <= 0) return;
+
+    const { error } = await supabase.rpc("rpc_add_score", {
+      p_game_id: game.id,
+      p_side: side,
+      p_delta: -1,
+    });
+
+    if (error) {
+      setErr(error.message);
+      return;
+    }
+
+    await refreshGame();
+  }
+
+  async function undoStat(player, statKey) {
+    if (!game) return;
+    setErr("");
+
+    const current = getVal(player.player_id, statKey);
+    if (current <= 0) return;
+
+    const leagueId = norm(game.league_key);
+    const sport = norm(game.sport);
+
+    const { error } = await supabase.rpc("rpc_add_stat", {
+      p_game_id: game.id,
+      p_league_id: leagueId,
+      p_sport: sport,
+      p_player_id: String(player.player_id),
+      p_player_name: String(player.player_name || player.player_id),
+      p_team_name: String(player?.team_name || ""),
+      p_stat_key: norm(statKey),
+      p_delta: -1,
+    });
+
+    if (error) {
+      setErr(error.message);
+      return;
+    }
+
+    await refreshStats();
+  }
   async function bumpStat(player, statKey, delta) {
     if (!game) return;
     setErr("");
@@ -653,6 +701,13 @@ export default function LiveGamePage() {
         </div>
 
         <div className="flex items-center gap-1">
+          <button
+            onClick={() => undoStat(p, sd.key)}
+            disabled={v <= 0}
+            className={`rounded-lg border border-red-500/30 bg-red-500/10 ${chipPad} ${chipText} font-extrabold text-red-300 active:scale-95 disabled:opacity-30`}
+          >
+            -1
+          </button>
           {deltas.map((d) => (
             <button
               key={`${p.player_id}-${sd.key}-${d}`}
@@ -763,6 +818,13 @@ export default function LiveGamePage() {
                   +{d}
                 </button>
               ))}
+              <button
+                onClick={() => undoScore("A")}
+                disabled={scoreA <= 0}
+                className={`${desktop ? "px-4 py-3 text-lg" : "px-3 py-2 text-base"} rounded-xl border border-red-500/30 bg-red-500/10 font-extrabold text-red-300 active:scale-95 disabled:opacity-30`}
+              >
+                -1
+              </button>
             </div>
           </div>
 
@@ -771,6 +833,13 @@ export default function LiveGamePage() {
             <div className={`${desktop ? "mt-2 text-2xl" : "mt-1 text-lg"} truncate font-extrabold`}>{rightLabel}</div>
             <div className={`${desktop ? "mt-2 text-6xl" : "mt-1 text-4xl"} font-black tabular-nums`}>{scoreB}</div>
             <div className="mt-3 flex flex-wrap justify-end gap-2">
+              <button
+                onClick={() => undoScore("B")}
+                disabled={scoreB <= 0}
+                className={`${desktop ? "px-4 py-3 text-lg" : "px-3 py-2 text-base"} rounded-xl border border-red-500/30 bg-red-500/10 font-extrabold text-red-300 active:scale-95 disabled:opacity-30`}
+              >
+                -1
+              </button>
               {scoreButtons.map((d) => (
                 <button
                   key={`${desktop ? "d" : "m"}B-${d}`}
