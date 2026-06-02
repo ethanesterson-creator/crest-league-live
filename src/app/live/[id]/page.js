@@ -573,6 +573,19 @@ export default function LiveGamePage() {
       return;
     }
 
+    const sa = Number(game.score_a || 0);
+    const sb = Number(game.score_b || 0);
+
+    if (sa === 0 && sb === 0) {
+      setErr("Score is 0-0. Add points before finalizing.");
+      return;
+    }
+
+    if (sa === sb) {
+      setErr("Score is tied. Bauercrest has no ties — adjust the score before finalizing.");
+      return;
+    }
+
     if (rules?.clock?.enabled) {
       const rem = Math.floor(derived.remaining);
       const g2 = await updateLiveGame({
@@ -1020,6 +1033,18 @@ export default function LiveGamePage() {
             {rules?.clock?.enabled && derived.isRunning ? (
               <div className="mt-3 rounded-xl border border-red-400/30 bg-red-500/10 p-3 text-sm">Pause the clock before finalizing.</div>
             ) : null}
+
+            {(() => {
+              const sa = Number(game?.score_a || 0);
+              const sb = Number(game?.score_b || 0);
+              if (sa === 0 && sb === 0) return (
+                <div className="mt-3 rounded-xl border border-red-400/30 bg-red-500/10 p-3 text-sm text-red-200">⚠️ Score is 0-0. Add points before finalizing.</div>
+              );
+              if (sa === sb) return (
+                <div className="mt-3 rounded-xl border border-amber-400/30 bg-amber-500/10 p-3 text-sm text-amber-200">⚠️ Score is tied ({sa}-{sb}). Bauercrest has no ties — adjust before finalizing.</div>
+              );
+              return null;
+            })()}
 
             <div className="mt-4 flex gap-2">
               <button
