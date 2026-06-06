@@ -99,9 +99,24 @@ export default function LiveGamePage() {
   const [captainIds, setCaptainIds] = useState(new Set());
 
   const [nowMs, setNowMs] = useState(Date.now());
+  const [isOnline, setIsOnline] = useState(
+    typeof navigator !== "undefined" ? navigator.onLine : true
+  );
   useEffect(() => {
     const t = setInterval(() => setNowMs(Date.now()), 250);
     return () => clearInterval(t);
+  }, []);
+  useEffect(() => {
+    function handleOnline() { setIsOnline(true); }
+    function handleOffline() { setIsOnline(false); }
+
+    window.addEventListener("online", handleOnline);
+    window.addEventListener("offline", handleOffline);
+
+    return () => {
+      window.removeEventListener("online", handleOnline);
+      window.removeEventListener("offline", handleOffline);
+    };
   }, []);
 
   const rules = useMemo(() => getSportRules(game?.sport), [game?.sport]);
@@ -938,6 +953,12 @@ async function undoScore(side) {
 
   return (
     <div className="min-h-screen bg-transparent text-white">
+      {!isOnline ? (
+        <div className="sticky top-0 z-50 bg-red-600 px-4 py-3 text-center text-sm font-black text-white shadow-lg">
+          ⚠️ NO WIFI — Scores are NOT saving. Reconnect before continuing.
+        </div>
+      ) : null}
+
       {err ? (
         <div className="mx-auto max-w-6xl px-3 pt-3 sm:px-4">
           <div className="rounded-xl border border-red-700 bg-red-950/40 p-3 text-sm text-red-200">{err}</div>
