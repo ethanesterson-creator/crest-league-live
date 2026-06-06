@@ -23,6 +23,7 @@ export default function AdminPage() {
 
   // export
   const [exporting, setExporting] = useState(false);
+  const [stuckGames, setStuckGames] = useState([]);
 
   // ----------------------------
   // TRADES (within league only)
@@ -295,7 +296,50 @@ export default function AdminPage() {
       return full.includes(q) || id.includes(q) || role.includes(q);
     });
   }, [fromPlayers, tradeSearch]);
+  async function loadStuckGames() {
+    setBusy(true);
+    try {
+      const { data, error } = await supabase
+        .from("live_games")
+        .select("*")
+        .eq("status", "active")
+        .is("played_on", null)
+        .order("created_at", { ascending: false });
 
+      if (error) throw error;
+      setStuckGames(data || []);
+    } catch (e) {
+      setErr(e?.message ?? String(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function forceCloseGame(gid) {
+    resetMessages();
+    if (!requireConfirm("DELETE")) {
+      setErr('Type "DELETE" in the confirmation box to force-close a stuck game.');
+      return;
+    }
+
+    const ok = confirm(
+      "Force-close this stuck game?\n\nThis will delete it WITHOUT updating standings or stat leaders.\nUse this only for games that never finished and have no valid score."
+    );
+    if (!ok) return;
+
+    setBusy(true);
+    try {
+      const { error } = await supabase.rpc("delete_unfinalized_game", { gid });
+      if (error) throw error;
+      setMsg("✅ Stuck game removed.");
+      setConfirmText("");
+      await loadStuckGames();
+    } catch (e) {
+      setErr(e?.message ?? String(e));
+    } finally {
+      setBusy(false);
+    }
+  }
   async function doClearSnapshots() {
     resetMessages();
 
@@ -797,7 +841,59 @@ export default function AdminPage() {
               </button>
             </div>
           </div>
+          <div className="mt-6 rounded-2xl border border-amber-500/20 bg-amber-950/20 p-5">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <div className="text-lg font-black text-amber-100">Stuck Games</div>
+                <div className="mt-1 text-sm text-amber-200/70">
+                  Games stuck in "active" status that were never finalized. Safe to remove if the game never finished.
+                </div>
+              </div>
+              <button
+                onClick={loadStuckGames}
+                className="shrink-0 rounded-xl border border-white/15 bg-white/10 px-4 py-2 text-sm font-black hover:bg-white/20"
+              >
+                Load
+              </button>
+            </div>
 
+            <div className="mt-3 text-xs text-white/60">
+              Required confirmation word: <span className="font-black text-white">DELETE</span>
+            </div>
+
+            {stuckGames.length === 0 ? (
+              <div className="mt-4 text-sm text-white/60">
+                No stuck games found. Hit Load to check.
+              </div>
+            ) : (
+              <div className="mt-4 grid gap-3">
+                {stuckGames.map((g) => (
+                  <div key={g.id} className="rounded-2xl border border-amber-500/20 bg-black/20 p-4">
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                      <div className="min-w-0">
+                        <div className="text-xs text-white/60">{new Date(g.created_at).toLocaleString()}</div>
+                        <div className="mt-1 truncate text-lg font-black">{labelMatchup(g)}</div>
+                        <div className="mt-1 text-sm text-white/70">
+                          {g.league_key} • {g.sport} • Level {g.level}
+                        </div>
+                        <div className="mt-1 text-xl font-black tabular-nums">
+                          {Number(g.score_a || 0)} – {Number(g.score_b || 0)}
+                        </div>
+                        <div className="mt-1 text-xs text-white/50">ID: {g.id}</div>
+                      </div>
+                      <button
+                        onClick={() => forceCloseGame(g.id)}
+                        disabled={busy}
+                        className="shrink-0 rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-2 text-sm font-black text-red-200 hover:bg-red-500/20 disabled:opacity-40"
+                      >
+                        Force Remove
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
           <div className="mt-6 rounded-2xl border border-white/10 bg-white/5 p-5">
             <div className="text-lg font-black">Rebuild Leaderboards</div>
             <div className="mt-1 text-sm text-white/70">Recalculates standings + stat leaders from all finalized games.</div>
