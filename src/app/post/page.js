@@ -238,6 +238,7 @@ export default function PostGamesPage() {
     if (a1 === b1) return "Teams must be different.";
 
     if (matchupType === "single") return "";
+    if (matchupType === "full_team") return "";
 
     const a2 = norm(teamA2);
     const b2 = norm(teamB2);
@@ -270,7 +271,7 @@ export default function PostGamesPage() {
 
         league_key: lk,
         sport,
-        level: lv,
+        level: matchupType === "full_team" ? "FULL" : lv,
         mode,
 
         matchup_type: matchupType,
@@ -469,24 +470,29 @@ export default function PostGamesPage() {
                 >
                   <option value="single">1 team vs 1 team</option>
                   <option value="two_team">2 teams vs 2 teams</option>
+                  <option value="full_team">Full Team</option>
                 </select>
               </label>
 
-              <label className="text-sm">
-                <div className="mb-1 text-slate-300">Level</div>
-                <select
-                  className="w-full rounded-xl border border-slate-800 bg-slate-950 px-3 py-2 outline-none focus:border-slate-500"
-                  value={String(level).toUpperCase()}
-                  onChange={(e) => setLevel(e.target.value)}
-                  disabled={norm(sport) === "evening activity"}
-                >
-                  {(availableLevels?.length ? availableLevels : FALLBACK_LEVELS).map((l) => (
-                    <option key={l} value={l}>
-                      {l}
-                    </option>
-                  ))}
-                </select>
-              </label>
+              {matchupType !== "full_team" ? (
+                <label className="text-sm">
+                  <div className="mb-1 text-slate-300">Level</div>
+                  <select
+                    className="w-full rounded-xl border border-slate-800 bg-slate-950 px-3 py-2 outline-none focus:border-slate-500"
+                    value={String(level).toUpperCase()}
+                    onChange={(e) => setLevel(e.target.value)}
+                    disabled={norm(sport) === "evening activity"}
+                  >
+                    {(availableLevels?.length ? availableLevels : FALLBACK_LEVELS).map((l) => (
+                      <option key={l} value={l}>
+                        {l}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              ) : (
+                <div className="text-xs text-slate-400 flex items-end pb-2">Full Team — no level split.</div>
+              )}
 
               <label className="text-sm">
                 <div className="mb-1 text-slate-300">Mode</div>

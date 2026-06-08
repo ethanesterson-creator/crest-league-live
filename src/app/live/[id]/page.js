@@ -265,6 +265,14 @@ export default function LiveGamePage() {
     const teamsB = uniqNonEmpty([b1, matchupType === "two_team" ? b2 : null]);
     const allTeams = uniqNonEmpty([...teamsA, ...teamsB]);
 
+    // Full team: load entire team roster regardless of level
+    if (matchupType === "full_team") {
+      teamsA.length = 0;
+      teamsB.length = 0;
+      teamsA.push(a1);
+      teamsB.push(b1);
+    }
+
     if (!lk || !allTeams.length) {
       setErr("Missing league/team info for this game.");
       return;
