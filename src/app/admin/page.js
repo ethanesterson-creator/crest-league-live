@@ -24,6 +24,8 @@ export default function AdminPage() {
   // export
   const [exporting, setExporting] = useState(false);
   const [stuckGames, setStuckGames] = useState([]);
+  const [overrideGameId, setOverrideGameId] = useState(null);
+  const [overridePoints, setOverridePoints] = useState("");
 
   // ----------------------------
   // TRADES (within league only)
@@ -334,6 +336,44 @@ export default function AdminPage() {
       setMsg("✅ Stuck game removed.");
       setConfirmText("");
       await loadStuckGames();
+    } catch (e) {
+      setErr(e?.message ?? String(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+  async function updateGameWinPoints(gid) {
+    resetMessages();
+    if (!requireConfirm("REBUILD")) {
+      setErr('Type "REBUILD" in the confirmation box to override win points.');
+      return;
+    }
+
+    const pts = Number(overridePoints);
+    if (!pts || pts < 0) {
+      setErr("Enter a valid points value greater than 0.");
+      return;
+    }
+
+    setBusy(true);
+    try {
+      // Update the win_points on the game record
+      const { error: updateErr } = await supabase
+        .from("live_games")
+        .update({ win_points_override: pts })
+        .eq("id", gid);
+
+      if (updateErr) throw updateErr;
+
+      // Rebuild standings so the new value takes effect
+      const { error: rebuildErr } = await supabase.rpc("rebuild_standings_and_leaders");
+      if (rebuildErr) throw rebuildErr;
+
+      setMsg(`✅ Win points updated to ${pts} and standings rebuilt.`);
+      setOverrideGameId(null);
+      setOverridePoints("");
+      setConfirmText("");
+      await loadFinalGames();
     } catch (e) {
       setErr(e?.message ?? String(e));
     } finally {
@@ -952,21 +992,56 @@ export default function AdminPage() {
                         <div className="mt-1 text-xs text-white/50">ID: {g.id}</div>
                       </div>
 
-                      <div className="flex items-center gap-3">
-                        <div className="rounded-2xl border border-white/10 bg-white/5 p-3 text-center">
-                          <div className="text-xs text-white/60">Final</div>
-                          <div className="mt-1 text-3xl font-black tabular-nums">
-                            {Number(g.score_a || 0)} - {Number(g.score_b || 0)}
+                      <div className="flex flex-col items-end gap-2">
+                        <div className="flex items-center gap-3">
+                          <div className="rounded-2xl border border-white/10 bg-white/5 p-3 text-center">
+                            <div className="text-xs text-white/60">Final</div>
+                            <div className="mt-1 text-3xl font-black tabular-nums">
+                              {Number(g.score_a || 0)} - {Number(g.score_b || 0)}
+                            </div>
                           </div>
+
+                          <button
+                            disabled={busy}
+                            onClick={() => deleteFinalGame(g.id)}
+                            className="rounded-2xl border border-red-400/30 bg-red-500/10 px-4 py-3 text-sm font-black text-red-100 hover:bg-red-500/15 disabled:opacity-60"
+                          >
+                            {busy ? "Working…" : "Delete Final Game"}
+                          </button>
                         </div>
 
-                        <button
-                          disabled={busy}
-                          onClick={() => deleteFinalGame(g.id)}
-                          className="rounded-2xl border border-red-400/30 bg-red-500/10 px-4 py-3 text-sm font-black text-red-100 hover:bg-red-500/15 disabled:opacity-60"
-                        >
-                          {busy ? "Working…" : "Delete Final Game"}
-                        </button>
+                        {overrideGameId === g.id ? (
+                          <div className="flex items-center gap-2">
+                            <input
+                              type="number"
+                              min="0"
+                              value={overridePoints}
+                              onChange={(e) => setOverridePoints(e.target.value)}
+                              placeholder="New win pts"
+                              className="w-28 rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm font-black text-amber-100 outline-none"
+                            />
+                            <button
+                              disabled={busy}
+                              onClick={() => updateGameWinPoints(g.id)}
+                              className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm font-black text-amber-100 hover:bg-amber-500/20 disabled:opacity-60"
+                            >
+                              Save
+                            </button>
+                            <button
+                              onClick={() => { setOverrideGameId(null); setOverridePoints(""); }}
+                              className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm font-black hover:bg-white/10"
+                            >
+                              Cancel
+                            </button>
+                          </div>
+                        ) : (
+                          <button
+                            onClick={() => { setOverrideGameId(g.id); setOverridePoints(""); }}
+                            className="rounded-xl border border-amber-500/20 bg-amber-500/5 px-3 py-2 text-xs font-black text-amber-200 hover:bg-amber-500/10"
+                          >
+                            Override Win Points
+                          </button>
+                        )}
                       </div>
                     </div>
                   </div>
