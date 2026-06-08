@@ -366,7 +366,7 @@ export default function AdminPage() {
       if (updateErr) throw updateErr;
 
       // Rebuild standings so the new value takes effect
-      const { error: rebuildErr } = await supabase.rpc("rebuild_standings_and_leaders");
+      const { error: rebuildErr } = await supabase.rpc("rebuild_leaderboards");
       if (rebuildErr) throw rebuildErr;
 
       setMsg(`✅ Win points updated to ${pts} and standings rebuilt.`);
