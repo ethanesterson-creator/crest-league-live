@@ -4,15 +4,6 @@ function key(s) {
   return String(s ?? "").trim().toLowerCase();
 }
 
-/**
- * SPORT_RULES drives:
- * - clock visibility + preset buttons
- * - score increment buttons
- * - player stat buttons
- *
- * stat keys should be short + stable (lowercase), because they become
- * live_events.stat_key and player_totals.stat_key.
- */
 export const SPORT_RULES = {
   hoop: {
     label: "Hoop",
@@ -36,8 +27,6 @@ export const SPORT_RULES = {
     stats: [
       { key: "pts", label: "PTS", deltas: [1, 2, 3] },
       { key: "ast", label: "AST", deltas: [1] },
-      { key: "reb", label: "REB", deltas: [1] },
-      { key: "blk", label: "BLK", deltas: [1] },
     ],
   },
 
@@ -52,7 +41,6 @@ export const SPORT_RULES = {
     stats: [
       { key: "g", label: "G", deltas: [1] },
       { key: "a", label: "A", deltas: [1] },
-      { key: "s", label: "S", deltas: [1] },
     ],
   },
 
@@ -63,8 +51,6 @@ export const SPORT_RULES = {
     stats: [
       { key: "h", label: "H", deltas: [1] },
       { key: "hr", label: "HR", deltas: [1] },
-      { key: "so", label: "SO", deltas: [1] },
-      { key: "rbi", label: "RBI", deltas: [1] },
     ],
   },
 
@@ -91,7 +77,6 @@ export const SPORT_RULES = {
     scoreButtons: [1, 2, 6],
     stats: [
       { key: "td", label: "TD", deltas: [1] },
-      { key: "int", label: "INT", deltas: [1] },
     ],
   },
 
@@ -112,7 +97,6 @@ export const SPORT_RULES = {
     stats: [
       { key: "g", label: "G", deltas: [1] },
       { key: "a", label: "A", deltas: [1] },
-      { key: "s", label: "S", deltas: [1] },
     ],
   },
 
@@ -130,7 +114,6 @@ export const SPORT_RULES = {
     stats: [
       { key: "g", label: "G", deltas: [1] },
       { key: "a", label: "A", deltas: [1] },
-      { key: "s", label: "S", deltas: [1] },
     ],
   },
 
@@ -147,8 +130,14 @@ export const SPORT_RULES = {
     stats: [
       { key: "g", label: "G", deltas: [1] },
       { key: "a", label: "A", deltas: [1] },
-      { key: "s", label: "S", deltas: [1] },
     ],
+  },
+
+  kickball: {
+    label: "Kickball",
+    clock: { enabled: false },
+    scoreButtons: [1],
+    stats: [],
   },
 
   newcomb: {
