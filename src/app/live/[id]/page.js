@@ -476,7 +476,7 @@ export default function LiveGamePage() {
   const benchB = rosterB.filter((p) => !p.is_playing);
 
   const scoreButtons = rules?.scoreButtons?.length ? rules.scoreButtons : [1];
-  const statDefs = rules?.stats?.length ? rules.stats : [{ key: "pts", label: "PTS", deltas: [1] }];
+  const statDefs = rules?.stats ?? [];
   const clockPresets = activeClockMode?.presets ?? [300, 600, 900, 1200, 1800];
   const chipPad = superCompact ? "px-2 py-1" : "px-3 py-2";
   const chipText = superCompact ? "text-[11px]" : "text-sm";
