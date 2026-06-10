@@ -96,6 +96,7 @@ export default function LiveGamePage() {
   const [isOnline, setIsOnline] = useState(
     typeof navigator !== "undefined" ? navigator.onLine : true
   );
+  const [inning, setInning] = useState(1);
 
   useEffect(() => {
     const t = setInterval(() => setNowMs(Date.now()), 250);
@@ -652,6 +653,29 @@ export default function LiveGamePage() {
                 <div className="text-[10px] font-black uppercase tracking-widest text-white/40">No Clock</div>
               </div>
             )}
+
+            {/* Innings counter — softball and kickball only */}
+            {(norm(game.sport) === "softball" || norm(game.sport) === "kickball") ? (
+              <div className="flex flex-col items-center gap-1 rounded-lg border border-white/10 bg-white/[0.04] px-3 py-2">
+                <div className="text-[10px] font-black uppercase tracking-widest text-white/40">Inning</div>
+                <div className="text-2xl font-black tabular-nums text-white">{inning}</div>
+                <div className="flex items-center gap-1.5">
+                  <button
+                    onClick={() => setInning((v) => Math.max(1, v - 1))}
+                    disabled={inning <= 1}
+                    className="rounded-lg border border-white/10 bg-white/10 px-2.5 py-1 text-sm font-black active:scale-95 disabled:opacity-20"
+                  >
+                    -1
+                  </button>
+                  <button
+                    onClick={() => setInning((v) => v + 1)}
+                    className="rounded-lg border border-white/10 bg-white/10 px-2.5 py-1 text-sm font-black active:scale-95"
+                  >
+                    +1
+                  </button>
+                </div>
+              </div>
+            ) : null}
 
             {/* Finalize */}
             <button onClick={() => setConfirmFinalizeOpen(true)}

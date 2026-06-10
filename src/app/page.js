@@ -9,6 +9,7 @@ import { getSportRules } from "@/lib/sportRules";
 const SPORTS = [
   "Hoop",
   "Softball",
+  "Kickball",
   "Volleyball",
   "Football",
   "Newcomb",

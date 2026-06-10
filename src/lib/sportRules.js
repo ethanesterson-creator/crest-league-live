@@ -158,5 +158,5 @@ export function getSportRules(sport) {
   };
 
   const resolved = aliases[k] ?? k;
-  return SPORT_RULES[resolved] ?? SPORT_RULES.hoop;
+  return SPORT_RULES[resolved] ?? { label: resolved, clock: { enabled: false }, scoreButtons: [1], stats: [] };
 }
