@@ -21,7 +21,7 @@ const SPORTS = [
 ];
 
 // Fallbacks only used if points_rules row is missing
-const FALLBACK_LEVELS = ["A", "B", "C", "D", "ALL"];
+const FALLBACK_LEVELS = ["A", "B", "C", "D", "E", "F", "ALL"];
 const MODES = ["5v5", "6v6", "7v7", "8v8", "9v9", "10v10", "11v11", "3v3", "2v2", "1v1"];
 
 const FALLBACK_TIMER_PRESETS = [

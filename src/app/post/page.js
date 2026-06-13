@@ -4,8 +4,8 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { supabase } from "@/lib/supabase";
 
-const SPORTS = ["Hoop", "Soccer", "Softball", "Volleyball", "Football", "Speedball", "Euro", "Hockey", "Evening Activity"];
-const FALLBACK_LEVELS = ["A", "B", "C", "D", "ALL"];
+const SPORTS = ["Hoop", "Soccer", "Softball", "Kickball", "Volleyball", "Football", "Speedball", "Euro", "Hockey", "Newcomb", "Evening Activity"];
+const FALLBACK_LEVELS = ["A", "B", "C", "D", "E", "F", "ALL"];
 const MODES = ["5v5", "6v6", "7v7", "8v8", "9v9", "10v10", "11v11"];
 
 // Fixed reasons (based on proposal themes + Other)
