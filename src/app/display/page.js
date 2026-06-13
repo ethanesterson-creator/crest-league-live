@@ -63,6 +63,7 @@ export default function DisplayPage() {
   const [autoRefresh, setAutoRefresh] = useState(true);
 
   const [now, setNow] = useState(Date.now());
+  const [highlightIndex, setHighlightIndex] = useState(0);
 
   const wrapRef = useRef(null);
 
@@ -160,29 +161,33 @@ export default function DisplayPage() {
   }, [autoRefresh, league]);
 
  useEffect(() => {
-  if (!autoRotate) return;
+    if (!autoRotate) return;
 
-  const leagueCycle = ["seniors", "juniors", "sophomores"];
+    const leagueCycle = ["seniors", "juniors", "sophomores"];
 
-  const t = setInterval(() => {
-    setScene((prev) => {
-      const idx = SCENES.indexOf(prev);
-      const nextScene = SCENES[(idx + 1) % SCENES.length];
+    const t = setInterval(() => {
+      setScene((prev) => {
+        const idx = SCENES.indexOf(prev);
+        const nextScene = SCENES[(idx + 1) % SCENES.length];
 
-      // Every time we wrap back to first scene, move to next league
-      if (idx === SCENES.length - 1) {
-        setLeague((cur) => {
-          const li = leagueCycle.indexOf(cur);
-          return leagueCycle[(li + 1) % leagueCycle.length];
-        });
-      }
+        if (idx === SCENES.length - 1) {
+          setLeague((cur) => {
+            const li = leagueCycle.indexOf(cur);
+            return leagueCycle[(li + 1) % leagueCycle.length];
+          });
+        }
 
-      return nextScene;
-    });
-  }, rotateSeconds * 1000);
+        // Reset highlight index each time we enter the highlights scene
+        if (nextScene === "highlights") {
+          setHighlightIndex(0);
+        }
 
-  return () => clearInterval(t);
-}, [autoRotate, rotateSeconds]);
+        return nextScene;
+      });
+    }, rotateSeconds * 1000);
+
+    return () => clearInterval(t);
+  }, [autoRotate, rotateSeconds]);
 
  const tickerItems = useMemo(() => {
   const live = liveGames.slice(0, 4).map((g) => {
@@ -439,52 +444,65 @@ export default function DisplayPage() {
     );
   }
 
-  function renderHighlights() {
+ function renderHighlights() {
+    if (!highlights.length) return (
+      <div className="flex h-full items-center justify-center text-white/40 text-2xl font-black">
+        No highlights yet.
+      </div>
+    );
+
+    const safeIndex = highlightIndex % highlights.length;
+    const h = highlights[safeIndex];
+
+    const { data } = supabase.storage
+      .from("highlights")
+      .getPublicUrl(h.file_path);
+
+    const url = data?.publicUrl;
+
+    function goNext() {
+      setHighlightIndex((i) => (i + 1) % highlights.length);
+    }
+
     return (
-      <div className="grid grid-cols-1 gap-8">
-        {highlights.slice(0, 1).map((h) => {
-          const { data } = supabase.storage
-            .from("highlights")
-            .getPublicUrl(h.file_path);
-
-          const url = data?.publicUrl;
-
-          return (
-            <div
-              key={h.id}
-              className="overflow-hidden rounded-[40px] border border-white/10 bg-black"
-            >
-              <div className="border-b border-white/10 bg-gradient-to-r from-red-700 to-red-500 px-8 py-5">
-                <div className="text-sm font-black uppercase tracking-[0.3em] text-white/70">
-                  FEATURED HIGHLIGHT
-                </div>
-
-                <div className="mt-1 text-4xl font-black text-white">
-                  {h.title || "Camp Highlight"}
-                </div>
+      <div className="grid grid-cols-1 gap-8 h-full">
+        <div className="overflow-hidden rounded-[40px] border border-white/10 bg-black">
+          <div className="border-b border-white/10 bg-gradient-to-r from-red-700 to-red-500 px-8 py-4 flex items-center justify-between">
+            <div>
+              <div className="text-sm font-black uppercase tracking-[0.3em] text-white/70">
+                FEATURED HIGHLIGHT
               </div>
-
-              <div className="aspect-video bg-black">
-                {h.file_type === "video" ? (
-                  <video
-                    src={url}
-                    controls
-                    autoPlay
-                    muted
-                    playsInline
-                    className="h-full w-full object-contain"
-                  />
-                ) : (
-                  <img
-                    src={url}
-                    alt=""
-                    className="h-full w-full object-contain"
-                  />
-                )}
+              <div className="mt-1 text-4xl font-black text-white">
+                {h.title || "Camp Highlight"}
               </div>
             </div>
-          );
-        })}
+            <div className="text-sm font-black text-white/50">
+              {safeIndex + 1} / {highlights.length}
+            </div>
+          </div>
+
+          <div className="aspect-video bg-black">
+            {h.file_type === "video" ? (
+              <video
+                key={h.id}
+                src={url}
+                autoPlay
+                muted
+                playsInline
+                className="h-full w-full object-contain"
+                onEnded={goNext}
+              />
+            ) : (
+              <img
+                key={h.id}
+                src={url}
+                alt=""
+                className="h-full w-full object-contain"
+                onLoad={() => setTimeout(goNext, 8000)}
+              />
+            )}
+          </div>
+        </div>
       </div>
     );
   }
