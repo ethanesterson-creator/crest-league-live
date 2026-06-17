@@ -80,6 +80,7 @@ export default function LiveGamePage() {
   const [statTotals, setStatTotals] = useState({});
 
   const [confirmFinalizeOpen, setConfirmFinalizeOpen] = useState(false);
+  const [finalizing, setFinalizing] = useState(false);
   const [clockMode, setClockMode] = useState("");
 
   const [showBenchA, setShowBenchA] = useState(true);
@@ -441,21 +442,28 @@ export default function LiveGamePage() {
   }
 
   async function finalizeGame() {
-    if (!game) return;
+    if (!game || finalizing) return;
     setErr("");
     if (rules?.clock?.enabled && derived.isRunning) { setErr("Pause the clock before finalizing."); return; }
     const sa = Number(game.score_a || 0); const sb = Number(game.score_b || 0);
     if (sa === 0 && sb === 0) { setErr("Score is 0-0. Add points before finalizing."); return; }
     if (sa === sb) { setErr("Score is tied. Bauercrest has no ties — adjust the score before finalizing."); return; }
-    if (rules?.clock?.enabled) {
-      const rem = Math.floor(derived.remaining);
-      const g2 = await updateLiveGame({ timer_running: false, timer_anchor_ts: null, timer_remaining_at_anchor: rem, timer_remaining_seconds: rem });
-      if (!g2) return;
+
+    setFinalizing(true);
+    try {
+      if (rules?.clock?.enabled) {
+        const rem = Math.floor(derived.remaining);
+        const g2 = await updateLiveGame({ timer_running: false, timer_anchor_ts: null, timer_remaining_at_anchor: rem, timer_remaining_seconds: rem });
+        if (!g2) { setFinalizing(false); return; }
+      }
+      const { error } = await supabase.rpc("finalize_game", { gid: game.id });
+      if (error) { setErr(error.message); setFinalizing(false); return; }
+      await refreshGame();
+      router.push("/");
+    } catch (e) {
+      setErr(e?.message ?? String(e));
+      setFinalizing(false);
     }
-    const { error } = await supabase.rpc("finalize_game", { gid: game.id });
-    if (error) { setErr(error.message); return; }
-    await refreshGame();
-    router.push("/");
   }
 
   // ── Early returns ──────────────────────────────────────────────────────────
@@ -832,10 +840,10 @@ export default function LiveGamePage() {
                 className="flex-1 rounded-xl border border-white/15 bg-white/5 px-4 py-3 font-bold">
                 Cancel
               </button>
-              <button disabled={rules?.clock?.enabled && derived.isRunning}
+              <button disabled={(rules?.clock?.enabled && derived.isRunning) || finalizing}
                 className="flex-1 rounded-xl border border-emerald-400/30 bg-emerald-500/15 px-4 py-3 font-black disabled:opacity-40"
-                onClick={async () => { setConfirmFinalizeOpen(false); await finalizeGame(); }}>
-                Finalize
+                onClick={async () => { await finalizeGame(); }}>
+                {finalizing ? "Finalizing…" : "Finalize"}
               </button>
             </div>
           </div>

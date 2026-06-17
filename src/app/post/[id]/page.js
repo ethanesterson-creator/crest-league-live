@@ -374,6 +374,19 @@ export default function PostDraftEditorPage() {
     setErr("");
     setMsg("");
 
+    const sa = Number(scoreAInput || 0);
+    const sb = Number(scoreBInput || 0);
+
+    if (sa === 0 && sb === 0) {
+      setErr("Score is 0-0. Enter a score before finalizing.");
+      return;
+    }
+
+    if (sa === sb) {
+      setErr("Score is tied. Bauercrest has no ties — adjust the score before finalizing.");
+      return;
+    }
+
     const ok = confirm("Finalize this post-game draft?\n\nThis updates standings + stat leaders.");
     if (!ok) return;
 
