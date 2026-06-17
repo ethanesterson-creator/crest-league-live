@@ -336,6 +336,15 @@ export default function DisplayPage() {
   }
 
   function renderLiveGames() {
+    if (!liveGames.length) return (
+      <div className="flex h-full items-center justify-center">
+        <div className="text-center">
+          <div className="text-6xl font-black text-white/20">—</div>
+          <div className="mt-4 text-2xl font-black uppercase tracking-widest text-white/30">No Games Live Right Now</div>
+        </div>
+      </div>
+    );
+
     return (
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
         {liveGames.map((g) => (
