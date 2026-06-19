@@ -232,7 +232,7 @@ export default function DisplayPage() {
         <div className="rounded-[32px] border border-white/10 bg-gradient-to-br from-slate-950 to-slate-900 p-8 shadow-2xl">
           <div className="mb-8 flex items-center justify-between">
             <div>
-              <div className="text-sm font-black uppercase tracking-[0.3em] text-red-500">
+              <div className="text-sm font-black uppercase tracking-[0.3em] text-blue-500">
                 Crest League
               </div>
               <div className="text-5xl font-black text-white">
@@ -240,8 +240,8 @@ export default function DisplayPage() {
               </div>
             </div>
 
-            <div className="rounded-2xl border border-red-500/40 bg-red-500/15 px-6 py-4">
-              <div className="text-xs font-bold uppercase tracking-widest text-red-300">
+            <div className="rounded-2xl border border-blue-500/40 bg-blue-500/15 px-6 py-4">
+              <div className="text-xs font-bold uppercase tracking-widest text-blue-300">
                 LIVE TABLE
               </div>
             </div>
@@ -264,7 +264,7 @@ export default function DisplayPage() {
                     key={`${t.team_name}-${i}`}
                     className={cx(
                       "border-t border-white/5",
-                      i === 0 && "bg-red-500/10"
+                      i === 0 && "bg-blue-500/10"
                     )}
                   >
                     <td className="px-6 py-6 text-3xl font-black text-white">
@@ -279,7 +279,7 @@ export default function DisplayPage() {
                       {t.losses}
                     </td>
 
-                    <td className="px-6 py-6 text-center text-4xl font-black text-red-400">
+                    <td className="px-6 py-6 text-center text-4xl font-black text-blue-400">
                       {Number(t.league_points || 0)}
                     </td>
                   </tr>
@@ -290,8 +290,8 @@ export default function DisplayPage() {
         </div>
 
         <div className="flex flex-col gap-6">
-          <div className="rounded-[32px] border border-white/10 bg-gradient-to-br from-red-950/40 to-slate-900 p-8">
-            <div className="text-lg font-black uppercase tracking-widest text-red-400">
+          <div className="rounded-[32px] border border-white/10 bg-gradient-to-br from-blue-950/40 to-slate-900 p-8">
+            <div className="text-lg font-black uppercase tracking-widest text-blue-400">
               League Status
             </div>
 
@@ -315,7 +315,7 @@ export default function DisplayPage() {
                   key={g.id}
                   className="rounded-2xl border border-white/10 bg-white/[0.03] p-5"
                 >
-                  <div className="text-sm font-black uppercase tracking-widest text-red-400">
+                  <div className="text-sm font-black uppercase tracking-widest text-blue-400">
                     {fmtLeague(g.league_id)} • {fmtSport(g.sport)}
                   </div>
 
@@ -350,10 +350,10 @@ export default function DisplayPage() {
         {liveGames.map((g) => (
           <div
             key={g.id}
-            className="rounded-[32px] border border-red-500/20 bg-gradient-to-br from-red-950/20 to-slate-950 p-8 shadow-2xl"
+            className="rounded-[32px] border border-blue-500/20 bg-gradient-to-br from-blue-950/20 to-slate-950 p-8 shadow-2xl"
           >
             <div className="mb-5 flex items-center justify-between">
-              <div className="rounded-full bg-red-600 px-4 py-2 text-sm font-black uppercase tracking-widest text-white">
+              <div className="rounded-full bg-blue-600 px-4 py-2 text-sm font-black uppercase tracking-widest text-white">
                 LIVE
               </div>
 
@@ -366,7 +366,7 @@ export default function DisplayPage() {
               {g.team_a}
             </div>
 
-            <div className="my-4 text-center text-7xl font-black text-red-400">
+            <div className="my-4 text-center text-7xl font-black text-blue-400">
               {g.score_a} - {g.score_b}
             </div>
 
@@ -387,7 +387,7 @@ export default function DisplayPage() {
             key={g.id}
             className="rounded-[32px] border border-white/10 bg-gradient-to-br from-slate-900 to-black p-8"
           >
-            <div className="text-sm font-black uppercase tracking-[0.2em] text-red-400">
+            <div className="text-sm font-black uppercase tracking-[0.2em] text-blue-400">
               FINAL
             </div>
 
@@ -399,7 +399,7 @@ export default function DisplayPage() {
               {g.team_a}
             </div>
 
-            <div className="my-5 text-center text-6xl font-black text-red-400">
+            <div className="my-5 text-center text-6xl font-black text-blue-400">
               {g.score_a} - {g.score_b}
             </div>
 
@@ -420,7 +420,7 @@ export default function DisplayPage() {
             key={`${p.player_id}-${i}`}
             className="rounded-[32px] border border-white/10 bg-gradient-to-br from-slate-900 to-black p-8"
           >
-            <div className="text-sm font-black uppercase tracking-[0.2em] text-red-400">
+            <div className="text-sm font-black uppercase tracking-[0.2em] text-blue-400">
               STAT LEADER
             </div>
 
@@ -438,7 +438,7 @@ export default function DisplayPage() {
                   {p.stat_key}
                 </div>
 
-                <div className="text-7xl font-black text-red-400">
+                <div className="text-7xl font-black text-blue-400">
                   {p.value}
                 </div>
               </div>
@@ -476,7 +476,7 @@ export default function DisplayPage() {
     return (
       <div className="grid grid-cols-1 gap-8 h-full">
         <div className="overflow-hidden rounded-[40px] border border-white/10 bg-black">
-          <div className="border-b border-white/10 bg-gradient-to-r from-red-700 to-red-500 px-8 py-4 flex items-center justify-between">
+          <div className="border-b border-white/10 bg-gradient-to-r from-blue-700 to-blue-500 px-8 py-4 flex items-center justify-between">
             <div>
               <div className="text-sm font-black uppercase tracking-[0.3em] text-white/70">
                 FEATURED HIGHLIGHT
@@ -524,24 +524,27 @@ export default function DisplayPage() {
     >
       {/* Background */}
       <div className="pointer-events-none absolute inset-0">
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(220,38,38,0.28),transparent_35%),radial-gradient(circle_at_bottom_right,rgba(30,64,175,0.22),transparent_40%)]" />
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(58,113,255,0.30),transparent_35%),radial-gradient(circle_at_bottom_right,rgba(30,64,175,0.22),transparent_40%)]" />
         <div className="absolute inset-0 bg-[linear-gradient(120deg,rgba(255,255,255,0.06)_1px,transparent_1px)] bg-[length:48px_48px] opacity-[0.08]" />
       </div>
 
       {/* Top compact ESPN-style header */}
       <header className="relative z-10 flex h-[72px] items-center justify-between border-b border-white/10 bg-black/65 px-6 backdrop-blur-xl">
         <div className="flex items-center gap-5">
-          <div className="flex items-center overflow-hidden rounded-xl border border-red-500/40 bg-red-600 shadow-lg shadow-red-900/40">
-            <div className="bg-white px-3 py-2 text-xl font-black tracking-tight text-red-700">
-              CREST
-            </div>
-            <div className="px-3 py-2 text-xl font-black tracking-tight text-white">
-              LEAGUE LIVE
-            </div>
+          <div className="flex items-center gap-2 rounded-xl border border-blue-400/30 bg-black/40 px-4 py-2 shadow-[0_0_18px_rgba(58,113,255,0.35)]">
+            <span
+              className="text-2xl font-black italic tracking-tighter"
+              style={{
+                color: "#bcd4ff",
+                textShadow: "0 0 6px #5b8cff, 0 0 14px #3a71ff, 0 0 22px rgba(58,113,255,0.6)",
+              }}
+            >
+              CBSN
+            </span>
           </div>
 
           <div className="hidden text-sm font-black uppercase tracking-[0.25em] text-white/50 md:block">
-            Mess Hall Broadcast
+            Camp Bauercrest Sports Network
           </div>
         </div>
 
@@ -579,7 +582,7 @@ export default function DisplayPage() {
 
           <button
             onClick={goFullscreen}
-            className="h-10 rounded-xl border border-red-500/40 bg-red-600 px-4 text-sm font-black text-white hover:bg-red-500"
+            className="h-10 rounded-xl border border-blue-500/40 bg-blue-600 px-4 text-sm font-black text-white hover:bg-blue-500"
           >
             Fullscreen
           </button>
@@ -614,7 +617,7 @@ export default function DisplayPage() {
             Current Scene
           </div>
 
-          <div className="rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-2 text-sm font-black uppercase tracking-wide text-red-300">
+          <div className="rounded-xl border border-blue-500/30 bg-blue-500/10 px-4 py-2 text-sm font-black uppercase tracking-wide text-blue-300">
             {SCENE_LABELS[scene]}
           </div>
 
@@ -639,7 +642,7 @@ export default function DisplayPage() {
             <div className="rounded-[32px] border border-white/10 bg-gradient-to-br from-slate-950 to-slate-900 p-8 shadow-2xl">
               <div className="mb-8 flex items-center justify-between">
                 <div>
-                  <div className="text-sm font-black uppercase tracking-[0.3em] text-red-500">
+                  <div className="text-sm font-black uppercase tracking-[0.3em] text-blue-500">
                     Camp-Wide
                   </div>
                   <div className="text-5xl font-black text-white">
@@ -647,8 +650,8 @@ export default function DisplayPage() {
                   </div>
                 </div>
 
-                <div className="rounded-2xl border border-red-500/40 bg-red-500/15 px-6 py-4">
-                  <div className="text-xs font-bold uppercase tracking-widest text-red-300">
+                <div className="rounded-2xl border border-blue-500/40 bg-blue-500/15 px-6 py-4">
+                  <div className="text-xs font-bold uppercase tracking-widest text-blue-300">
                     ALL AGE GROUPS
                   </div>
                 </div>
@@ -660,7 +663,7 @@ export default function DisplayPage() {
                     key={`${t.league_id}-${t.team_name}-${i}`}
                     className={cx(
                       "flex items-center justify-between rounded-3xl border border-white/10 bg-white/[0.04] p-6",
-                      i === 0 && "border-red-500/40 bg-red-500/10"
+                      i === 0 && "border-blue-500/40 bg-blue-500/10"
                     )}
                   >
                     <div>
@@ -673,10 +676,10 @@ export default function DisplayPage() {
                     </div>
 
                     <div className="text-right">
-                      <div className="text-sm font-black uppercase tracking-[0.2em] text-red-300">
+                      <div className="text-sm font-black uppercase tracking-[0.2em] text-blue-300">
                         POINTS
                       </div>
-                      <div className="text-6xl font-black text-red-400">
+                      <div className="text-6xl font-black text-blue-400">
                         {Number(t.league_points || 0)}
                       </div>
                     </div>
@@ -698,7 +701,7 @@ export default function DisplayPage() {
 
       {/* Error overlay */}
       {false && (
-        <div className="absolute right-4 top-24 z-50 rounded-xl border border-red-500/30 bg-red-950/90 px-4 py-3 text-sm font-bold text-red-100">
+        <div className="absolute right-4 top-24 z-50 rounded-xl border border-blue-500/30 bg-blue-950/90 px-4 py-3 text-sm font-bold text-blue-100">
           Error loading board
         </div>
       )}
@@ -711,10 +714,13 @@ function Ticker({ items }) {
   const text = items && items.length ? items.join("     •     ") : "";
   if (!text) return null;
   return (
-    <footer className="absolute bottom-0 left-0 right-0 z-20 flex h-[52px] overflow-hidden border-t border-red-500/40 bg-red-700 shadow-2xl">
+    <footer className="absolute bottom-0 left-0 right-0 z-20 flex h-[52px] overflow-hidden border-t-2 border-blue-400/60 bg-[#0a1530] shadow-[0_-4px_20px_rgba(58,113,255,0.25)]">
       <div className="flex shrink-0 items-center bg-black px-5">
-        <div className="text-sm font-black uppercase tracking-[0.25em] text-white">
-          Crest Ticker
+        <div
+          className="text-sm font-black uppercase tracking-[0.25em]"
+          style={{ color: "#bcd4ff", textShadow: "0 0 8px #3a71ff" }}
+        >
+          CBSN Ticker
         </div>
       </div>
 
