@@ -181,12 +181,12 @@ export default function AdminPage() {
     }
   }
 
-  async function playerInActiveLiveGame(playerId) {
-    // “Active” = live_games.status = 'live'
+ async function playerInActiveLiveGame(playerId) {
+    // "Active" = live_games.status = 'active'
     const { data: liveIds, error: lErr } = await supabase
       .from("live_games")
       .select("id")
-      .eq("status", "live")
+      .eq("status", "active")
       .limit(500);
 
     if (lErr) throw lErr;

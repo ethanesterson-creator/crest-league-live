@@ -8,11 +8,13 @@ const SPORTS = [
   "Hoop",
   "Soccer",
   "Softball",
+  "Kickball",
   "Volleyball",
   "Football",
   "Speedball",
   "Euro",
   "Hockey",
+  "Newcomb",
 ];
 
 function norm(s) {

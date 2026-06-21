@@ -8,7 +8,7 @@ const SPORTS = ["Hoop", "Soccer", "Softball", "Kickball", "Volleyball", "Footbal
 const FALLBACK_LEVELS = ["A", "B", "C", "D", "E", "F", "ALL"];
 const MODES = ["5v5", "6v6", "7v7", "8v8", "9v9", "10v10", "11v11"];
 
-// Fixed reasons (based on proposal themes + Other)
+// Fixed reasons (kept in sync with non_game_point_reasons view in Supabase)
 const NON_GAME_REASONS = [
   "Spirit",
   "Cheering / Loudest Section",
@@ -16,6 +16,10 @@ const NON_GAME_REASONS = [
   "Friday Night Songs",
   "Community / Bunk Pride",
   "Neb Events",
+  "Highlight Game",
+  "Staff Game",
+  "Bowl Game Bonus",
+  "Evening Activity",
   "Other",
 ];
 
