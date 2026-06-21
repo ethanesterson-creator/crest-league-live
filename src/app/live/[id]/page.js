@@ -585,36 +585,49 @@ export default function LiveGamePage() {
     );
   }
 
+  function hoopShortName(fullName) {
+    const parts = String(fullName || "").trim().split(/\s+/);
+    if (parts.length < 2) return fullName || "";
+    const first = parts[0];
+    const last = parts.slice(1).join(" ");
+    return `${first.charAt(0)}. ${last}`;
+  }
+
   function HoopPlayerRow({ p, side }) {
     const isCap = captainIds instanceof Set ? captainIds.has(String(p.player_id)) : false;
     const pts = getVal(p.player_id, "pts");
     const fouls = getVal(p.player_id, "foul");
+    const shortName = hoopShortName(p.player_name || p.player_id);
     return (
-      <div className="flex items-center gap-1.5 rounded-lg border border-white/10 bg-white/[0.04] px-2 py-1.5">
-        <div className="min-w-[70px] flex-1">
-          <div className="truncate text-[13px] font-black text-white">{isCap ? "⭐ " : ""}{p.player_name || p.player_id}</div>
+      <div className="flex items-end gap-1.5 rounded-lg border border-white/10 bg-white/[0.04] px-2 py-1.5">
+        <div className="min-w-0 flex-1 self-center">
+          <div className="truncate text-[13px] font-black text-white">{isCap ? "⭐ " : ""}{shortName}</div>
         </div>
 
-        <div className="flex items-center gap-1 shrink-0">
-          <span className="min-w-[16px] text-center text-[13px] font-black tabular-nums text-white">{pts}</span>
-          <button onClick={() => undoHoopPoints(p, side)} disabled={pts <= 0}
-            className="rounded border border-red-500/30 bg-red-500/10 px-1.5 py-1 text-[10px] font-black text-red-300 active:scale-95 disabled:opacity-20">-1</button>
-          {[1, 2, 3].map((d) => (
-            <button key={d} onClick={() => bumpHoopPoints(p, side, d)}
-              className="rounded border border-white/15 bg-white/10 px-1.5 py-1 text-[10px] font-black active:scale-95">+{d}</button>
-          ))}
+        <div className="flex flex-col items-center shrink-0">
+          <span className="text-[8px] font-black uppercase leading-tight text-white/40">PTS · {pts}</span>
+          <div className="mt-0.5 flex items-center gap-1">
+            <button onClick={() => undoHoopPoints(p, side)} disabled={pts <= 0}
+              className="rounded border border-red-500/30 bg-red-500/10 px-1.5 py-1 text-[10px] font-black text-red-300 active:scale-95 disabled:opacity-20">-1</button>
+            {[1, 2, 3].map((d) => (
+              <button key={d} onClick={() => bumpHoopPoints(p, side, d)}
+                className="rounded border border-white/15 bg-white/10 px-1.5 py-1 text-[10px] font-black active:scale-95">+{d}</button>
+            ))}
+          </div>
         </div>
 
-        <div className="flex items-center gap-1 shrink-0 border-l border-white/10 pl-1.5">
-          <span className="min-w-[14px] text-center text-[13px] font-black tabular-nums text-white">{fouls}</span>
-          <button onClick={() => undoStat(p, "foul")} disabled={fouls <= 0}
-            className="rounded border border-red-500/30 bg-red-500/10 px-1.5 py-1 text-[10px] font-black text-red-300 active:scale-95 disabled:opacity-20">-1</button>
-          <button onClick={() => bumpStat(p, "foul", 1)}
-            className="rounded border border-white/15 bg-white/10 px-1.5 py-1 text-[10px] font-black active:scale-95">+1</button>
+        <div className="flex flex-col items-center shrink-0 border-l border-white/10 pl-1.5">
+          <span className="text-[8px] font-black uppercase leading-tight text-white/40">F · {fouls}</span>
+          <div className="mt-0.5 flex items-center gap-1">
+            <button onClick={() => undoStat(p, "foul")} disabled={fouls <= 0}
+              className="rounded border border-red-500/30 bg-red-500/10 px-1.5 py-1 text-[10px] font-black text-red-300 active:scale-95 disabled:opacity-20">-1</button>
+            <button onClick={() => bumpStat(p, "foul", 1)}
+              className="rounded border border-white/15 bg-white/10 px-1.5 py-1 text-[10px] font-black active:scale-95">+1</button>
+          </div>
         </div>
 
         <button onClick={() => togglePlaying(p)}
-          className="shrink-0 rounded-lg border border-red-500/30 bg-red-500/10 px-2 py-1.5 text-[10px] font-black text-red-300 active:scale-95">
+          className="shrink-0 self-center rounded-lg border border-red-500/30 bg-red-500/10 px-2 py-1.5 text-[10px] font-black text-red-300 active:scale-95">
           Out
         </button>
       </div>
@@ -683,10 +696,12 @@ export default function LiveGamePage() {
       {/* ── SCOREBOARD ── */}
       <div className="border-b border-white/10 bg-[#07112a] px-3 py-2">
         {isHoop ? (
-          <div className="flex items-center justify-between gap-2">
-            <div className="text-left">
-              <div className="text-[9px] font-black uppercase tracking-widest text-blue-400/60">{leftLabel}</div>
-              <div className="text-2xl font-black tabular-nums text-white">{scoreA}</div>
+          <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2">
+            <div className="flex items-center gap-3 text-left">
+              <div>
+                <div className="text-[9px] font-black uppercase tracking-widest text-blue-400/60">{leftLabel}</div>
+                <div className="text-2xl font-black tabular-nums text-white">{scoreA}</div>
+              </div>
             </div>
 
             <div className="flex flex-col items-center gap-1">
@@ -714,9 +729,11 @@ export default function LiveGamePage() {
               )}
             </div>
 
-            <div className="text-right">
-              <div className="text-[9px] font-black uppercase tracking-widest text-blue-400/60">{rightLabel}</div>
-              <div className="text-2xl font-black tabular-nums text-white">{scoreB}</div>
+            <div className="flex items-center justify-end gap-3 text-right">
+              <div>
+                <div className="text-[9px] font-black uppercase tracking-widest text-blue-400/60">{rightLabel}</div>
+                <div className="text-2xl font-black tabular-nums text-white">{scoreB}</div>
+              </div>
             </div>
           </div>
         ) : (
