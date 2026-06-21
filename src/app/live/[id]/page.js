@@ -394,6 +394,48 @@ export default function LiveGamePage() {
     if (error) { setErr(error.message); return; }
     await refreshStats();
   }
+  async function bumpHoopPoints(player, side, delta) {
+    if (!game) return;
+    setErr("");
+    const d = Math.floor(Number(delta));
+    if (!Number.isFinite(d) || d === 0) return;
+
+    const { error: statErr } = await supabase.rpc("rpc_add_stat", {
+      p_game_id: game.id, p_league_id: norm(game.league_key), p_sport: norm(game.sport),
+      p_player_id: String(player.player_id), p_player_name: String(player.player_name || player.player_id),
+      p_team_name: String(player?.team_name || ""), p_stat_key: "pts", p_delta: d,
+    });
+    if (statErr) { setErr(statErr.message); return; }
+
+    const { error: scoreErr } = await supabase.rpc("rpc_add_score", { p_game_id: game.id, p_side: side, p_delta: d });
+    if (scoreErr) { setErr(scoreErr.message); return; }
+
+    await refreshStats();
+    await refreshGame();
+  }
+
+  async function undoHoopPoints(player, side) {
+    if (!game) return;
+    setErr("");
+    const current = getVal(player.player_id, "pts");
+    if (current <= 0) return;
+
+    const { error: statErr } = await supabase.rpc("rpc_add_stat", {
+      p_game_id: game.id, p_league_id: norm(game.league_key), p_sport: norm(game.sport),
+      p_player_id: String(player.player_id), p_player_name: String(player.player_name || player.player_id),
+      p_team_name: String(player?.team_name || ""), p_stat_key: "pts", p_delta: -1,
+    });
+    if (statErr) { setErr(statErr.message); return; }
+
+    const sideScore = side === "A" ? Number(game.score_a || 0) : Number(game.score_b || 0);
+    if (sideScore > 0) {
+      const { error: scoreErr } = await supabase.rpc("rpc_add_score", { p_game_id: game.id, p_side: side, p_delta: -1 });
+      if (scoreErr) { setErr(scoreErr.message); return; }
+    }
+
+    await refreshStats();
+    await refreshGame();
+  }
 
   async function bumpStat(player, statKey, delta) {
     if (!game) return;
@@ -485,6 +527,7 @@ export default function LiveGamePage() {
 
   const scoreButtons = rules?.scoreButtons?.length ? rules.scoreButtons : [1];
   const statDefs = rules?.stats ?? [];
+  const isHoop = norm(game.sport) === "hoop";
   const clockPresets = activeClockMode?.presets ?? [300, 600, 900, 1200, 1800];
   const chipPad = superCompact ? "px-2 py-1" : "px-3 py-2";
   const chipText = superCompact ? "text-[11px]" : "text-sm";
@@ -541,6 +584,44 @@ export default function LiveGamePage() {
     );
   }
 
+  function HoopPlayerRow({ p, side }) {
+    const isCap = captainIds instanceof Set ? captainIds.has(String(p.player_id)) : false;
+    const pts = getVal(p.player_id, "pts");
+    const fouls = getVal(p.player_id, "foul");
+    return (
+      <div className="flex items-center gap-1.5 rounded-lg border border-white/10 bg-white/[0.04] px-2 py-1.5">
+        <div className="min-w-0 flex-1">
+          <div className="truncate text-[13px] font-black text-white">{isCap ? "⭐ " : ""}{p.player_name || p.player_id}</div>
+        </div>
+
+        <div className="flex items-center gap-1 shrink-0">
+          <span className="text-[9px] font-black uppercase text-white/40">PTS</span>
+          <span className="min-w-[16px] text-center text-[13px] font-black tabular-nums text-white">{pts}</span>
+          <button onClick={() => undoHoopPoints(p, side)} disabled={pts <= 0}
+            className="rounded border border-red-500/30 bg-red-500/10 px-1.5 py-1 text-[10px] font-black text-red-300 active:scale-95 disabled:opacity-20">-1</button>
+          {[1, 2, 3].map((d) => (
+            <button key={d} onClick={() => bumpHoopPoints(p, side, d)}
+              className="rounded border border-white/15 bg-white/10 px-1.5 py-1 text-[10px] font-black active:scale-95">+{d}</button>
+          ))}
+        </div>
+
+        <div className="flex items-center gap-1 shrink-0 border-l border-white/10 pl-1.5">
+          <span className="text-[9px] font-black uppercase text-white/40">F</span>
+          <span className="min-w-[14px] text-center text-[13px] font-black tabular-nums text-white">{fouls}</span>
+          <button onClick={() => undoStat(p, "foul")} disabled={fouls <= 0}
+            className="rounded border border-red-500/30 bg-red-500/10 px-1.5 py-1 text-[10px] font-black text-red-300 active:scale-95 disabled:opacity-20">-1</button>
+          <button onClick={() => bumpStat(p, "foul", 1)}
+            className="rounded border border-white/15 bg-white/10 px-1.5 py-1 text-[10px] font-black active:scale-95">+1</button>
+        </div>
+
+        <button onClick={() => togglePlaying(p)}
+          className="shrink-0 rounded-lg border border-red-500/30 bg-red-500/10 px-2 py-1.5 text-[10px] font-black text-red-300 active:scale-95">
+          Out
+        </button>
+      </div>
+    );
+  }
+  
   function BenchRow({ p, sideLabel }) {
     const isCap = captainIds instanceof Set ? captainIds.has(String(p.player_id)) : false;
     return (
@@ -590,7 +671,45 @@ export default function LiveGamePage() {
       </div>
 
       {/* ── SCOREBOARD ── */}
-      <div className="border-b border-white/10 bg-[#07112a] px-3 py-3">
+      <div className="border-b border-white/10 bg-[#07112a] px-3 py-2">
+        {isHoop ? (
+          <div className="flex items-center justify-between gap-2">
+            <div className="text-left">
+              <div className="text-[9px] font-black uppercase tracking-widest text-blue-400/60">{leftLabel}</div>
+              <div className="text-2xl font-black tabular-nums text-white">{scoreA}</div>
+            </div>
+
+            <div className="flex flex-col items-center gap-1">
+              {rules?.clock?.enabled ? (
+                <>
+                  <button onClick={openSetTimeModal}
+                    className="rounded-lg border border-white/10 bg-black/30 px-3 py-1.5 text-xl font-black tabular-nums text-white active:scale-[0.98]">
+                    {fmtClock(derived.remaining)}
+                  </button>
+                  <div className="flex items-center gap-1.5">
+                    {game.timer_running ? (
+                      <button onClick={onPause} className="rounded-lg bg-white px-4 py-2 text-xs font-black text-black active:scale-95">Pause</button>
+                    ) : (
+                      <button onClick={onStart} className="rounded-lg bg-white px-4 py-2 text-xs font-black text-black active:scale-95">Start</button>
+                    )}
+                    <button onClick={() => onReset(game.duration_seconds || clockPresets[clockPresets.length - 1] || 1800)}
+                      className="rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-xs font-black active:scale-95">Reset</button>
+                    <button onClick={() => setConfirmFinalizeOpen(true)}
+                      className="rounded-lg border border-emerald-500/40 bg-emerald-500/15 px-3 py-2 text-xs font-black text-emerald-200 active:scale-95">Finalize</button>
+                  </div>
+                </>
+              ) : (
+                <button onClick={() => setConfirmFinalizeOpen(true)}
+                  className="rounded-lg border border-emerald-500/40 bg-emerald-500/15 px-4 py-2 text-xs font-black text-emerald-200 active:scale-95">Finalize</button>
+              )}
+            </div>
+
+            <div className="text-right">
+              <div className="text-[9px] font-black uppercase tracking-widest text-blue-400/60">{rightLabel}</div>
+              <div className="text-2xl font-black tabular-nums text-white">{scoreB}</div>
+            </div>
+          </div>
+        ) : (
         <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2">
 
           {/* Team A */}
@@ -711,6 +830,7 @@ export default function LiveGamePage() {
             </div>
           </div>
         </div>
+        )}
       </div>
 
       {/* ── ROSTERS ── */}
@@ -730,7 +850,9 @@ export default function LiveGamePage() {
             {playingA.length ? (
               playingA.map((p) => {
                 const idx = rosterA.findIndex((x) => x.player_id === p.player_id);
-                return <PlayerRow key={p.player_id} p={p} sideLabel="A" idx={Math.max(0, idx)} total={rosterA.length} />;
+                return isHoop
+                  ? <HoopPlayerRow key={p.player_id} p={p} side="A" />
+                  : <PlayerRow key={p.player_id} p={p} sideLabel="A" idx={Math.max(0, idx)} total={rosterA.length} />;
               })
             ) : (
               <div className="rounded-lg border border-white/5 bg-white/[0.02] p-2 text-[11px] text-white/40">
@@ -764,7 +886,9 @@ export default function LiveGamePage() {
             {playingB.length ? (
               playingB.map((p) => {
                 const idx = rosterB.findIndex((x) => x.player_id === p.player_id);
-                return <PlayerRow key={p.player_id} p={p} sideLabel="B" idx={Math.max(0, idx)} total={rosterB.length} />;
+                return isHoop
+                  ? <HoopPlayerRow key={p.player_id} p={p} side="B" />
+                  : <PlayerRow key={p.player_id} p={p} sideLabel="B" idx={Math.max(0, idx)} total={rosterB.length} />;
               })
             ) : (
               <div className="rounded-lg border border-white/5 bg-white/[0.02] p-2 text-[11px] text-white/40">
