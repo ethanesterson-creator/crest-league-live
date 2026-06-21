@@ -591,12 +591,11 @@ export default function LiveGamePage() {
     const fouls = getVal(p.player_id, "foul");
     return (
       <div className="flex items-center gap-1.5 rounded-lg border border-white/10 bg-white/[0.04] px-2 py-1.5">
-        <div className="min-w-0 flex-1">
+        <div className="min-w-[70px] flex-1">
           <div className="truncate text-[13px] font-black text-white">{isCap ? "⭐ " : ""}{p.player_name || p.player_id}</div>
         </div>
 
         <div className="flex items-center gap-1 shrink-0">
-          <span className="text-[9px] font-black uppercase text-white/40">PTS</span>
           <span className="min-w-[16px] text-center text-[13px] font-black tabular-nums text-white">{pts}</span>
           <button onClick={() => undoHoopPoints(p, side)} disabled={pts <= 0}
             className="rounded border border-red-500/30 bg-red-500/10 px-1.5 py-1 text-[10px] font-black text-red-300 active:scale-95 disabled:opacity-20">-1</button>
@@ -607,7 +606,6 @@ export default function LiveGamePage() {
         </div>
 
         <div className="flex items-center gap-1 shrink-0 border-l border-white/10 pl-1.5">
-          <span className="text-[9px] font-black uppercase text-white/40">F</span>
           <span className="min-w-[14px] text-center text-[13px] font-black tabular-nums text-white">{fouls}</span>
           <button onClick={() => undoStat(p, "foul")} disabled={fouls <= 0}
             className="rounded border border-red-500/30 bg-red-500/10 px-1.5 py-1 text-[10px] font-black text-red-300 active:scale-95 disabled:opacity-20">-1</button>
