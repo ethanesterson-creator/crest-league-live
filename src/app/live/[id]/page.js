@@ -87,6 +87,7 @@ export default function LiveGamePage() {
   const [showBenchB, setShowBenchB] = useState(true);
 
   const [superCompact, setSuperCompact] = useState(true);
+  const [showTopBar, setShowTopBar] = useState(true);
 
   const [setTimeOpen, setSetTimeOpen] = useState(false);
   const [timeInput, setTimeInput] = useState("00:00");
@@ -637,7 +638,7 @@ export default function LiveGamePage() {
 
   // ── Main render ────────────────────────────────────────────────────────────
   return (
-    <div className="min-h-screen bg-[#0a1628] text-white">
+    <div className="fixed inset-0 z-[999] overflow-y-auto bg-[#0a1628] text-white">
 
       {/* WiFi warning */}
       {!isOnline ? (
@@ -653,22 +654,33 @@ export default function LiveGamePage() {
         </div>
       ) : null}
 
-      {/* ── TOP BAR ── */}
-      <div className="flex items-center justify-between border-b border-white/10 bg-[#06101f] px-3 py-2">
-        <div className="min-w-0 truncate text-[11px] font-bold uppercase tracking-widest text-white/40">
-          {game.league_key} · {game.sport} · {game.level} · {game.mode}
+      {/* ── TOP BAR (collapsible) ── */}
+      {showTopBar ? (
+        <div className="flex items-center justify-between border-b border-white/10 bg-[#06101f] px-3 py-2">
+          <div className="min-w-0 truncate text-[11px] font-bold uppercase tracking-widest text-white/40">
+            {game.league_key} · {game.sport} · {game.level} · {game.mode}
+          </div>
+          <div className="flex items-center gap-2">
+            <button onClick={() => setSuperCompact((v) => !v)}
+              className="rounded-lg border border-white/10 bg-white/5 px-2.5 py-1.5 text-[10px] font-bold text-white/60 hover:bg-white/10">
+              {superCompact ? "Compact" : "Large"}
+            </button>
+            <button onClick={() => router.push("/")}
+              className="rounded-lg border border-white/10 bg-white/5 px-2.5 py-1.5 text-[10px] font-bold text-white/60 hover:bg-white/10">
+              Home
+            </button>
+            <button onClick={() => setShowTopBar(false)}
+              className="rounded-lg border border-white/10 bg-white/5 px-2 py-1.5 text-[10px] font-bold text-white/60 hover:bg-white/10">
+              ▲
+            </button>
+          </div>
         </div>
-        <div className="flex items-center gap-2">
-          <button onClick={() => setSuperCompact((v) => !v)}
-            className="rounded-lg border border-white/10 bg-white/5 px-2.5 py-1.5 text-[10px] font-bold text-white/60 hover:bg-white/10">
-            {superCompact ? "Compact" : "Large"}
-          </button>
-          <button onClick={() => router.push("/")}
-            className="rounded-lg border border-white/10 bg-white/5 px-2.5 py-1.5 text-[10px] font-bold text-white/60 hover:bg-white/10">
-            Home
-          </button>
-        </div>
-      </div>
+      ) : (
+        <button onClick={() => setShowTopBar(true)}
+          className="flex w-full items-center justify-center border-b border-white/10 bg-[#06101f] py-1 text-white/30 hover:text-white/60">
+          <span className="text-[10px] leading-none">☰</span>
+        </button>
+      )}
 
       {/* ── SCOREBOARD ── */}
       <div className="border-b border-white/10 bg-[#07112a] px-3 py-2">
