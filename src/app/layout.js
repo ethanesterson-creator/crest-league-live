@@ -86,6 +86,10 @@ export default function RootLayout({ children }) {
                 Leaders
               </a>
 
+              <a className="bc-muted" href="/past-games" style={{ fontSize: 14 }}>
+                Past Games
+              </a>
+
               <a className="bc-muted" href="/display" style={{ fontSize: 14 }}>
                 Display
               </a>
