@@ -410,6 +410,11 @@ export default function AdminPage() {
       return;
     }
 
+    const ok = confirm(
+      "⚠️ FINAL WARNING ⚠️\n\nThis permanently deletes EVERY game ever played this summer — every box score, every stat, every finalized result. This is NOT just test data once the season has started.\n\nThis cannot be undone.\n\nAre you absolutely sure you want to wipe the entire season?"
+    );
+    if (!ok) return;
+
     setBusy(true);
     try {
       const { error } = await supabase.rpc("admin_reset_season", {
@@ -858,9 +863,9 @@ export default function AdminPage() {
             </div>
 
             <div className="rounded-2xl border border-red-700/30 bg-red-950/20 p-5">
-              <div className="text-lg font-black text-red-100">Reset Season (Wipe Test Data)</div>
+              <div className="text-lg font-black text-red-100">⚠️ Reset Season — Permanent Deletion</div>
               <div className="mt-1 text-sm text-red-200/80">
-                Deletes games/events/rosters/standings/leaders. <b>Keeps leagues/players/points rules</b>.
+                Deletes <b>every game, stat, box score, and roster ever recorded</b> — not just test data. Once the season has started, this is irreversible. <b>Keeps leagues/players/points rules</b>.
               </div>
 
               <label className="mt-4 flex items-center gap-2 text-sm font-bold text-red-100">
