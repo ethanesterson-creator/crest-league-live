@@ -20,6 +20,7 @@ const NON_GAME_REASONS = [
   "Staff Game",
   "Bowl Game Bonus",
   "Evening Activity",
+  "Sweep",
   "Other",
 ];
 
