@@ -6,6 +6,10 @@ import { supabase } from "@/lib/supabase";
 const LEAGUE_SPORT_KEY = "overall"; // your age-league standings live under standings.sport='overall'
 const STAFF_SPORT_KEY = "staff";    // staff standings should live under standings.sport='staff'
 
+function norm(s) {
+  return String(s || "").trim().toLowerCase();
+}
+
 function prettyLeague(id) {
   const x = String(id || "");
   if (x === "sophomores") return "Sophomores";
@@ -79,7 +83,29 @@ export default function StandingsPage() {
       .eq("league_id", lid);
 
     if (error) throw error;
-    setRows(sortStandings(data || []));
+
+    const { data: ngData, error: ngErr } = await supabase
+      .from("non_game_points")
+      .select("team_name, points")
+      .eq("league_id", lid)
+      .eq("deleted", false)
+      .eq("status", "final")
+      .limit(5000);
+
+    if (ngErr) throw ngErr;
+
+    const ngMap = new Map();
+    for (const r of ngData || []) {
+      const key = norm(r.team_name);
+      ngMap.set(key, (ngMap.get(key) || 0) + Number(r.points || 0));
+    }
+
+    const merged = (data || []).map((row) => ({
+      ...row,
+      league_points: Number(row.league_points || 0) + (ngMap.get(norm(row.team_name)) || 0),
+    }));
+
+    setRows(sortStandings(merged));
   }
 
   async function loadOverallCamp() {
