@@ -406,6 +406,50 @@ export default function LiveGamePage() {
     if (error) { setErr(error.message); return; }
     await refreshStats();
   }
+  const GOAL_AUTO_SCORE_SPORTS = ["euro", "soccer", "hockey", "speedball"];
+
+  async function bumpGoalWithScore(player, side, delta) {
+    if (!game) return;
+    setErr("");
+    const d = Math.floor(Number(delta));
+    if (!Number.isFinite(d) || d === 0) return;
+
+    const { error: statErr } = await supabase.rpc("rpc_add_stat", {
+      p_game_id: game.id, p_league_id: norm(game.league_key), p_sport: norm(game.sport),
+      p_player_id: String(player.player_id), p_player_name: String(player.player_name || player.player_id),
+      p_team_name: String(player?.team_name || ""), p_stat_key: "g", p_delta: d,
+    });
+    if (statErr) { setErr(statErr.message); return; }
+
+    const { error: scoreErr } = await supabase.rpc("rpc_add_score", { p_game_id: game.id, p_side: side, p_delta: d });
+    if (scoreErr) { setErr(scoreErr.message); return; }
+
+    await refreshStats();
+    await refreshGame();
+  }
+
+  async function undoGoalWithScore(player, side) {
+    if (!game) return;
+    setErr("");
+    const current = getVal(player.player_id, "g");
+    if (current <= 0) return;
+
+    const { error: statErr } = await supabase.rpc("rpc_add_stat", {
+      p_game_id: game.id, p_league_id: norm(game.league_key), p_sport: norm(game.sport),
+      p_player_id: String(player.player_id), p_player_name: String(player.player_name || player.player_id),
+      p_team_name: String(player?.team_name || ""), p_stat_key: "g", p_delta: -1,
+    });
+    if (statErr) { setErr(statErr.message); return; }
+
+    const sideScore = side === "A" ? Number(game.score_a || 0) : Number(game.score_b || 0);
+    if (sideScore > 0) {
+      const { error: scoreErr } = await supabase.rpc("rpc_add_score", { p_game_id: game.id, p_side: side, p_delta: -1 });
+      if (scoreErr) { setErr(scoreErr.message); return; }
+    }
+
+    await refreshStats();
+    await refreshGame();
+  }
   async function bumpHoopPoints(player, side, delta) {
     if (!game) return;
     setErr("");
@@ -545,19 +589,24 @@ export default function LiveGamePage() {
   const chipText = superCompact ? "text-[11px]" : "text-sm";
 
   // ── Sub-components ─────────────────────────────────────────────────────────
-  function StatChip({ p, sd }) {
+  function StatChip({ p, sd, side }) {
     const deltas = sd?.deltas?.length ? sd.deltas : [1];
     const v = getVal(p.player_id, sd.key);
+
+    const isAutoScoreGoal = sd.key === "g" && GOAL_AUTO_SCORE_SPORTS.includes(norm(game?.sport));
+    const handleBump = (d) => (isAutoScoreGoal ? bumpGoalWithScore(p, side, d) : bumpStat(p, sd.key, d));
+    const handleUndo = () => (isAutoScoreGoal ? undoGoalWithScore(p, side) : undoStat(p, sd.key));
+
     return (
       <div className="flex items-center gap-1.5 rounded-lg border border-white/10 bg-white/5 px-2 py-1">
         <span className="text-[10px] font-black uppercase tracking-wider text-white/50">{sd.label}</span>
         <span className="min-w-[18px] text-center text-sm font-black tabular-nums text-white">{v}</span>
-        <button onClick={() => undoStat(p, sd.key)} disabled={v <= 0}
+        <button onClick={handleUndo} disabled={v <= 0}
           className={`rounded border border-red-500/30 bg-red-500/10 ${chipPad} ${chipText} font-black text-red-300 active:scale-95 disabled:opacity-20`}>
           -1
         </button>
         {deltas.map((d) => (
-          <button key={`${p.player_id}-${sd.key}-${d}`} onClick={() => bumpStat(p, sd.key, d)}
+          <button key={`${p.player_id}-${sd.key}-${d}`} onClick={() => handleBump(d)}
             className={`rounded border border-white/10 bg-white/10 ${chipPad} ${chipText} font-black active:scale-95`}>
             +{d}
           </button>
@@ -566,7 +615,7 @@ export default function LiveGamePage() {
     );
   }
 
-  function PlayerRow({ p, sideLabel, idx, total }) {
+  function PlayerRow({ p, sideLabel, idx, total, side }) {
     const showBatting = isBattingSport(game?.sport);
     const isCap = captainIds instanceof Set ? captainIds.has(String(p.player_id)) : false;
     return (
@@ -589,7 +638,7 @@ export default function LiveGamePage() {
         </div>
         {statDefs.length > 0 && (
           <div className="mt-2 flex flex-wrap gap-1.5">
-            {statDefs.map((sd) => <StatChip key={`${p.player_id}-${sd.key}`} p={p} sd={sd} />)}
+            {statDefs.map((sd) => <StatChip key={`${p.player_id}-${sd.key}`} p={p} sd={sd} side={side} />)}
           </div>
         )}
       </div>
@@ -890,7 +939,7 @@ export default function LiveGamePage() {
                 const idx = rosterA.findIndex((x) => x.player_id === p.player_id);
                 return isHoop
                   ? <HoopPlayerRow key={p.player_id} p={p} side="A" />
-                  : <PlayerRow key={p.player_id} p={p} sideLabel="A" idx={Math.max(0, idx)} total={rosterA.length} />;
+                  : <PlayerRow key={p.player_id} p={p} sideLabel="A" idx={Math.max(0, idx)} total={rosterA.length} side="A" />;
               })
             ) : (
               <div className="rounded-lg border border-white/5 bg-white/[0.02] p-2 text-[11px] text-white/40">
@@ -926,7 +975,7 @@ export default function LiveGamePage() {
                 const idx = rosterB.findIndex((x) => x.player_id === p.player_id);
                 return isHoop
                   ? <HoopPlayerRow key={p.player_id} p={p} side="B" />
-                  : <PlayerRow key={p.player_id} p={p} sideLabel="B" idx={Math.max(0, idx)} total={rosterB.length} />;
+                  : <PlayerRow key={p.player_id} p={p} sideLabel="B" idx={Math.max(0, idx)} total={rosterB.length} side="B" />;
               })
             ) : (
               <div className="rounded-lg border border-white/5 bg-white/[0.02] p-2 text-[11px] text-white/40">
