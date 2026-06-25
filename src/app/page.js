@@ -129,6 +129,7 @@ export default function HomePage() {
   // -------------------------
   // BOWL GAME FIELDS
   // -------------------------
+  const [volleyballFormat, setVolleyballFormat] = useState(3);
   const [isBowlGame, setIsBowlGame] = useState(false);
   const [bowlName, setBowlName] = useState("");
   const [bowlCounts, setBowlCounts] = useState(true);
@@ -399,7 +400,7 @@ export default function HomePage() {
       clock_style: clockEnabled ? clockStyle || "countdown" : "none",
 
       status: "active",
-      notes: "",
+      notes: norm(sport) === "volleyball" ? JSON.stringify({ series_format: volleyballFormat, series_a: 0, series_b: 0 }) : "",
 
       // ✅ bowl fields
       is_bowl_game: !!isBowlGame,
@@ -507,6 +508,20 @@ export default function HomePage() {
                 <div className="mt-1 text-xs text-slate-400">Crest Cup is Soccer only.</div>
               ) : null}
             </label>
+
+            {norm(sport) === "volleyball" ? (
+              <label className="text-sm">
+                <div className="mb-1 text-slate-300">Volleyball Series</div>
+                <select
+                  className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 outline-none focus:border-slate-500"
+                  value={volleyballFormat}
+                  onChange={(e) => setVolleyballFormat(Number(e.target.value))}
+                >
+                  <option value={3}>Best of 3</option>
+                  <option value={5}>Best of 5</option>
+                </select>
+              </label>
+            ) : null}
 
             {/* Matchup type */}
             <label className="text-sm">

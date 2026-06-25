@@ -49,6 +49,25 @@ const isBattingSport = (s) => {
   return v === "softball" || v === "kickball";
 };
 
+const isVolleyball = (s) => String(s || "").toLowerCase().trim() === "volleyball";
+
+function parseSeriesNotes(notes) {
+  try {
+    const parsed = JSON.parse(notes || "{}");
+    return {
+      format: Number(parsed.series_format) || 3,
+      seriesA: Number(parsed.series_a) || 0,
+      seriesB: Number(parsed.series_b) || 0,
+    };
+  } catch {
+    return { format: 3, seriesA: 0, seriesB: 0 };
+  }
+}
+
+function stringifySeriesNotes(format, seriesA, seriesB) {
+  return JSON.stringify({ series_format: format, series_a: seriesA, series_b: seriesB });
+}
+
 async function fetchCaptainIds({ leagueId, teamNames }) {
   if (!teamNames?.length) return new Set();
   const isCrestCup = norm(leagueId) === "crest_cup";
@@ -103,6 +122,9 @@ export default function LiveGamePage() {
     typeof navigator !== "undefined" ? navigator.onLine : true
   );
   const [inning, setInning] = useState(1);
+  const [seriesFormat, setSeriesFormat] = useState(3);
+  const [seriesA, setSeriesA] = useState(0);
+  const [seriesB, setSeriesB] = useState(0);
 
   useEffect(() => {
     const t = setInterval(() => setNowMs(Date.now()), 250);
@@ -155,6 +177,12 @@ export default function LiveGamePage() {
       const { data, error } = await supabase.from("live_games").select("*").eq("id", gameId).single();
       if (error) throw error;
       setGame(data);
+      if (isVolleyball(data?.sport)) {
+        const parsed = parseSeriesNotes(data.notes);
+        setSeriesFormat(parsed.format);
+        setSeriesA(parsed.seriesA);
+        setSeriesB(parsed.seriesB);
+      }
     } catch (e) {
       setErr(e?.message ?? String(e));
     } finally {
@@ -617,9 +645,82 @@ export default function LiveGamePage() {
     else setRosterB(next);
   }
 
+  async function endSet() {
+    if (!game || actionBusy) return;
+    setErr("");
+
+    const sa = Number(game.score_a || 0);
+    const sb = Number(game.score_b || 0);
+
+    if (sa === sb) {
+      setErr("Set is tied. A set must have a winner before ending it.");
+      return;
+    }
+
+    setActionBusy(true);
+    try {
+      const newSeriesA = sa > sb ? seriesA + 1 : seriesA;
+      const newSeriesB = sb > sa ? seriesB + 1 : seriesB;
+
+      const notes = stringifySeriesNotes(seriesFormat, newSeriesA, newSeriesB);
+
+      const { data, error } = await supabase
+        .from("live_games")
+        .update({
+          score_a: 0,
+          score_b: 0,
+          notes,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", game.id)
+        .select("*")
+        .single();
+
+      if (error) { setErr(error.message); return; }
+
+      setGame(data);
+      setSeriesA(newSeriesA);
+      setSeriesB(newSeriesB);
+    } finally {
+      setActionBusy(false);
+    }
+  }
+
   async function finalizeGame() {
     if (!game || finalizing) return;
     setErr("");
+
+    const isVB = isVolleyball(game.sport);
+
+    if (isVB) {
+      // For volleyball, the official score is the SERIES score, not the
+      // leftover set score. Write the series into score_a/score_b first.
+      const majority = Math.floor(seriesFormat / 2) + 1;
+      if (seriesA < majority && seriesB < majority) {
+        setErr(`Series isn't decided yet. Need ${majority} set wins to finalize (currently ${seriesA}-${seriesB}).`);
+        return;
+      }
+      if (seriesA === seriesB) {
+        setErr("Series is tied. Bauercrest has no ties — end another set before finalizing.");
+        return;
+      }
+
+      setFinalizing(true);
+      try {
+        const g2 = await updateLiveGame({ score_a: seriesA, score_b: seriesB });
+        if (!g2) { setFinalizing(false); return; }
+
+        const { error } = await supabase.rpc("finalize_game", { gid: game.id });
+        if (error) { setErr(error.message); setFinalizing(false); return; }
+        await refreshGame();
+        router.push("/");
+      } catch (e) {
+        setErr(e?.message ?? String(e));
+        setFinalizing(false);
+      }
+      return;
+    }
+
     if (rules?.clock?.enabled && derived.isRunning) { setErr("Pause the clock before finalizing."); return; }
     const sa = Number(game.score_a || 0); const sb = Number(game.score_b || 0);
     if (sa === 0 && sb === 0) { setErr("Score is 0-0. Add points before finalizing."); return; }
@@ -945,6 +1046,20 @@ export default function LiveGamePage() {
                 <div className="text-[10px] font-black uppercase tracking-widest text-white/40">No Clock</div>
               </div>
             )}
+            {/* Volleyball series tracker */}
+            {isVolleyball(game.sport) ? (
+              <div className="flex flex-col items-center gap-1 rounded-lg border border-white/10 bg-white/[0.04] px-3 py-2">
+                <div className="text-[10px] font-black uppercase tracking-widest text-white/40">Series (Bo{seriesFormat})</div>
+                <div className="text-2xl font-black tabular-nums text-white">{seriesA} - {seriesB}</div>
+                <button
+                  onClick={endSet}
+                  disabled={actionBusy || (Number(game.score_a || 0) === Number(game.score_b || 0))}
+                  className="rounded-lg border border-amber-400/40 bg-amber-500/15 px-3 py-1.5 text-xs font-black text-amber-200 active:scale-95 disabled:opacity-30"
+                >
+                  End Set
+                </button>
+              </div>
+            ) : null}
 
             {/* Innings counter — softball and kickball only */}
             {(norm(game.sport) === "softball" || norm(game.sport) === "kickball") ? (
