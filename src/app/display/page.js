@@ -112,7 +112,7 @@ export default function DisplayPage() {
       .from("games")
       .select("*")
       .eq("status", "final")
-      .eq("is_deleted", false)
+      .eq("deleted", false)
       .order("updated_at", { ascending: false })
       .limit(12);
 
@@ -163,26 +163,37 @@ export default function DisplayPage() {
  useEffect(() => {
     if (!autoRotate) return;
 
+    // Build the full rotation sequence once:
+    // standings (seniors) -> standings (juniors) -> standings (sophomores)
+    // -> camp -> live -> finals -> leaders -> highlights -> repeat
     const leagueCycle = ["seniors", "juniors", "sophomores"];
+    const sequence = [
+      ...leagueCycle.map((lg) => ({ scene: "standings", league: lg })),
+      { scene: "camp", league: null },
+      { scene: "live", league: null },
+      { scene: "finals", league: null },
+      { scene: "leaders", league: null },
+      { scene: "highlights", league: null },
+    ];
 
     const t = setInterval(() => {
-      setScene((prev) => {
-        const idx = SCENES.indexOf(prev);
-        const nextScene = SCENES[(idx + 1) % SCENES.length];
+      setScene((prevScene) => {
+        // Find current position in the sequence based on scene + league
+        const currentIdx = sequence.findIndex(
+          (s) => s.scene === prevScene && (s.league === null || s.league === league)
+        );
+        const safeIdx = currentIdx === -1 ? 0 : currentIdx;
+        const next = sequence[(safeIdx + 1) % sequence.length];
 
-        if (idx === SCENES.length - 1) {
-          setLeague((cur) => {
-            const li = leagueCycle.indexOf(cur);
-            return leagueCycle[(li + 1) % leagueCycle.length];
-          });
+        if (next.league) {
+          setLeague(next.league);
         }
 
-        // Reset highlight index each time we enter the highlights scene
-        if (nextScene === "highlights") {
+        if (next.scene === "highlights") {
           setHighlightIndex(0);
         }
 
-        return nextScene;
+        return next.scene;
       });
     }, rotateSeconds * 1000);
 
