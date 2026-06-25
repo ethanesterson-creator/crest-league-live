@@ -277,7 +277,10 @@ export default function HomePage() {
 
   async function loadTeamsFromPlayers() {
     const lk = norm(leagueKey);
-    const { data, error } = await supabase.from("players").select("team_name, league_id").eq("league_id", lk).limit(5000);
+    const query = matchupType === "crest_cup"
+      ? supabase.from("players").select("team_name, league_id").limit(5000)
+      : supabase.from("players").select("team_name, league_id").eq("league_id", lk).limit(5000);
+    const { data, error } = await query;
 
     if (error) return;
 
@@ -320,7 +323,7 @@ export default function HomePage() {
   useEffect(() => {
     loadTeamsFromPlayers();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [leagueKey]);
+  }, [leagueKey, matchupType]);
 
   // Validation
   const canCreate = useMemo(() => {
@@ -328,11 +331,13 @@ export default function HomePage() {
     const a1 = norm(teamA);
     const b1 = norm(teamB);
 
-    if (!lk || !a1 || !b1) return false;
+    if (matchupType !== "crest_cup" && !lk) return false;
+    if (!a1 || !b1) return false;
     if (a1 === b1) return false;
 
     if (matchupType === "single") return true;
     if (matchupType === "full_team") return true;
+    if (matchupType === "crest_cup") return true;
 
     const a2 = norm(teamA2);
     const b2 = norm(teamB2);
@@ -361,9 +366,9 @@ export default function HomePage() {
     const duration = clockEnabled ? Number(preset || 0) : 0;
 
     const payload = {
-      league_key: norm(leagueKey),
+      league_key: matchupType === "crest_cup" ? "crest_cup" : norm(leagueKey),
       sport, // keep display value
-      level: matchupType === "full_team" ? "FULL" : String(level).toUpperCase(),
+      level: matchupType === "full_team" ? "FULL" : matchupType === "crest_cup" ? "A" : String(level).toUpperCase(),
       mode,
 
       matchup_type: matchupType,
@@ -448,6 +453,7 @@ export default function HomePage() {
           <div className="text-lg font-bold">Create Live Game</div>
 
           <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
+            {matchupType !== "crest_cup" ? (
             <label className="text-sm">
               <div className="mb-1 text-slate-300">League (age group)</div>
 
@@ -470,6 +476,9 @@ export default function HomePage() {
                 ))}
               </select>
             </label>
+            ) : (
+              <div className="text-xs text-slate-400 flex items-end pb-2">Crest Cup — spans all leagues, no age group split.</div>
+            )}
 
             <label className="text-sm">
               <div className="mb-1 text-slate-300">Sport</div>
@@ -497,6 +506,7 @@ export default function HomePage() {
                 <option value="single">1 team vs 1 team</option>
                 <option value="two_team">2 teams vs 2 teams</option>
                 <option value="full_team">Full Team</option>
+                <option value="crest_cup">Crest Cup (All Leagues)</option>
               </select>
             </label>
 

@@ -50,12 +50,15 @@ const isBattingSport = (s) => {
 };
 
 async function fetchCaptainIds({ leagueId, teamNames }) {
-  if (!leagueId || !teamNames?.length) return new Set();
-  const { data, error } = await supabase
-    .from("players")
-    .select("id, role, team_name")
-    .eq("league_id", leagueId)
-    .in("team_name", teamNames);
+  if (!teamNames?.length) return new Set();
+  const isCrestCup = norm(leagueId) === "crest_cup";
+  if (!isCrestCup && !leagueId) return new Set();
+
+  const query = isCrestCup
+    ? supabase.from("players").select("id, role, team_name").in("team_name", teamNames)
+    : supabase.from("players").select("id, role, team_name").eq("league_id", leagueId).in("team_name", teamNames);
+
+  const { data, error } = await query;
   if (error) throw error;
   const capIds = new Set();
   for (const p of data || []) {
@@ -231,19 +234,27 @@ export default function LiveGamePage() {
     const teamsB = uniqNonEmpty([b1, matchupType === "two_team" ? b2 : null]);
     const allTeams = uniqNonEmpty([...teamsA, ...teamsB]);
 
-    if (matchupType === "full_team") {
+    if (matchupType === "full_team" || matchupType === "crest_cup") {
       teamsA.length = 0; teamsB.length = 0;
       teamsA.push(a1); teamsB.push(b1);
     }
 
-    if (!lk || !allTeams.length) { setErr("Missing league/team info for this game."); return; }
+    if (!allTeams.length) { setErr("Missing team info for this game."); return; }
 
-    const { data: players, error: pErr } = await supabase
-      .from("players")
-      .select("id, first_name, last_name, team_name, league_id")
-      .eq("league_id", lk)
-      .in("team_name", allTeams)
-      .limit(5000);
+    const playerQuery = matchupType === "crest_cup"
+      ? supabase
+          .from("players")
+          .select("id, first_name, last_name, team_name, league_id")
+          .in("team_name", allTeams)
+          .limit(5000)
+      : supabase
+          .from("players")
+          .select("id, first_name, last_name, team_name, league_id")
+          .eq("league_id", lk)
+          .in("team_name", allTeams)
+          .limit(5000);
+
+    const { data: players, error: pErr } = await playerQuery;
 
     if (pErr) { setErr(pErr.message); return; }
 

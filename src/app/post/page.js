@@ -125,12 +125,11 @@ export default function PostGamesPage() {
     setAvailableLevels(uniq.length ? uniq : FALLBACK_LEVELS);
   }
 
-  async function loadTeams(lk) {
-    const { data, error } = await supabase
-      .from("players")
-      .select("team_name")
-      .eq("league_id", lk)
-      .limit(5000);
+  async function loadTeams(lk, isCrestCup = false) {
+    const query = isCrestCup
+      ? supabase.from("players").select("team_name").limit(5000)
+      : supabase.from("players").select("team_name").eq("league_id", lk).limit(5000);
+    const { data, error } = await query;
 
     if (error) {
       setTeams([]);
@@ -195,8 +194,8 @@ export default function PostGamesPage() {
 
   // league changes -> reload teams
   useEffect(() => {
-    loadTeams(norm(leagueKey));
-  }, [leagueKey]);
+    loadTeams(norm(leagueKey), matchupType === "crest_cup");
+  }, [leagueKey, matchupType]);
 
   // league/sport changes -> reload level options, reset override
   useEffect(() => {
@@ -244,6 +243,7 @@ export default function PostGamesPage() {
 
     if (matchupType === "single") return "";
     if (matchupType === "full_team") return "";
+    if (matchupType === "crest_cup") return "";
 
     const a2 = norm(teamA2);
     const b2 = norm(teamB2);
@@ -265,7 +265,7 @@ export default function PostGamesPage() {
       const lv = String(level || "").trim().toUpperCase();
 
       if (!playedOn) throw new Error("Pick a date.");
-      if (!lk) throw new Error("Pick a league.");
+      if (matchupType !== "crest_cup" && !lk) throw new Error("Pick a league.");
 
       const teamErr = validateTeams();
       if (teamErr) throw new Error(teamErr);
@@ -274,9 +274,9 @@ export default function PostGamesPage() {
         status: "draft",
         played_on: playedOn,
 
-        league_key: lk,
+        league_key: matchupType === "crest_cup" ? "crest_cup" : lk,
         sport,
-        level: matchupType === "full_team" ? "FULL" : lv,
+        level: matchupType === "full_team" ? "FULL" : matchupType === "crest_cup" ? "A" : lv,
         mode,
 
         matchup_type: matchupType,
@@ -437,18 +437,22 @@ export default function PostGamesPage() {
                 />
               </label>
 
-              <label className="text-sm">
-                <div className="mb-1 text-slate-300">League</div>
-                <select
-                  className="w-full rounded-xl border border-slate-800 bg-slate-950 px-3 py-2 outline-none focus:border-slate-500"
-                  value={leagueKey}
-                  onChange={(e) => setLeagueKey(e.target.value)}
-                >
-                  <option value="sophomores">Sophomores</option>
-                  <option value="juniors">Juniors</option>
-                  <option value="seniors">Seniors</option>
-                </select>
-              </label>
+              {matchupType !== "crest_cup" ? (
+                <label className="text-sm">
+                  <div className="mb-1 text-slate-300">League</div>
+                  <select
+                    className="w-full rounded-xl border border-slate-800 bg-slate-950 px-3 py-2 outline-none focus:border-slate-500"
+                    value={leagueKey}
+                    onChange={(e) => setLeagueKey(e.target.value)}
+                  >
+                    <option value="sophomores">Sophomores</option>
+                    <option value="juniors">Juniors</option>
+                    <option value="seniors">Seniors</option>
+                  </select>
+                </label>
+              ) : (
+                <div className="text-xs text-slate-400 flex items-end pb-2">Crest Cup — spans all leagues, no age group split.</div>
+              )}
 
               <label className="text-sm">
                 <div className="mb-1 text-slate-300">Sport</div>
@@ -476,6 +480,7 @@ export default function PostGamesPage() {
                   <option value="single">1 team vs 1 team</option>
                   <option value="two_team">2 teams vs 2 teams</option>
                   <option value="full_team">Full Team</option>
+                  <option value="crest_cup">Crest Cup (All Leagues)</option>
                 </select>
               </label>
 
