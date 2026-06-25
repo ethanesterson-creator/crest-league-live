@@ -22,6 +22,7 @@ const NON_GAME_REASONS = [
   "Evening Activity",
   "Sweep",
   "Pickleball",
+  "Bombardment",
   "Other",
 ];
 
