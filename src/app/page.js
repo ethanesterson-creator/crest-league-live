@@ -96,6 +96,15 @@ export default function HomePage() {
   // matchup type
   const [matchupType, setMatchupType] = useState("single"); // single | two_team
 
+  // Crest Cup only ever uses Soccer — lock it automatically, and use a generic mode label
+  useEffect(() => {
+    if (matchupType === "crest_cup") {
+      setSport("Soccer");
+      setMode("Crest Cup");
+      setModeDirty(true);
+    }
+  }, [matchupType]);
+
   // sport rules (fallback presets)
   const rules = useMemo(() => getSportRules(sport), [sport]);
   const clockModes = useMemo(() => rules?.clock?.modes ?? [], [rules]);
@@ -483,9 +492,10 @@ export default function HomePage() {
             <label className="text-sm">
               <div className="mb-1 text-slate-300">Sport</div>
               <select
-                className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 outline-none focus:border-slate-500"
+                className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 outline-none focus:border-slate-500 disabled:opacity-50"
                 value={sport}
                 onChange={(e) => setSport(e.target.value)}
+                disabled={matchupType === "crest_cup"}
               >
                 {SPORTS.map((s) => (
                   <option key={s} value={s}>
@@ -493,6 +503,9 @@ export default function HomePage() {
                   </option>
                 ))}
               </select>
+              {matchupType === "crest_cup" ? (
+                <div className="mt-1 text-xs text-slate-400">Crest Cup is Soccer only.</div>
+              ) : null}
             </label>
 
             {/* Matchup type */}
@@ -510,7 +523,7 @@ export default function HomePage() {
               </select>
             </label>
 
-            {matchupType !== "full_team" ? (
+            {matchupType !== "full_team" && matchupType !== "crest_cup" ? (
             <label className="text-sm">
             <div className="mb-1 text-slate-300">Level</div>
            <select
@@ -529,10 +542,13 @@ export default function HomePage() {
                <div className="mt-1 text-xs text-slate-400">Evening Activity uses Level = ALL.</div>
                 ) : null}
                  </label>
-                ) : (
+                ) : matchupType === "full_team" ? (
                  <div className="text-xs text-slate-400 flex items-end pb-2">Full Team — no level split.</div>
+                  ) : (
+                 <div className="text-xs text-slate-400 flex items-end pb-2">Crest Cup — no level split.</div>
                   )}
 
+            {matchupType !== "crest_cup" ? (
             <label className="text-sm">
               <div className="mb-1 text-slate-300">Mode</div>
               <select
@@ -550,6 +566,9 @@ export default function HomePage() {
                 ))}
               </select>
             </label>
+            ) : (
+              <div className="text-xs text-slate-400 flex items-end pb-2">Crest Cup — full camp-wide roster, no fixed mode.</div>
+            )}
 
             {/* ✅ Bowl controls */}
             <div className="sm:col-span-2 rounded-2xl border border-white/10 bg-black/20 p-4">

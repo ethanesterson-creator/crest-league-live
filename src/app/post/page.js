@@ -58,6 +58,15 @@ export default function PostGamesPage() {
   // matchup type
   const [matchupType, setMatchupType] = useState("single"); // single | two_team
 
+  // Crest Cup only ever uses Soccer — lock it automatically, generic mode label
+  useEffect(() => {
+    if (matchupType === "crest_cup") {
+      setSport("Soccer");
+      setMode("Crest Cup");
+      setModeDirty(true);
+    }
+  }, [matchupType]);
+
   const [teams, setTeams] = useState([]);
   const [teamA, setTeamA] = useState("");
   const [teamB, setTeamB] = useState("");
@@ -457,9 +466,10 @@ export default function PostGamesPage() {
               <label className="text-sm">
                 <div className="mb-1 text-slate-300">Sport</div>
                 <select
-                  className="w-full rounded-xl border border-slate-800 bg-slate-950 px-3 py-2 outline-none focus:border-slate-500"
+                  className="w-full rounded-xl border border-slate-800 bg-slate-950 px-3 py-2 outline-none focus:border-slate-500 disabled:opacity-50"
                   value={sport}
                   onChange={(e) => setSport(e.target.value)}
+                  disabled={matchupType === "crest_cup"}
                 >
                   {SPORTS.map((s) => (
                     <option key={s} value={s}>
@@ -467,6 +477,9 @@ export default function PostGamesPage() {
                     </option>
                   ))}
                 </select>
+                {matchupType === "crest_cup" ? (
+                  <div className="mt-1 text-xs text-slate-400">Crest Cup is Soccer only.</div>
+                ) : null}
               </label>
 
               {/* Matchup type */}
@@ -484,7 +497,7 @@ export default function PostGamesPage() {
                 </select>
               </label>
 
-              {matchupType !== "full_team" ? (
+              {matchupType !== "full_team" && matchupType !== "crest_cup" ? (
                 <label className="text-sm">
                   <div className="mb-1 text-slate-300">Level</div>
                   <select
@@ -500,27 +513,33 @@ export default function PostGamesPage() {
                     ))}
                   </select>
                 </label>
-              ) : (
+              ) : matchupType === "full_team" ? (
                 <div className="text-xs text-slate-400 flex items-end pb-2">Full Team — no level split.</div>
+              ) : (
+                <div className="text-xs text-slate-400 flex items-end pb-2">Crest Cup — no level split.</div>
               )}
 
-              <label className="text-sm">
-                <div className="mb-1 text-slate-300">Mode</div>
-                <select
-                  className="w-full rounded-xl border border-slate-800 bg-slate-950 px-3 py-2 outline-none focus:border-slate-500"
-                  value={mode}
-                  onChange={(e) => {
-                    setMode(e.target.value);
-                    setModeDirty(true);
-                  }}
-                >
-                  {MODES.map((m) => (
-                    <option key={m} value={m}>
-                      {m}
-                    </option>
-                  ))}
-                </select>
-              </label>
+              {matchupType !== "crest_cup" ? (
+                <label className="text-sm">
+                  <div className="mb-1 text-slate-300">Mode</div>
+                  <select
+                    className="w-full rounded-xl border border-slate-800 bg-slate-950 px-3 py-2 outline-none focus:border-slate-500"
+                    value={mode}
+                    onChange={(e) => {
+                      setMode(e.target.value);
+                      setModeDirty(true);
+                    }}
+                  >
+                    {MODES.map((m) => (
+                      <option key={m} value={m}>
+                        {m}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              ) : (
+                <div className="text-xs text-slate-400 flex items-end pb-2">Crest Cup — full camp-wide roster, no fixed mode.</div>
+              )}
 
               <div />
 
