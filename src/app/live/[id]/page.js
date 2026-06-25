@@ -84,6 +84,7 @@ export default function LiveGamePage() {
 
   const [confirmFinalizeOpen, setConfirmFinalizeOpen] = useState(false);
   const [finalizing, setFinalizing] = useState(false);
+  const [actionBusy, setActionBusy] = useState(false);
   const [clockMode, setClockMode] = useState("");
 
   const [showBenchA, setShowBenchA] = useState(true);
@@ -342,28 +343,48 @@ export default function LiveGamePage() {
   }
 
   async function onStart() {
-    if (!game) return;
-    const rem = derived.remaining;
-    const nowSec = Date.now() / 1000;
-    await updateLiveGame({ timer_running: true, timer_anchor_ts: nowSec, timer_remaining_at_anchor: Math.floor(rem), timer_remaining_seconds: Math.floor(rem) });
+    if (!game || actionBusy) return;
+    setActionBusy(true);
+    try {
+      const rem = derived.remaining;
+      const nowSec = Date.now() / 1000;
+      await updateLiveGame({ timer_running: true, timer_anchor_ts: nowSec, timer_remaining_at_anchor: Math.floor(rem), timer_remaining_seconds: Math.floor(rem) });
+    } finally {
+      setActionBusy(false);
+    }
   }
 
   async function onPause() {
-    if (!game) return;
-    const rem = derived.remaining;
-    await updateLiveGame({ timer_running: false, timer_anchor_ts: null, timer_remaining_at_anchor: Math.floor(rem), timer_remaining_seconds: Math.floor(rem) });
+    if (!game || actionBusy) return;
+    setActionBusy(true);
+    try {
+      const rem = derived.remaining;
+      await updateLiveGame({ timer_running: false, timer_anchor_ts: null, timer_remaining_at_anchor: Math.floor(rem), timer_remaining_seconds: Math.floor(rem) });
+    } finally {
+      setActionBusy(false);
+    }
   }
 
   async function onReset(seconds) {
-    if (!game) return;
-    const s = Math.max(0, Math.floor(Number(seconds)));
-    await updateLiveGame({ timer_running: false, timer_anchor_ts: null, duration_seconds: s, timer_remaining_at_anchor: s, timer_remaining_seconds: s });
+    if (!game || actionBusy) return;
+    setActionBusy(true);
+    try {
+      const s = Math.max(0, Math.floor(Number(seconds)));
+      await updateLiveGame({ timer_running: false, timer_anchor_ts: null, duration_seconds: s, timer_remaining_at_anchor: s, timer_remaining_seconds: s });
+    } finally {
+      setActionBusy(false);
+    }
   }
 
   async function setExactRemaining(seconds) {
-    if (!game) return;
-    const s = Math.max(0, Math.floor(Number(seconds)));
-    await updateLiveGame({ timer_running: false, timer_anchor_ts: null, timer_remaining_at_anchor: s, timer_remaining_seconds: s });
+    if (!game || actionBusy) return;
+    setActionBusy(true);
+    try {
+      const s = Math.max(0, Math.floor(Number(seconds)));
+      await updateLiveGame({ timer_running: false, timer_anchor_ts: null, timer_remaining_at_anchor: s, timer_remaining_seconds: s });
+    } finally {
+      setActionBusy(false);
+    }
   }
 
   async function openSetTimeModal() {
@@ -374,146 +395,203 @@ export default function LiveGamePage() {
   }
 
   async function bumpScore(side, delta) {
-    if (!game) return;
+    if (!game || actionBusy) return;
     setErr("");
     const d = Math.floor(Number(delta));
     if (!Number.isFinite(d) || d === 0) return;
-    const { error } = await supabase.rpc("rpc_add_score", { p_game_id: game.id, p_side: side, p_delta: d });
-    if (error) { setErr(error.message); return; }
-    await refreshGame();
+    setActionBusy(true);
+    try {
+      const { error } = await supabase.rpc("rpc_add_score", { p_game_id: game.id, p_side: side, p_delta: d });
+      if (error) { setErr(error.message); return; }
+      await refreshGame();
+    } finally {
+      setActionBusy(false);
+    }
   }
 
   async function undoScore(side) {
-    if (!game) return;
+    if (!game || actionBusy) return;
     setErr("");
     const current = side === "A" ? Number(game.score_a || 0) : Number(game.score_b || 0);
     if (current <= 0) return;
-    const { error } = await supabase.rpc("rpc_add_score", { p_game_id: game.id, p_side: side, p_delta: -1 });
-    if (error) { setErr(error.message); return; }
-    await refreshGame();
+    setActionBusy(true);
+    try {
+      const { error } = await supabase.rpc("rpc_add_score", { p_game_id: game.id, p_side: side, p_delta: -1 });
+      if (error) { setErr(error.message); return; }
+      await refreshGame();
+    } finally {
+      setActionBusy(false);
+    }
   }
 
   async function undoStat(player, statKey) {
-    if (!game) return;
+    if (!game || actionBusy) return;
     setErr("");
     const current = getVal(player.player_id, statKey);
     if (current <= 0) return;
-    const { error } = await supabase.rpc("rpc_add_stat", {
-      p_game_id: game.id, p_league_id: norm(game.league_key), p_sport: norm(game.sport),
-      p_player_id: String(player.player_id), p_player_name: String(player.player_name || player.player_id),
-      p_team_name: String(player?.team_name || ""), p_stat_key: norm(statKey), p_delta: -1,
-    });
-    if (error) { setErr(error.message); return; }
-    await refreshStats();
+    setActionBusy(true);
+    try {
+      const { error } = await supabase.rpc("rpc_add_stat", {
+        p_game_id: game.id, p_league_id: norm(game.league_key), p_sport: norm(game.sport),
+        p_player_id: String(player.player_id), p_player_name: String(player.player_name || player.player_id),
+        p_team_name: String(player?.team_name || ""), p_stat_key: norm(statKey), p_delta: -1,
+      });
+      if (error) { setErr(error.message); return; }
+      await refreshStats();
+    } finally {
+      setActionBusy(false);
+    }
   }
   const GOAL_AUTO_SCORE_SPORTS = ["euro", "soccer", "hockey", "speedball"];
 
   async function bumpGoalWithScore(player, side, delta) {
-    if (!game) return;
+    if (!game || actionBusy) return;
     setErr("");
     const d = Math.floor(Number(delta));
     if (!Number.isFinite(d) || d === 0) return;
+    setActionBusy(true);
+    try {
+      const { error: statErr } = await supabase.rpc("rpc_add_stat", {
+        p_game_id: game.id, p_league_id: norm(game.league_key), p_sport: norm(game.sport),
+        p_player_id: String(player.player_id), p_player_name: String(player.player_name || player.player_id),
+        p_team_name: String(player?.team_name || ""), p_stat_key: "g", p_delta: d,
+      });
+      if (statErr) { setErr(statErr.message); return; }
 
-    const { error: statErr } = await supabase.rpc("rpc_add_stat", {
-      p_game_id: game.id, p_league_id: norm(game.league_key), p_sport: norm(game.sport),
-      p_player_id: String(player.player_id), p_player_name: String(player.player_name || player.player_id),
-      p_team_name: String(player?.team_name || ""), p_stat_key: "g", p_delta: d,
-    });
-    if (statErr) { setErr(statErr.message); return; }
+      const { error: scoreErr } = await supabase.rpc("rpc_add_score", { p_game_id: game.id, p_side: side, p_delta: d });
+      if (scoreErr) { setErr(scoreErr.message); return; }
 
-    const { error: scoreErr } = await supabase.rpc("rpc_add_score", { p_game_id: game.id, p_side: side, p_delta: d });
-    if (scoreErr) { setErr(scoreErr.message); return; }
-
-    await refreshStats();
-    await refreshGame();
+      await refreshStats();
+      await refreshGame();
+    } finally {
+      setActionBusy(false);
+    }
   }
 
   async function undoGoalWithScore(player, side) {
-    if (!game) return;
+    if (!game || actionBusy) return;
     setErr("");
     const current = getVal(player.player_id, "g");
     if (current <= 0) return;
+    setActionBusy(true);
+    try {
+      const { error: statErr } = await supabase.rpc("rpc_add_stat", {
+        p_game_id: game.id, p_league_id: norm(game.league_key), p_sport: norm(game.sport),
+        p_player_id: String(player.player_id), p_player_name: String(player.player_name || player.player_id),
+        p_team_name: String(player?.team_name || ""), p_stat_key: "g", p_delta: -1,
+      });
+      if (statErr) { setErr(statErr.message); return; }
 
-    const { error: statErr } = await supabase.rpc("rpc_add_stat", {
-      p_game_id: game.id, p_league_id: norm(game.league_key), p_sport: norm(game.sport),
-      p_player_id: String(player.player_id), p_player_name: String(player.player_name || player.player_id),
-      p_team_name: String(player?.team_name || ""), p_stat_key: "g", p_delta: -1,
-    });
-    if (statErr) { setErr(statErr.message); return; }
+      const sideScore = side === "A" ? Number(game.score_a || 0) : Number(game.score_b || 0);
+      if (sideScore > 0) {
+        const { error: scoreErr } = await supabase.rpc("rpc_add_score", { p_game_id: game.id, p_side: side, p_delta: -1 });
+        if (scoreErr) { setErr(scoreErr.message); return; }
+      }
 
-    const sideScore = side === "A" ? Number(game.score_a || 0) : Number(game.score_b || 0);
-    if (sideScore > 0) {
-      const { error: scoreErr } = await supabase.rpc("rpc_add_score", { p_game_id: game.id, p_side: side, p_delta: -1 });
-      if (scoreErr) { setErr(scoreErr.message); return; }
+      await refreshStats();
+      await refreshGame();
+    } finally {
+      setActionBusy(false);
     }
-
-    await refreshStats();
-    await refreshGame();
   }
   async function bumpHoopPoints(player, side, delta) {
-    if (!game) return;
+    if (!game || actionBusy) return;
     setErr("");
     const d = Math.floor(Number(delta));
     if (!Number.isFinite(d) || d === 0) return;
+    setActionBusy(true);
+    try {
+      const { error: statErr } = await supabase.rpc("rpc_add_stat", {
+        p_game_id: game.id, p_league_id: norm(game.league_key), p_sport: norm(game.sport),
+        p_player_id: String(player.player_id), p_player_name: String(player.player_name || player.player_id),
+        p_team_name: String(player?.team_name || ""), p_stat_key: "pts", p_delta: d,
+      });
+      if (statErr) { setErr(statErr.message); return; }
 
-    const { error: statErr } = await supabase.rpc("rpc_add_stat", {
-      p_game_id: game.id, p_league_id: norm(game.league_key), p_sport: norm(game.sport),
-      p_player_id: String(player.player_id), p_player_name: String(player.player_name || player.player_id),
-      p_team_name: String(player?.team_name || ""), p_stat_key: "pts", p_delta: d,
-    });
-    if (statErr) { setErr(statErr.message); return; }
+      const { error: scoreErr } = await supabase.rpc("rpc_add_score", { p_game_id: game.id, p_side: side, p_delta: d });
+      if (scoreErr) { setErr(scoreErr.message); return; }
 
-    const { error: scoreErr } = await supabase.rpc("rpc_add_score", { p_game_id: game.id, p_side: side, p_delta: d });
-    if (scoreErr) { setErr(scoreErr.message); return; }
-
-    await refreshStats();
-    await refreshGame();
+      await refreshStats();
+      await refreshGame();
+    } finally {
+      setActionBusy(false);
+    }
   }
 
   async function undoHoopPoints(player, side) {
-    if (!game) return;
+    if (!game || actionBusy) return;
     setErr("");
     const current = getVal(player.player_id, "pts");
     if (current <= 0) return;
+    setActionBusy(true);
+    try {
+      const { error: statErr } = await supabase.rpc("rpc_add_stat", {
+        p_game_id: game.id, p_league_id: norm(game.league_key), p_sport: norm(game.sport),
+        p_player_id: String(player.player_id), p_player_name: String(player.player_name || player.player_id),
+        p_team_name: String(player?.team_name || ""), p_stat_key: "pts", p_delta: -1,
+      });
+      if (statErr) { setErr(statErr.message); return; }
 
-    const { error: statErr } = await supabase.rpc("rpc_add_stat", {
-      p_game_id: game.id, p_league_id: norm(game.league_key), p_sport: norm(game.sport),
-      p_player_id: String(player.player_id), p_player_name: String(player.player_name || player.player_id),
-      p_team_name: String(player?.team_name || ""), p_stat_key: "pts", p_delta: -1,
-    });
-    if (statErr) { setErr(statErr.message); return; }
+      const sideScore = side === "A" ? Number(game.score_a || 0) : Number(game.score_b || 0);
+      if (sideScore > 0) {
+        const { error: scoreErr } = await supabase.rpc("rpc_add_score", { p_game_id: game.id, p_side: side, p_delta: -1 });
+        if (scoreErr) { setErr(scoreErr.message); return; }
+      }
 
-    const sideScore = side === "A" ? Number(game.score_a || 0) : Number(game.score_b || 0);
-    if (sideScore > 0) {
-      const { error: scoreErr } = await supabase.rpc("rpc_add_score", { p_game_id: game.id, p_side: side, p_delta: -1 });
-      if (scoreErr) { setErr(scoreErr.message); return; }
+      await refreshStats();
+      await refreshGame();
+    } finally {
+      setActionBusy(false);
     }
-
-    await refreshStats();
-    await refreshGame();
   }
 
   async function bumpStat(player, statKey, delta) {
-    if (!game) return;
+    if (!game || actionBusy) return;
     setErr("");
     const d = Math.floor(Number(delta));
     if (!Number.isFinite(d) || d === 0) return;
-    const { error } = await supabase.rpc("rpc_add_stat", {
-      p_game_id: game.id, p_league_id: norm(game.league_key), p_sport: norm(game.sport),
-      p_player_id: String(player.player_id), p_player_name: String(player.player_name || player.player_id),
-      p_team_name: String(player?.team_name || ""), p_stat_key: norm(statKey), p_delta: d,
-    });
-    if (error) { setErr(error.message); return; }
-    await refreshStats();
+    setActionBusy(true);
+    try {
+      const { error } = await supabase.rpc("rpc_add_stat", {
+        p_game_id: game.id, p_league_id: norm(game.league_key), p_sport: norm(game.sport),
+        p_player_id: String(player.player_id), p_player_name: String(player.player_name || player.player_id),
+        p_team_name: String(player?.team_name || ""), p_stat_key: norm(statKey), p_delta: d,
+      });
+      if (error) { setErr(error.message); return; }
+      await refreshStats();
+    } finally {
+      setActionBusy(false);
+    }
   }
 
   async function togglePlaying(player) {
     setErr("");
     const next = !player.is_playing;
-    const { error } = await supabase.from("game_roster").update({ is_playing: next }).eq("game_id", player.game_id).eq("player_id", player.player_id);
+    const isBatting = isBattingSport(game?.sport);
+    const side = player.team_side;
+    const list = side === "A" ? rosterA : rosterB;
+
+    let newSortOrder = player.sort_order;
+
+    // When activating a player into a batting sport, put them at the END
+    // of the current active batting order, not whatever order_order they
+    // were assigned at roster creation time.
+    if (next && isBatting) {
+      const activeOrders = list
+        .filter((p) => p.is_playing && p.player_id !== player.player_id)
+        .map((p) => Number(p.sort_order || 0));
+      newSortOrder = activeOrders.length ? Math.max(...activeOrders) + 1 : 0;
+    }
+
+    const patch = next && isBatting
+      ? { is_playing: next, sort_order: newSortOrder }
+      : { is_playing: next };
+
+    const { error } = await supabase.from("game_roster").update(patch).eq("game_id", player.game_id).eq("player_id", player.player_id);
     if (error) { setErr(error.message); return; }
-    const apply = (arr) => arr.map((p) => (p.player_id === player.player_id ? { ...p, is_playing: next } : p));
-    if (player.team_side === "A") setRosterA((r) => apply(r));
+
+    const apply = (arr) => arr.map((p) => (p.player_id === player.player_id ? { ...p, is_playing: next, sort_order: newSortOrder } : p));
+    if (side === "A") setRosterA((r) => apply(r));
     else setRosterB((r) => apply(r));
   }
 
@@ -805,13 +883,13 @@ export default function LiveGamePage() {
             <div className="mt-0.5 truncate text-base font-black text-white">{leftLabel}</div>
             <div className="mt-1 text-5xl font-black tabular-nums text-white">{scoreA}</div>
             <div className="mt-2 flex flex-wrap gap-1.5">
-              <button onClick={() => undoScore("A")} disabled={scoreA <= 0}
+              <button onClick={() => undoScore("A")} disabled={scoreA <= 0 || actionBusy}
                 className="rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm font-black text-red-300 active:scale-95 disabled:opacity-20">
                 -1
               </button>
               {scoreButtons.map((d) => (
-                <button key={`A-${d}`} onClick={() => bumpScore("A", d)}
-                  className="rounded-lg border border-white/15 bg-white/10 px-3 py-2 text-sm font-black active:scale-95">
+                <button key={`A-${d}`} onClick={() => bumpScore("A", d)} disabled={actionBusy}
+                  className="rounded-lg border border-white/15 bg-white/10 px-3 py-2 text-sm font-black active:scale-95 disabled:opacity-40">
                   +{d}
                 </button>
               ))}
@@ -829,18 +907,18 @@ export default function LiveGamePage() {
 
                 <div className="flex items-center gap-1.5">
                   {game.timer_running ? (
-                    <button onClick={onPause}
-                      className="rounded-lg bg-white px-3 py-1.5 text-xs font-black text-black active:scale-95">
-                      Pause
+                    <button onClick={onPause} disabled={actionBusy}
+                      className="rounded-lg bg-white px-3 py-1.5 text-xs font-black text-black active:scale-95 disabled:opacity-40">
+                      {actionBusy ? "…" : "Pause"}
                     </button>
                   ) : (
-                    <button onClick={onStart}
-                      className="rounded-lg bg-white px-3 py-1.5 text-xs font-black text-black active:scale-95">
-                      Start
+                    <button onClick={onStart} disabled={actionBusy}
+                      className="rounded-lg bg-white px-3 py-1.5 text-xs font-black text-black active:scale-95 disabled:opacity-40">
+                      {actionBusy ? "…" : "Start"}
                     </button>
                   )}
-                  <button onClick={() => onReset(game.duration_seconds || clockPresets[clockPresets.length - 1] || 1800)}
-                    className="rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-black active:scale-95">
+                  <button onClick={() => onReset(game.duration_seconds || clockPresets[clockPresets.length - 1] || 1800)} disabled={actionBusy}
+                    className="rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-black active:scale-95 disabled:opacity-40">
                     Reset
                   </button>
                 </div>
