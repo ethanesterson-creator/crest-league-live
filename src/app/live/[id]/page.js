@@ -422,6 +422,8 @@ export default function LiveGamePage() {
     setSetTimeOpen(true);
   }
 
+  const GOAL_AUTO_SCORE_SPORTS = ["euro", "soccer", "hockey", "speedball"];
+
   async function bumpScore(side, delta) {
     if (!game || actionBusy) return;
     setErr("");
@@ -470,58 +472,7 @@ export default function LiveGamePage() {
       setActionBusy(false);
     }
   }
-  const GOAL_AUTO_SCORE_SPORTS = ["euro", "soccer", "hockey", "speedball"];
 
-  async function bumpGoalWithScore(player, side, delta) {
-    if (!game || actionBusy) return;
-    setErr("");
-    const d = Math.floor(Number(delta));
-    if (!Number.isFinite(d) || d === 0) return;
-    setActionBusy(true);
-    try {
-      const { error: statErr } = await supabase.rpc("rpc_add_stat", {
-        p_game_id: game.id, p_league_id: norm(game.league_key), p_sport: norm(game.sport),
-        p_player_id: String(player.player_id), p_player_name: String(player.player_name || player.player_id),
-        p_team_name: String(player?.team_name || ""), p_stat_key: "g", p_delta: d,
-      });
-      if (statErr) { setErr(statErr.message); return; }
-
-      const { error: scoreErr } = await supabase.rpc("rpc_add_score", { p_game_id: game.id, p_side: side, p_delta: d });
-      if (scoreErr) { setErr(scoreErr.message); return; }
-
-      await refreshStats();
-      await refreshGame();
-    } finally {
-      setActionBusy(false);
-    }
-  }
-
-  async function undoGoalWithScore(player, side) {
-    if (!game || actionBusy) return;
-    setErr("");
-    const current = getVal(player.player_id, "g");
-    if (current <= 0) return;
-    setActionBusy(true);
-    try {
-      const { error: statErr } = await supabase.rpc("rpc_add_stat", {
-        p_game_id: game.id, p_league_id: norm(game.league_key), p_sport: norm(game.sport),
-        p_player_id: String(player.player_id), p_player_name: String(player.player_name || player.player_id),
-        p_team_name: String(player?.team_name || ""), p_stat_key: "g", p_delta: -1,
-      });
-      if (statErr) { setErr(statErr.message); return; }
-
-      const sideScore = side === "A" ? Number(game.score_a || 0) : Number(game.score_b || 0);
-      if (sideScore > 0) {
-        const { error: scoreErr } = await supabase.rpc("rpc_add_score", { p_game_id: game.id, p_side: side, p_delta: -1 });
-        if (scoreErr) { setErr(scoreErr.message); return; }
-      }
-
-      await refreshStats();
-      await refreshGame();
-    } finally {
-      setActionBusy(false);
-    }
-  }
   async function bumpHoopPoints(player, side, delta) {
     if (!game || actionBusy) return;
     setErr("");
@@ -573,6 +524,57 @@ export default function LiveGamePage() {
     }
   }
 
+  async function bumpGoalWithScore(player, side, delta) {
+    if (!game || actionBusy) return;
+    setErr("");
+    const d = Math.floor(Number(delta));
+    if (!Number.isFinite(d) || d === 0) return;
+    setActionBusy(true);
+    try {
+      const { error: statErr } = await supabase.rpc("rpc_add_stat", {
+        p_game_id: game.id, p_league_id: norm(game.league_key), p_sport: norm(game.sport),
+        p_player_id: String(player.player_id), p_player_name: String(player.player_name || player.player_id),
+        p_team_name: String(player?.team_name || ""), p_stat_key: "g", p_delta: d,
+      });
+      if (statErr) { setErr(statErr.message); return; }
+
+      const { error: scoreErr } = await supabase.rpc("rpc_add_score", { p_game_id: game.id, p_side: side, p_delta: d });
+      if (scoreErr) { setErr(scoreErr.message); return; }
+
+      await refreshStats();
+      await refreshGame();
+    } finally {
+      setActionBusy(false);
+    }
+  }
+
+  async function undoGoalWithScore(player, side) {
+    if (!game || actionBusy) return;
+    setErr("");
+    const current = getVal(player.player_id, "g");
+    if (current <= 0) return;
+    setActionBusy(true);
+    try {
+      const { error: statErr } = await supabase.rpc("rpc_add_stat", {
+        p_game_id: game.id, p_league_id: norm(game.league_key), p_sport: norm(game.sport),
+        p_player_id: String(player.player_id), p_player_name: String(player.player_name || player.player_id),
+        p_team_name: String(player?.team_name || ""), p_stat_key: "g", p_delta: -1,
+      });
+      if (statErr) { setErr(statErr.message); return; }
+
+      const sideScore = side === "A" ? Number(game.score_a || 0) : Number(game.score_b || 0);
+      if (sideScore > 0) {
+        const { error: scoreErr } = await supabase.rpc("rpc_add_score", { p_game_id: game.id, p_side: side, p_delta: -1 });
+        if (scoreErr) { setErr(scoreErr.message); return; }
+      }
+
+      await refreshStats();
+      await refreshGame();
+    } finally {
+      setActionBusy(false);
+    }
+  }
+
   async function bumpStat(player, statKey, delta) {
     if (!game || actionBusy) return;
     setErr("");
@@ -602,7 +604,7 @@ export default function LiveGamePage() {
     let newSortOrder = player.sort_order;
 
     // When activating a player into a batting sport, put them at the END
-    // of the current active batting order, not whatever order_order they
+    // of the current active batting order, not whatever sort_order they
     // were assigned at roster creation time.
     if (next && isBatting) {
       const activeOrders = list
@@ -984,13 +986,13 @@ export default function LiveGamePage() {
             <div className="mt-0.5 truncate text-base font-black text-white">{leftLabel}</div>
             <div className="mt-1 text-5xl font-black tabular-nums text-white">{scoreA}</div>
             <div className="mt-2 flex flex-wrap gap-1.5">
-              <button onClick={() => undoScore("A")} disabled={scoreA <= 0 || actionBusy}
+              <button onClick={() => undoScore("A")} disabled={scoreA <= 0}
                 className="rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm font-black text-red-300 active:scale-95 disabled:opacity-20">
                 -1
               </button>
               {scoreButtons.map((d) => (
-                <button key={`A-${d}`} onClick={() => bumpScore("A", d)} disabled={actionBusy}
-                  className="rounded-lg border border-white/15 bg-white/10 px-3 py-2 text-sm font-black active:scale-95 disabled:opacity-40">
+                <button key={`A-${d}`} onClick={() => bumpScore("A", d)}
+                  className="rounded-lg border border-white/15 bg-white/10 px-3 py-2 text-sm font-black active:scale-95">
                   +{d}
                 </button>
               ))}
@@ -1008,18 +1010,18 @@ export default function LiveGamePage() {
 
                 <div className="flex items-center gap-1.5">
                   {game.timer_running ? (
-                    <button onClick={onPause} disabled={actionBusy}
-                      className="rounded-lg bg-white px-3 py-1.5 text-xs font-black text-black active:scale-95 disabled:opacity-40">
-                      {actionBusy ? "…" : "Pause"}
+                    <button onClick={onPause}
+                      className="rounded-lg bg-white px-3 py-1.5 text-xs font-black text-black active:scale-95">
+                      Pause
                     </button>
                   ) : (
-                    <button onClick={onStart} disabled={actionBusy}
-                      className="rounded-lg bg-white px-3 py-1.5 text-xs font-black text-black active:scale-95 disabled:opacity-40">
-                      {actionBusy ? "…" : "Start"}
+                    <button onClick={onStart}
+                      className="rounded-lg bg-white px-3 py-1.5 text-xs font-black text-black active:scale-95">
+                      Start
                     </button>
                   )}
-                  <button onClick={() => onReset(game.duration_seconds || clockPresets[clockPresets.length - 1] || 1800)} disabled={actionBusy}
-                    className="rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-black active:scale-95 disabled:opacity-40">
+                  <button onClick={() => onReset(game.duration_seconds || clockPresets[clockPresets.length - 1] || 1800)}
+                    className="rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-black active:scale-95">
                     Reset
                   </button>
                 </div>
@@ -1046,6 +1048,7 @@ export default function LiveGamePage() {
                 <div className="text-[10px] font-black uppercase tracking-widest text-white/40">No Clock</div>
               </div>
             )}
+
             {/* Volleyball series tracker */}
             {isVolleyball(game.sport) ? (
               <div className="flex flex-col items-center gap-1 rounded-lg border border-white/10 bg-white/[0.04] px-3 py-2">
