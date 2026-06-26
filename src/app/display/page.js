@@ -4,7 +4,6 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "@/lib/supabase";
 
 const SCENES = [
-  "standings",
   "camp",
   "live",
   "finals",
@@ -13,7 +12,6 @@ const SCENES = [
 ];
 
 const SCENE_LABELS = {
-  standings: "League Standings",
   camp: "Camp Standings",
   live: "Live Now",
   finals: "Recent Finals",
@@ -78,7 +76,7 @@ export default function DisplayPage() {
 
     setStandings(standingsData || []);
 
-   // camp standings — aggregate points across all leagues per team
+   // camp standings — aggregate points across all leagues per team, INCLUDING non-game points
    const { data: allStandings } = await supabase
   .from("standings")
   .select("team_name, league_points")
@@ -90,6 +88,20 @@ export default function DisplayPage() {
   const name = String(row.team_name || "").trim().toLowerCase();
   if (!name) return;
   totalsMap[name] = (totalsMap[name] || 0) + Number(row.league_points || 0);
+ });
+
+ // Add non-game points on top, same as the public Standings "Overall" tab
+ const { data: ngStandingsData } = await supabase
+  .from("non_game_points")
+  .select("team_name, points")
+  .eq("deleted", false)
+  .eq("status", "final")
+  .limit(5000);
+
+ (ngStandingsData || []).forEach((row) => {
+  const name = String(row.team_name || "").trim().toLowerCase();
+  if (!name) return;
+  totalsMap[name] = (totalsMap[name] || 0) + Number(row.points || 0);
  });
 
  const aggregated = Object.entries(totalsMap)
@@ -163,37 +175,19 @@ export default function DisplayPage() {
  useEffect(() => {
     if (!autoRotate) return;
 
-    // Build the full rotation sequence once:
-    // standings (seniors) -> standings (juniors) -> standings (sophomores)
-    // -> camp -> live -> finals -> leaders -> highlights -> repeat
-    const leagueCycle = ["seniors", "juniors", "sophomores"];
-    const sequence = [
-      ...leagueCycle.map((lg) => ({ scene: "standings", league: lg })),
-      { scene: "camp", league: null },
-      { scene: "live", league: null },
-      { scene: "finals", league: null },
-      { scene: "leaders", league: null },
-      { scene: "highlights", league: null },
-    ];
-
+    // Simple linear rotation: camp -> live -> finals -> leaders -> highlights -> repeat
+    // (No more per-league standings split on the public display board.)
     const t = setInterval(() => {
       setScene((prevScene) => {
-        // Find current position in the sequence based on scene + league
-        const currentIdx = sequence.findIndex(
-          (s) => s.scene === prevScene && (s.league === null || s.league === league)
-        );
-        const safeIdx = currentIdx === -1 ? 0 : currentIdx;
-        const next = sequence[(safeIdx + 1) % sequence.length];
+        const idx = SCENES.indexOf(prevScene);
+        const safeIdx = idx === -1 ? 0 : idx;
+        const nextScene = SCENES[(safeIdx + 1) % SCENES.length];
 
-        if (next.league) {
-          setLeague(next.league);
-        }
-
-        if (next.scene === "highlights") {
+        if (nextScene === "highlights") {
           setHighlightIndex(0);
         }
 
-        return next.scene;
+        return nextScene;
       });
     }, rotateSeconds * 1000);
 
@@ -217,8 +211,8 @@ export default function DisplayPage() {
     return `FINAL: ${bowl}${winner} defeats ${loser}, ${Math.max(a, b)}-${Math.min(a, b)}`;
   });
 
-  const topStandings = standings.slice(0, 3).map((t, i) => {
-    return `${fmtLeague(league)} STANDINGS: #${i + 1} ${t.team_name} — ${Number(t.league_points || 0)} pts`;
+  const topStandings = campStandings.slice(0, 3).map((t, i) => {
+    return `CAMP STANDINGS: #${i + 1} ${t.team_name} — ${Number(t.league_points || 0)} pts`;
   });
 
   const topLeaders = leaders.slice(0, 4).map((p) => {
@@ -226,7 +220,7 @@ export default function DisplayPage() {
   });
 
   return [...live, ...finals, ...topStandings, ...topLeaders].filter(Boolean);
-}, [liveGames, finalGames, standings, leaders, league]);
+}, [liveGames, finalGames, campStandings, leaders, league]);
 
   async function goFullscreen() {
     if (!document.fullscreenElement) {
@@ -560,6 +554,7 @@ export default function DisplayPage() {
         </div>
 
         <div className="flex items-center gap-3">
+          <span className="hidden text-[10px] font-bold uppercase tracking-widest text-white/40 lg:inline">Leaders League:</span>
           <select
             value={league}
             onChange={(e) => setLeague(e.target.value)}
@@ -648,7 +643,6 @@ export default function DisplayPage() {
       {/* Main board area */}
       <section className="relative z-10 h-[calc(100vh-72px-58px-52px)] p-6">
         <div className="h-full overflow-hidden">
-          {scene === "standings" && renderStandings()}
           {scene === "camp" && (
             <div className="rounded-[32px] border border-white/10 bg-gradient-to-br from-slate-950 to-slate-900 p-8 shadow-2xl">
               <div className="mb-8 flex items-center justify-between">

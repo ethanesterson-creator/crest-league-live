@@ -28,6 +28,13 @@ export default function AdminPage() {
   const [overridePoints, setOverridePoints] = useState("");
 
   // ----------------------------
+  // PER-LEAGUE STANDINGS (group leader view)
+  // ----------------------------
+  const [adminStandingsLeague, setAdminStandingsLeague] = useState("seniors");
+  const [adminStandingsRows, setAdminStandingsRows] = useState([]);
+  const [adminStandingsLoading, setAdminStandingsLoading] = useState(false);
+
+  // ----------------------------
   // TRADES (within league only)
   // ----------------------------
   const [loadingTradeMeta, setLoadingTradeMeta] = useState(false);
@@ -83,6 +90,53 @@ export default function AdminPage() {
       setErr(e?.message ?? String(e));
     } finally {
       setLoadingFinal(false);
+    }
+  }
+
+  async function loadAdminStandingsForLeague(lid) {
+    setAdminStandingsLoading(true);
+    try {
+      const { data, error } = await supabase
+        .from("standings")
+        .select("league_id, sport, team_name, wins, losses, league_points, updated_at")
+        .eq("sport", "overall")
+        .eq("league_id", lid);
+
+      if (error) throw error;
+
+      const { data: ngData, error: ngErr } = await supabase
+        .from("non_game_points")
+        .select("team_name, points")
+        .eq("league_id", lid)
+        .eq("deleted", false)
+        .eq("status", "final")
+        .limit(5000);
+
+      if (ngErr) throw ngErr;
+
+      const ngMap = new Map();
+      for (const r of ngData || []) {
+        const key = norm(r.team_name);
+        ngMap.set(key, (ngMap.get(key) || 0) + Number(r.points || 0));
+      }
+
+      const merged = (data || []).map((row) => ({
+        ...row,
+        league_points: Number(row.league_points || 0) + (ngMap.get(norm(row.team_name)) || 0),
+      }));
+
+      merged.sort((a, b) => {
+        const ap = Number(a.league_points || 0);
+        const bp = Number(b.league_points || 0);
+        if (bp !== ap) return bp - ap;
+        return Number(b.wins || 0) - Number(a.wins || 0);
+      });
+
+      setAdminStandingsRows(merged);
+    } catch (e) {
+      setErr(e?.message ?? String(e));
+    } finally {
+      setAdminStandingsLoading(false);
     }
   }
 
@@ -271,8 +325,15 @@ export default function AdminPage() {
     loadFinalGames();
     loadNonGamePoints();
     loadTradeMeta();
+    loadAdminStandingsForLeague(adminStandingsLeague);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [authed]);
+
+  useEffect(() => {
+    if (!authed) return;
+    loadAdminStandingsForLeague(adminStandingsLeague);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [adminStandingsLeague]);
 
   useEffect(() => {
     if (!authed) return;
@@ -692,6 +753,73 @@ export default function AdminPage() {
         </div>
       ) : (
         <>
+          {/* Per-League Standings — group leader view */}
+          <div className="mt-6 rounded-2xl border border-blue-400/20 bg-blue-950/10 p-5">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <div className="text-lg font-black">Per-League Standings</div>
+                <div className="mt-1 text-sm text-white/70">
+                  For group leaders. Includes non-game points. The public Standings page now shows camp-wide totals only.
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <select
+                  value={adminStandingsLeague}
+                  onChange={(e) => setAdminStandingsLeague(e.target.value)}
+                  className="rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm font-bold text-white"
+                >
+                  <option value="seniors">Seniors</option>
+                  <option value="juniors">Juniors</option>
+                  <option value="sophomores">Sophomores</option>
+                </select>
+                <button
+                  onClick={() => loadAdminStandingsForLeague(adminStandingsLeague)}
+                  className="rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm font-bold hover:bg-white/10"
+                >
+                  Refresh
+                </button>
+              </div>
+            </div>
+
+            <div className="mt-4 overflow-x-auto">
+              {adminStandingsLoading ? (
+                <div className="py-4 text-sm text-white/60">Loading…</div>
+              ) : (
+                <table className="w-full text-left text-sm">
+                  <thead className="text-white/70">
+                    <tr>
+                      <th className="py-2">#</th>
+                      <th className="py-2">Team</th>
+                      <th className="py-2">W</th>
+                      <th className="py-2">L</th>
+                      <th className="py-2">Pts</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {adminStandingsRows.length ? (
+                      adminStandingsRows.map((r, i) => (
+                        <tr key={`${r.team_name}-${i}`} className="border-t border-white/10">
+                          <td className="py-3 text-white/50">{i + 1}</td>
+                          <td className="py-3 font-extrabold">{r.team_name}</td>
+                          <td className="py-3">{r.wins}</td>
+                          <td className="py-3">{r.losses}</td>
+                          <td className="py-3 font-black">{r.league_points}</td>
+                        </tr>
+                      ))
+                    ) : (
+                      <tr>
+                        <td className="py-4 text-white/60" colSpan={5}>
+                          No standings yet for this league.
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              )}
+            </div>
+          </div>
+
           <div className="mt-6 rounded-2xl border border-white/10 bg-white/5 p-5">
             <div className="text-lg font-black">Confirmation</div>
             <div className="mt-1 text-sm text-white/70">Type the required word to enable a dangerous action.</div>
@@ -1117,5 +1245,3 @@ export default function AdminPage() {
     </div>
   );
 }
-
-
