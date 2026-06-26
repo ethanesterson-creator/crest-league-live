@@ -1235,6 +1235,21 @@ export default function LiveGamePage() {
             ) : null}
 
             {(() => {
+              if (isVolleyball(game?.sport)) {
+                const majority = Math.floor(seriesFormat / 2) + 1;
+                if (seriesA < majority && seriesB < majority) {
+                  return <div className="mt-3 rounded-xl border border-amber-400/30 bg-amber-500/10 p-3 text-sm text-amber-200">⚠️ Series isn't decided yet. Need {majority} set wins (currently {seriesA}-{seriesB}).</div>;
+                }
+                if (seriesA === seriesB) {
+                  return <div className="mt-3 rounded-xl border border-amber-400/30 bg-amber-500/10 p-3 text-sm text-amber-200">⚠️ Series is tied ({seriesA}-{seriesB}). End another set before finalizing.</div>;
+                }
+                return (
+                  <div className="mt-3 rounded-xl border border-emerald-400/30 bg-emerald-500/10 p-3 text-sm text-emerald-200">
+                    Series is {seriesA}-{seriesB}. This will be recorded as the final score.
+                  </div>
+                );
+              }
+
               const sa = Number(game?.score_a || 0);
               const sb = Number(game?.score_b || 0);
               if (sa === 0 && sb === 0) return <div className="mt-3 rounded-xl border border-red-400/30 bg-red-500/10 p-3 text-sm text-red-200">⚠️ Score is 0-0. Add points before finalizing.</div>;

@@ -59,10 +59,7 @@ export const SPORT_RULES = {
     label: "Volleyball",
     clock: { enabled: false },
     scoreButtons: [1],
-    stats: [
-      { key: "ace", label: "Aces", deltas: [1] },
-      { key: "kill", label: "Kills", deltas: [1] },
-    ],
+    stats: [],
   },
 
   football: {
