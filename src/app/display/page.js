@@ -130,13 +130,28 @@ export default function DisplayPage() {
 
     setFinalGames(finals || []);
 
-    // leaders
-    const { data: leaderData } = await supabase
+    // leaders — pull a wide pool, then reduce to ONE top leader per sport+stat
+    // combination, so the board never compares unrelated stats (e.g. hoop points
+    // vs euro goals) on the same raw-number scale.
+    const { data: leaderPool } = await supabase
       .from("player_totals")
       .select("*")
       .eq("league_id", league)
       .order("value", { ascending: false })
-      .limit(30);
+      .limit(500);
+
+    const bestPerCategory = new Map();
+    for (const row of leaderPool || []) {
+      const key = `${String(row.sport || "").toLowerCase()}:${String(row.stat_key || "").toLowerCase()}`;
+      const existing = bestPerCategory.get(key);
+      if (!existing || Number(row.value || 0) > Number(existing.value || 0)) {
+        bestPerCategory.set(key, row);
+      }
+    }
+
+    const leaderData = Array.from(bestPerCategory.values()).sort(
+      (a, b) => Number(b.value || 0) - Number(a.value || 0)
+    );
 
     setLeaders(leaderData || []);
 

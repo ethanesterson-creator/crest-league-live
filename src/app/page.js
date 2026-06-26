@@ -5,7 +5,6 @@ import Link from "next/link";
 import { supabase } from "@/lib/supabase";
 import { getSportRules } from "@/lib/sportRules";
 
-// Include Evening Activity because it's in points_rules
 const SPORTS = [
   "Hoop",
   "Softball",
@@ -17,11 +16,10 @@ const SPORTS = [
   "Euro",
   "Soccer",
   "Hockey",
-  "Evening Activity",
 ];
 
 // Fallbacks only used if points_rules row is missing
-const FALLBACK_LEVELS = ["A", "B", "C", "D", "E", "F", "ALL"];
+const FALLBACK_LEVELS = ["A", "B", "C", "D", "E", "F"];
 const MODES = ["5v5", "6v6", "7v7", "8v8", "9v9", "10v10", "11v11", "3v3", "2v2", "1v1"];
 
 const FALLBACK_TIMER_PRESETS = [
@@ -129,7 +127,6 @@ export default function HomePage() {
   // -------------------------
   // BOWL GAME FIELDS
   // -------------------------
-  const [volleyballFormat, setVolleyballFormat] = useState(3);
   const [isBowlGame, setIsBowlGame] = useState(false);
   const [bowlName, setBowlName] = useState("");
   const [bowlCounts, setBowlCounts] = useState(true);
@@ -191,15 +188,14 @@ export default function HomePage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [leagueKey, sport]);
 
-  // If Evening Activity is selected, force level to ALL
+  // Keep level in sync with whatever levels actually exist for this league+sport.
+  // (Evening Activity used to force level="ALL" here — removed; evening activity
+  // results now go through real sport games or Non-Game Points instead.)
   useEffect(() => {
-    if (norm(sport) === "evening activity") {
-      setLevel("ALL");
-    } else {
-      // if current level not in availableLevels, pick first
-      if (availableLevels?.length && !availableLevels.includes(String(level).toUpperCase())) {
-        setLevel(availableLevels[0]);
-      }
+    if (String(level).toUpperCase() === "ALL") {
+      setLevel(availableLevels?.length ? availableLevels[0] : "A");
+    } else if (availableLevels?.length && !availableLevels.includes(String(level).toUpperCase())) {
+      setLevel(availableLevels[0]);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sport, availableLevels]);
@@ -400,7 +396,7 @@ export default function HomePage() {
       clock_style: clockEnabled ? clockStyle || "countdown" : "none",
 
       status: "active",
-      notes: norm(sport) === "volleyball" ? JSON.stringify({ series_format: volleyballFormat, series_a: 0, series_b: 0 }) : "",
+      notes: "",
 
       // ✅ bowl fields
       is_bowl_game: !!isBowlGame,
@@ -509,20 +505,6 @@ export default function HomePage() {
               ) : null}
             </label>
 
-            {norm(sport) === "volleyball" ? (
-              <label className="text-sm">
-                <div className="mb-1 text-slate-300">Volleyball Series</div>
-                <select
-                  className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 outline-none focus:border-slate-500"
-                  value={volleyballFormat}
-                  onChange={(e) => setVolleyballFormat(Number(e.target.value))}
-                >
-                  <option value={3}>Best of 3</option>
-                  <option value={5}>Best of 5</option>
-                </select>
-              </label>
-            ) : null}
-
             {/* Matchup type */}
             <label className="text-sm">
               <div className="mb-1 text-slate-300">Matchup</div>
@@ -545,7 +527,6 @@ export default function HomePage() {
               className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 outline-none focus:border-slate-500"
               value={String(level).toUpperCase()}
               onChange={(e) => setLevel(e.target.value)}
-              disabled={norm(sport) === "evening activity"}
                >
                {(availableLevels?.length ? availableLevels : FALLBACK_LEVELS).map((l) => (
                   <option key={l} value={l}>
@@ -553,9 +534,6 @@ export default function HomePage() {
                 </option>
                   ))}
                   </select>
-                {norm(sport) === "evening activity" ? (
-               <div className="mt-1 text-xs text-slate-400">Evening Activity uses Level = ALL.</div>
-                ) : null}
                  </label>
                 ) : matchupType === "full_team" ? (
                  <div className="text-xs text-slate-400 flex items-end pb-2">Full Team — no level split.</div>

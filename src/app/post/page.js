@@ -4,8 +4,8 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { supabase } from "@/lib/supabase";
 
-const SPORTS = ["Hoop", "Soccer", "Softball", "Kickball", "Volleyball", "Football", "Speedball", "Euro", "Hockey", "Newcomb", "Evening Activity"];
-const FALLBACK_LEVELS = ["A", "B", "C", "D", "E", "F", "ALL"];
+const SPORTS = ["Hoop", "Soccer", "Softball", "Kickball", "Volleyball", "Football", "Speedball", "Euro", "Hockey", "Newcomb"];
+const FALLBACK_LEVELS = ["A", "B", "C", "D", "E", "F"];
 const MODES = ["5v5", "6v6", "7v7", "8v8", "9v9", "10v10", "11v11"];
 
 // Fixed reasons (kept in sync with non_game_point_reasons view in Supabase)
@@ -21,8 +21,6 @@ const NON_GAME_REASONS = [
   "Bowl Game Bonus",
   "Evening Activity",
   "Sweep",
-  "Pickleball",
-  "Bombardment",
   "Other",
 ];
 
@@ -215,14 +213,12 @@ export default function PostGamesPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [leagueKey, sport]);
 
-  // sport = Evening Activity forces level ALL
+  // Keep level in sync with whatever levels actually exist for this league+sport.
   useEffect(() => {
-    if (norm(sport) === "evening activity") {
-      setLevel("ALL");
-    } else {
-      if (availableLevels?.length && !availableLevels.includes(String(level).toUpperCase())) {
-        setLevel(availableLevels[0]);
-      }
+    if (String(level).toUpperCase() === "ALL") {
+      setLevel(availableLevels?.length ? availableLevels[0] : "A");
+    } else if (availableLevels?.length && !availableLevels.includes(String(level).toUpperCase())) {
+      setLevel(availableLevels[0]);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sport, availableLevels]);
@@ -506,7 +502,6 @@ export default function PostGamesPage() {
                     className="w-full rounded-xl border border-slate-800 bg-slate-950 px-3 py-2 outline-none focus:border-slate-500"
                     value={String(level).toUpperCase()}
                     onChange={(e) => setLevel(e.target.value)}
-                    disabled={norm(sport) === "evening activity"}
                   >
                     {(availableLevels?.length ? availableLevels : FALLBACK_LEVELS).map((l) => (
                       <option key={l} value={l}>
