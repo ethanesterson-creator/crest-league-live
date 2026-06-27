@@ -277,13 +277,31 @@ export default function PostGamesPage() {
       const teamErr = validateTeams();
       if (teamErr) throw new Error(teamErr);
 
+      const finalLevel = matchupType === "full_team" ? "FULL" : matchupType === "crest_cup" ? "A" : lv;
+      const finalLeagueKey = matchupType === "crest_cup" ? "crest_cup" : lk;
+
+      // Same hard safety net as the live Create Game form — never create a
+      // draft with a level that has no matching points_rules row.
+      if (finalLeagueKey !== "crest_cup") {
+        const { data: ruleCheck, error: ruleCheckErr } = await supabase
+          .from("points_rules")
+          .select("win_points")
+          .eq("league_id", finalLeagueKey)
+          .eq("sport", norm(sport))
+          .eq("level", finalLevel)
+          .maybeSingle();
+
+        if (ruleCheckErr) throw new Error(`Could not verify points rules: ${ruleCheckErr.message}`);
+        if (!ruleCheck) throw new Error(`No points rules exist for ${finalLeagueKey} / ${sport} / level ${finalLevel}. Pick a different level or sport.`);
+      }
+
       const row = {
         status: "draft",
         played_on: playedOn,
 
-        league_key: matchupType === "crest_cup" ? "crest_cup" : lk,
+        league_key: finalLeagueKey,
         sport,
-        level: matchupType === "full_team" ? "FULL" : matchupType === "crest_cup" ? "A" : lv,
+        level: finalLevel,
         mode,
 
         matchup_type: matchupType,

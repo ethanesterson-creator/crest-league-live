@@ -371,10 +371,37 @@ export default function HomePage() {
 
     const duration = clockEnabled ? Number(preset || 0) : 0;
 
+    const finalLevel = matchupType === "full_team" ? "FULL" : matchupType === "crest_cup" ? "A" : String(level).toUpperCase();
+    const finalLeagueKey = matchupType === "crest_cup" ? "crest_cup" : norm(leagueKey);
+
+    // Hard safety net: confirm a real points_rules row exists for the exact
+    // league/sport/level we're about to save, BEFORE creating the game.
+    // This closes off every possible path to an invalid level (not just the
+    // old Evening Activity bug) — if this check fails, the game is never
+    // created, instead of being created broken and discovered at finalize time.
+    if (finalLeagueKey !== "crest_cup") {
+      const { data: ruleCheck, error: ruleCheckErr } = await supabase
+        .from("points_rules")
+        .select("win_points")
+        .eq("league_id", finalLeagueKey)
+        .eq("sport", norm(sport))
+        .eq("level", finalLevel)
+        .maybeSingle();
+
+      if (ruleCheckErr) {
+        setErr(`Could not verify points rules: ${ruleCheckErr.message}`);
+        return;
+      }
+      if (!ruleCheck) {
+        setErr(`No points rules exist for ${finalLeagueKey} / ${sport} / level ${finalLevel}. Pick a different level or sport, or ask Ethan to add this combination in Supabase before creating the game.`);
+        return;
+      }
+    }
+
     const payload = {
-      league_key: matchupType === "crest_cup" ? "crest_cup" : norm(leagueKey),
+      league_key: finalLeagueKey,
       sport, // keep display value
-      level: matchupType === "full_team" ? "FULL" : matchupType === "crest_cup" ? "A" : String(level).toUpperCase(),
+      level: finalLevel,
       mode,
 
       matchup_type: matchupType,

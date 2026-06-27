@@ -677,29 +677,29 @@ export default function DisplayPage() {
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 gap-5 xl:grid-cols-2">
+              <div className="grid h-[calc(100%-160px)] grid-cols-1 gap-6 xl:grid-cols-2">
                 {campStandings.map((t, i) => (
                   <div
                     key={`${t.league_id}-${t.team_name}-${i}`}
                     className={cx(
-                      "flex items-center justify-between rounded-3xl border border-white/10 bg-white/[0.04] p-6",
+                      "flex items-center justify-between rounded-[32px] border border-white/10 bg-white/[0.04] p-10",
                       i === 0 && "border-blue-500/40 bg-blue-500/10"
                     )}
                   >
                     <div>
-                      <div className="text-sm font-black uppercase tracking-[0.2em] text-white/40">
+                      <div className="text-lg font-black uppercase tracking-[0.2em] text-white/40">
                         #{i + 1} • ALL LEAGUES
                        </div>
-                      <div className="mt-1 text-4xl font-black text-white">
+                      <div className="mt-2 text-6xl font-black text-white xl:text-7xl">
                         {t.team_name}
                       </div>
                     </div>
 
                     <div className="text-right">
-                      <div className="text-sm font-black uppercase tracking-[0.2em] text-blue-300">
+                      <div className="text-lg font-black uppercase tracking-[0.2em] text-blue-300">
                         POINTS
                       </div>
-                      <div className="text-6xl font-black text-blue-400">
+                      <div className="text-8xl font-black text-blue-400 xl:text-9xl">
                         {Number(t.league_points || 0)}
                       </div>
                     </div>
