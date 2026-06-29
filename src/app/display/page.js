@@ -7,7 +7,9 @@ const SCENES = [
   "camp",
   "live",
   "finals",
-  "leaders",
+  "leaders_seniors",
+  "leaders_juniors",
+  "leaders_sophomores",
   "highlights",
 ];
 
@@ -15,7 +17,9 @@ const SCENE_LABELS = {
   camp: "Camp Standings",
   live: "Live Now",
   finals: "Recent Finals",
-  leaders: "Stat Leaders",
+  leaders_seniors: "Seniors Stat Leaders",
+  leaders_juniors: "Juniors Stat Leaders",
+  leaders_sophomores: "Sophomores Stat Leaders",
   highlights: "Highlights",
 };
 
@@ -53,7 +57,7 @@ export default function DisplayPage() {
   const [campStandings, setCampStandings] = useState([]);
   const [liveGames, setLiveGames] = useState([]);
   const [finalGames, setFinalGames] = useState([]);
-  const [leaders, setLeaders] = useState([]);
+  const [leadersByLeague, setLeadersByLeague] = useState({ seniors: [], juniors: [], sophomores: [] });
   const [highlights, setHighlights] = useState([]);
 
   const [rotateSeconds, setRotateSeconds] = useState(18);
@@ -130,30 +134,42 @@ export default function DisplayPage() {
 
     setFinalGames(finals || []);
 
-    // leaders — pull a wide pool, then reduce to ONE top leader per sport+stat
-    // combination, so the board never compares unrelated stats (e.g. hoop points
-    // vs euro goals) on the same raw-number scale.
-    const { data: leaderPool } = await supabase
-      .from("player_totals")
-      .select("*")
-      .eq("league_id", league)
-      .order("value", { ascending: false })
-      .limit(500);
+    // leaders — fetch ALL THREE leagues independently. Each league's stat
+    // leaders is its own dedicated scene now, so all three need their own
+    // data on every load, not just whichever league happens to be selected.
+    async function fetchLeadersForLeague(lid) {
+      const { data: leaderPool } = await supabase
+        .from("player_totals")
+        .select("*")
+        .eq("league_id", lid)
+        .order("value", { ascending: false })
+        .limit(500);
 
-    const bestPerCategory = new Map();
-    for (const row of leaderPool || []) {
-      const key = `${String(row.sport || "").toLowerCase()}:${String(row.stat_key || "").toLowerCase()}`;
-      const existing = bestPerCategory.get(key);
-      if (!existing || Number(row.value || 0) > Number(existing.value || 0)) {
-        bestPerCategory.set(key, row);
+      const bestPerCategory = new Map();
+      for (const row of leaderPool || []) {
+        const key = `${String(row.sport || "").toLowerCase()}:${String(row.stat_key || "").toLowerCase()}`;
+        const existing = bestPerCategory.get(key);
+        if (!existing || Number(row.value || 0) > Number(existing.value || 0)) {
+          bestPerCategory.set(key, row);
+        }
       }
+
+      return Array.from(bestPerCategory.values()).sort(
+        (a, b) => Number(b.value || 0) - Number(a.value || 0)
+      );
     }
 
-    const leaderData = Array.from(bestPerCategory.values()).sort(
-      (a, b) => Number(b.value || 0) - Number(a.value || 0)
-    );
+    const [seniorsLeaders, juniorsLeaders, sophomoresLeaders] = await Promise.all([
+      fetchLeadersForLeague("seniors"),
+      fetchLeadersForLeague("juniors"),
+      fetchLeadersForLeague("sophomores"),
+    ]);
 
-    setLeaders(leaderData || []);
+    setLeadersByLeague({
+      seniors: seniorsLeaders,
+      juniors: juniorsLeaders,
+      sophomores: sophomoresLeaders,
+    });
 
     // highlights
     const { data: h } = await supabase
@@ -190,23 +206,15 @@ export default function DisplayPage() {
  useEffect(() => {
     if (!autoRotate) return;
 
-    // Simple linear rotation: camp -> live -> finals -> leaders -> highlights -> repeat
-    // Each time we land on "leaders," advance to the next league too, so all
-    // three age groups' stat leaders actually get shown over time, not just
-    // whichever league happens to be selected in the dropdown.
-    const leagueCycle = ["seniors", "juniors", "sophomores"];
+    // Pure linear rotation. Each league's stat leaders is now its own
+    // hardcoded scene (leaders_seniors, leaders_juniors, leaders_sophomores),
+    // so no shared "league" variable needs to be mutated during rotation —
+    // each scene is self-contained and always shows the right league.
     const t = setInterval(() => {
       setScene((prevScene) => {
         const idx = SCENES.indexOf(prevScene);
         const safeIdx = idx === -1 ? 0 : idx;
         const nextScene = SCENES[(safeIdx + 1) % SCENES.length];
-
-        if (nextScene === "leaders") {
-          setLeague((curLeague) => {
-            const li = leagueCycle.indexOf(curLeague);
-            return leagueCycle[(li === -1 ? 0 : li + 1) % leagueCycle.length];
-          });
-        }
 
         if (nextScene === "highlights") {
           setHighlightIndex(0);
@@ -240,12 +248,18 @@ export default function DisplayPage() {
     return `CAMP STANDINGS: #${i + 1} ${t.team_name} — ${Number(t.league_points || 0)} pts`;
   });
 
-  const topLeaders = leaders.slice(0, 4).map((p) => {
+  const allLeaders = [
+    ...(leadersByLeague.seniors || []),
+    ...(leadersByLeague.juniors || []),
+    ...(leadersByLeague.sophomores || []),
+  ];
+
+  const topLeaders = allLeaders.slice(0, 4).map((p) => {
     return `LEADER: ${p.player_name} — ${Number(p.value || 0)} ${String(p.stat_key || "").toUpperCase()} (${p.team_name || "—"})`;
   });
 
   return [...live, ...finals, ...topStandings, ...topLeaders].filter(Boolean);
-}, [liveGames, finalGames, campStandings, leaders, league]);
+}, [liveGames, finalGames, campStandings, leadersByLeague]);
 
   async function goFullscreen() {
     if (!document.fullscreenElement) {
@@ -442,9 +456,14 @@ export default function DisplayPage() {
     );
   }
 
-  function renderLeaders() {
+  function renderLeaders(leagueKey) {
+    const leaders = leadersByLeague[leagueKey] || [];
     return (
-      <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
+      <div className="flex h-full flex-col gap-6">
+        <div className="text-sm font-black uppercase tracking-[0.3em] text-blue-400">
+          {fmtLeague(leagueKey)} Stat Leaders
+        </div>
+        <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
         {leaders.slice(0, 9).map((p) => (
           <div
             key={`${String(p.sport || "").toLowerCase()}-${String(p.stat_key || "").toLowerCase()}`}
@@ -479,6 +498,7 @@ export default function DisplayPage() {
             </div>
           </div>
         ))}
+        </div>
       </div>
     );
   }
@@ -721,7 +741,9 @@ export default function DisplayPage() {
 
           {scene === "live" && renderLiveGames()}
           {scene === "finals" && renderFinals()}
-          {scene === "leaders" && renderLeaders()}
+          {scene === "leaders_seniors" && renderLeaders("seniors")}
+          {scene === "leaders_juniors" && renderLeaders("juniors")}
+          {scene === "leaders_sophomores" && renderLeaders("sophomores")}
           {scene === "highlights" && renderHighlights()}
         </div>
       </section>
