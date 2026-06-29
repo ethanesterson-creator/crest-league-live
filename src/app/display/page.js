@@ -599,16 +599,6 @@ export default function DisplayPage() {
         </div>
 
         <div className="flex items-center gap-3">
-          <span className="hidden text-[10px] font-bold uppercase tracking-widest text-white/40 lg:inline">Leaders League:</span>
-          <select
-            value={league}
-            onChange={(e) => setLeague(e.target.value)}
-            className="h-10 rounded-xl border border-white/15 bg-white/10 px-3 text-sm font-black text-white outline-none"
-          >
-            <option value="seniors">Seniors</option>
-            <option value="juniors">Juniors</option>
-            <option value="sophomores">Sophomores</option>
-          </select>
 
           <button
             onClick={loadAll}
