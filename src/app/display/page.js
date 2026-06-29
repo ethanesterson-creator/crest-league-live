@@ -445,9 +445,9 @@ export default function DisplayPage() {
   function renderLeaders() {
     return (
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
-        {leaders.slice(0, 9).map((p, i) => (
+        {leaders.slice(0, 9).map((p) => (
           <div
-            key={`${p.player_id}-${i}`}
+            key={`${String(p.sport || "").toLowerCase()}-${String(p.stat_key || "").toLowerCase()}`}
             className="rounded-[32px] border border-white/10 bg-gradient-to-br from-slate-900 to-black p-8"
           >
             <div className="text-sm font-black uppercase tracking-[0.2em] text-blue-400">
