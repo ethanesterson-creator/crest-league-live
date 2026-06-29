@@ -191,12 +191,22 @@ export default function DisplayPage() {
     if (!autoRotate) return;
 
     // Simple linear rotation: camp -> live -> finals -> leaders -> highlights -> repeat
-    // (No more per-league standings split on the public display board.)
+    // Each time we land on "leaders," advance to the next league too, so all
+    // three age groups' stat leaders actually get shown over time, not just
+    // whichever league happens to be selected in the dropdown.
+    const leagueCycle = ["seniors", "juniors", "sophomores"];
     const t = setInterval(() => {
       setScene((prevScene) => {
         const idx = SCENES.indexOf(prevScene);
         const safeIdx = idx === -1 ? 0 : idx;
         const nextScene = SCENES[(safeIdx + 1) % SCENES.length];
+
+        if (nextScene === "leaders") {
+          setLeague((curLeague) => {
+            const li = leagueCycle.indexOf(curLeague);
+            return leagueCycle[(li === -1 ? 0 : li + 1) % leagueCycle.length];
+          });
+        }
 
         if (nextScene === "highlights") {
           setHighlightIndex(0);
