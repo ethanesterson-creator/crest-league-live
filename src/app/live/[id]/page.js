@@ -50,6 +50,10 @@ const isBattingSport = (s) => {
 };
 
 const isVolleyball = (s) => String(s || "").toLowerCase().trim() === "volleyball";
+const isSeriesSport = (s) => {
+  const v = String(s || "").toLowerCase().trim();
+  return v === "volleyball" || v === "newcomb";
+};
 
 function parseSeriesNotes(notes) {
   try {
@@ -104,6 +108,15 @@ export default function LiveGamePage() {
   const [confirmFinalizeOpen, setConfirmFinalizeOpen] = useState(false);
   const [finalizing, setFinalizing] = useState(false);
   const [actionBusy, setActionBusy] = useState(false);
+
+  // Hard safety net: if actionBusy ever gets stuck true (a hung request,
+  // a forgotten finally block in future code, bad WiFi never resolving),
+  // force it back to false after 4 seconds so buttons never stay dead.
+  useEffect(() => {
+    if (!actionBusy) return;
+    const t = setTimeout(() => setActionBusy(false), 4000);
+    return () => clearTimeout(t);
+  }, [actionBusy]);
   const [clockMode, setClockMode] = useState("");
 
   const [showBenchA, setShowBenchA] = useState(true);
@@ -177,7 +190,7 @@ export default function LiveGamePage() {
       const { data, error } = await supabase.from("live_games").select("*").eq("id", gameId).single();
       if (error) throw error;
       setGame(data);
-      if (isVolleyball(data?.sport)) {
+      if (isSeriesSport(data?.sport)) {
         const parsed = parseSeriesNotes(data.notes);
         setSeriesFormat(parsed.format);
         setSeriesA(parsed.seriesA);
@@ -692,7 +705,7 @@ export default function LiveGamePage() {
     if (!game || finalizing) return;
     setErr("");
 
-    const isVB = isVolleyball(game.sport);
+    const isVB = isSeriesSport(game.sport);
 
     if (isVB) {
       // For volleyball, the official score is the SERIES score, not the
@@ -1049,8 +1062,8 @@ export default function LiveGamePage() {
               </div>
             )}
 
-            {/* Volleyball series tracker */}
-            {isVolleyball(game.sport) ? (
+            {/* Series tracker — Volleyball and Newcomb */}
+            {isSeriesSport(game.sport) ? (
               <div className="flex flex-col items-center gap-1 rounded-lg border border-white/10 bg-white/[0.04] px-3 py-2">
                 <div className="text-[10px] font-black uppercase tracking-widest text-white/40">Series (Bo{seriesFormat})</div>
                 <div className="text-2xl font-black tabular-nums text-white">{seriesA} - {seriesB}</div>
@@ -1235,7 +1248,7 @@ export default function LiveGamePage() {
             ) : null}
 
             {(() => {
-              if (isVolleyball(game?.sport)) {
+              if (isSeriesSport(game?.sport)) {
                 const majority = Math.floor(seriesFormat / 2) + 1;
                 if (seriesA < majority && seriesB < majority) {
                   return <div className="mt-3 rounded-xl border border-amber-400/30 bg-amber-500/10 p-3 text-sm text-amber-200">⚠️ Series isn't decided yet. Need {majority} set wins (currently {seriesA}-{seriesB}).</div>;
