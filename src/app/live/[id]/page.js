@@ -135,6 +135,7 @@ export default function LiveGamePage() {
     typeof navigator !== "undefined" ? navigator.onLine : true
   );
   const [inning, setInning] = useState(1);
+  const [inningHalf, setInningHalf] = useState("top"); // "top" or "bottom"
   const [seriesFormat, setSeriesFormat] = useState(3);
   const [seriesA, setSeriesA] = useState(0);
   const [seriesB, setSeriesB] = useState(0);
@@ -1025,15 +1026,27 @@ export default function LiveGamePage() {
               ) : null}
 
               {norm(game.sport) === "kickball" ? (
-                <div className="flex flex-col items-center gap-1 rounded-xl border border-white/10 bg-white/[0.04] px-4 py-2.5">
-                  <div className="text-[10px] font-black uppercase tracking-widest text-white/40">Inning</div>
-                  <div className="text-3xl font-black tabular-nums text-white">{inning}</div>
-                  <div className="flex items-center gap-1.5">
-                    <button onClick={() => setInning((v) => Math.max(1, v - 1))} disabled={inning <= 1}
-                      className="rounded-lg border border-white/10 bg-white/10 px-2.5 py-1 text-sm font-black active:scale-95 disabled:opacity-20">-1</button>
-                    <button onClick={() => setInning((v) => v + 1)}
-                      className="rounded-lg border border-white/10 bg-white/10 px-2.5 py-1 text-sm font-black active:scale-95">+1</button>
+                <div className="flex flex-col items-center gap-1 rounded-xl border border-white/10 bg-white/[0.04] px-4 py-3">
+                  <div className="text-[9px] font-black uppercase tracking-widest text-white/40">
+                    {inningHalf === "top" ? "▲ TOP" : "▼ BOT"}
                   </div>
+                  <div className="text-4xl font-black tabular-nums text-white">{inning}</div>
+                  <div className="text-[9px] font-black uppercase tracking-widest text-white/40">
+                    {inningHalf === "top" ? "" : "▲ TOP"}
+                  </div>
+                  <button
+                    onClick={() => {
+                      if (inningHalf === "top") {
+                        setInningHalf("bottom");
+                      } else {
+                        setInningHalf("top");
+                        setInning((v) => v + 1);
+                      }
+                    }}
+                    className="mt-1 rounded-xl border border-white/15 bg-white/10 px-4 py-2 text-xs font-black active:scale-95"
+                  >
+                    Next Half
+                  </button>
                 </div>
               ) : null}
 
@@ -1140,23 +1153,26 @@ export default function LiveGamePage() {
             {/* Innings counter — softball only here (kickball moved to no-stat layout) */}
             {norm(game.sport) === "softball" ? (
               <div className="flex flex-col items-center gap-1 rounded-lg border border-white/10 bg-white/[0.04] px-3 py-2">
-                <div className="text-[10px] font-black uppercase tracking-widest text-white/40">Inning</div>
-                <div className="text-2xl font-black tabular-nums text-white">{inning}</div>
-                <div className="flex items-center gap-1.5">
-                  <button
-                    onClick={() => setInning((v) => Math.max(1, v - 1))}
-                    disabled={inning <= 1}
-                    className="rounded-lg border border-white/10 bg-white/10 px-2.5 py-1 text-sm font-black active:scale-95 disabled:opacity-20"
-                  >
-                    -1
-                  </button>
-                  <button
-                    onClick={() => setInning((v) => v + 1)}
-                    className="rounded-lg border border-white/10 bg-white/10 px-2.5 py-1 text-sm font-black active:scale-95"
-                  >
-                    +1
-                  </button>
+                <div className="text-[9px] font-black uppercase tracking-widest text-white/40">
+                  {inningHalf === "top" ? "▲ TOP" : "▼ BOT"}
                 </div>
+                <div className="text-2xl font-black tabular-nums text-white">{inning}</div>
+                <div className="text-[9px] font-black uppercase tracking-widest text-white/20 h-3">
+                  {inningHalf === "bottom" ? "▲" : ""}
+                </div>
+                <button
+                  onClick={() => {
+                    if (inningHalf === "top") {
+                      setInningHalf("bottom");
+                    } else {
+                      setInningHalf("top");
+                      setInning((v) => v + 1);
+                    }
+                  }}
+                  className="rounded-lg border border-white/15 bg-white/10 px-3 py-1.5 text-[10px] font-black active:scale-95"
+                >
+                  Next Half
+                </button>
               </div>
             ) : null}
 

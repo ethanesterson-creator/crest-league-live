@@ -673,6 +673,26 @@ export default function HomePage() {
               </select>
             </label>
 
+            {matchupType === "two_team" ? (
+              <>
+                <label className="text-sm">
+                  <div className="mb-1 text-slate-300">Team A2</div>
+                  <select
+                    className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 outline-none focus:border-slate-500"
+                    value={teamA2}
+                    onChange={(e) => setTeamA2(e.target.value)}
+                  >
+                    <option value="">Select…</option>
+                    {teams.map((t) => (
+                      <option key={t} value={t}>
+                        {t}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </>
+            ) : null}
+
             <label className="text-sm">
               <div className="mb-1 text-slate-300">Team B1</div>
               <select
@@ -691,22 +711,6 @@ export default function HomePage() {
 
             {matchupType === "two_team" ? (
               <>
-                <label className="text-sm">
-                  <div className="mb-1 text-slate-300">Team A2</div>
-                  <select
-                    className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 outline-none focus:border-slate-500"
-                    value={teamA2}
-                    onChange={(e) => setTeamA2(e.target.value)}
-                  >
-                    <option value="">Select…</option>
-                    {teams.map((t) => (
-                      <option key={t} value={t}>
-                        {t}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-
                 <label className="text-sm">
                   <div className="mb-1 text-slate-300">Team B2</div>
                   <select
