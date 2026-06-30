@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import { getSportRules } from "@/lib/sportRules";
@@ -108,6 +108,7 @@ export default function LiveGamePage() {
   const [confirmFinalizeOpen, setConfirmFinalizeOpen] = useState(false);
   const [finalizing, setFinalizing] = useState(false);
   const [actionBusy, setActionBusy] = useState(false);
+  const tapRef = useRef(false);
 
   // Hard safety net: if actionBusy ever gets stuck true (a hung request,
   // a forgotten finally block in future code, bad WiFi never resolving),
@@ -438,174 +439,204 @@ export default function LiveGamePage() {
 
   const GOAL_AUTO_SCORE_SPORTS = ["euro", "soccer", "hockey", "speedball"];
 
+  // Shared debounce guard — prevents accidental double-taps (300ms window)
+  // without blocking buttons for the entire network round-trip like actionBusy did.
+  function guardedAction(fn) {
+    return async (...args) => {
+      if (!game) return;
+      if (tapRef.current) return;
+      tapRef.current = true;
+      setTimeout(() => { tapRef.current = false; }, 300);
+      await fn(...args);
+    };
+  }
+
   async function bumpScore(side, delta) {
-    if (!game || actionBusy) return;
+    if (tapRef.current || !game) return;
+    tapRef.current = true;
+    setTimeout(() => { tapRef.current = false; }, 300);
     setErr("");
     const d = Math.floor(Number(delta));
     if (!Number.isFinite(d) || d === 0) return;
-    setActionBusy(true);
-    try {
-      const { error } = await supabase.rpc("rpc_add_score", { p_game_id: game.id, p_side: side, p_delta: d });
-      if (error) { setErr(error.message); return; }
-      await refreshGame();
-    } finally {
-      setActionBusy(false);
-    }
+    // Optimistic update — score changes instantly in UI
+    setGame((prev) => !prev ? prev : {
+      ...prev,
+      score_a: side === "A" ? Number(prev.score_a || 0) + d : Number(prev.score_a || 0),
+      score_b: side === "B" ? Number(prev.score_b || 0) + d : Number(prev.score_b || 0),
+    });
+    const { error } = await supabase.rpc("rpc_add_score", { p_game_id: game.id, p_side: side, p_delta: d });
+    if (error) { setErr(error.message); refreshGame(); return; }
+    refreshGame(); // background sync — no await
   }
 
   async function undoScore(side) {
-    if (!game || actionBusy) return;
+    if (tapRef.current || !game) return;
+    tapRef.current = true;
+    setTimeout(() => { tapRef.current = false; }, 300);
     setErr("");
     const current = side === "A" ? Number(game.score_a || 0) : Number(game.score_b || 0);
     if (current <= 0) return;
-    setActionBusy(true);
-    try {
-      const { error } = await supabase.rpc("rpc_add_score", { p_game_id: game.id, p_side: side, p_delta: -1 });
-      if (error) { setErr(error.message); return; }
-      await refreshGame();
-    } finally {
-      setActionBusy(false);
-    }
+    // Optimistic update
+    setGame((prev) => !prev ? prev : {
+      ...prev,
+      score_a: side === "A" ? Math.max(0, Number(prev.score_a || 0) - 1) : Number(prev.score_a || 0),
+      score_b: side === "B" ? Math.max(0, Number(prev.score_b || 0) - 1) : Number(prev.score_b || 0),
+    });
+    const { error } = await supabase.rpc("rpc_add_score", { p_game_id: game.id, p_side: side, p_delta: -1 });
+    if (error) { setErr(error.message); refreshGame(); return; }
+    refreshGame();
   }
 
   async function undoStat(player, statKey) {
-    if (!game || actionBusy) return;
+    if (tapRef.current || !game) return;
+    tapRef.current = true;
+    setTimeout(() => { tapRef.current = false; }, 300);
     setErr("");
     const current = getVal(player.player_id, statKey);
     if (current <= 0) return;
-    setActionBusy(true);
-    try {
-      const { error } = await supabase.rpc("rpc_add_stat", {
-        p_game_id: game.id, p_league_id: norm(game.league_key), p_sport: norm(game.sport),
-        p_player_id: String(player.player_id), p_player_name: String(player.player_name || player.player_id),
-        p_team_name: String(player?.team_name || ""), p_stat_key: norm(statKey), p_delta: -1,
-      });
-      if (error) { setErr(error.message); return; }
-      await refreshStats();
-    } finally {
-      setActionBusy(false);
-    }
+    // Optimistic update
+    const key = `${player.player_id}:${norm(statKey)}`;
+    setStatTotals((prev) => ({ ...prev, [key]: Math.max(0, (prev[key] || 0) - 1) }));
+    const { error } = await supabase.rpc("rpc_add_stat", {
+      p_game_id: game.id, p_league_id: norm(game.league_key), p_sport: norm(game.sport),
+      p_player_id: String(player.player_id), p_player_name: String(player.player_name || player.player_id),
+      p_team_name: String(player?.team_name || ""), p_stat_key: norm(statKey), p_delta: -1,
+    });
+    if (error) { setErr(error.message); refreshStats(); return; }
+    refreshStats();
   }
 
   async function bumpHoopPoints(player, side, delta) {
-    if (!game || actionBusy) return;
+    if (tapRef.current || !game) return;
+    tapRef.current = true;
+    setTimeout(() => { tapRef.current = false; }, 300);
     setErr("");
     const d = Math.floor(Number(delta));
     if (!Number.isFinite(d) || d === 0) return;
-    setActionBusy(true);
-    try {
-      const { error: statErr } = await supabase.rpc("rpc_add_stat", {
-        p_game_id: game.id, p_league_id: norm(game.league_key), p_sport: norm(game.sport),
-        p_player_id: String(player.player_id), p_player_name: String(player.player_name || player.player_id),
-        p_team_name: String(player?.team_name || ""), p_stat_key: "pts", p_delta: d,
-      });
-      if (statErr) { setErr(statErr.message); return; }
-
-      const { error: scoreErr } = await supabase.rpc("rpc_add_score", { p_game_id: game.id, p_side: side, p_delta: d });
-      if (scoreErr) { setErr(scoreErr.message); return; }
-
-      await refreshStats();
-      await refreshGame();
-    } finally {
-      setActionBusy(false);
-    }
+    // Optimistic updates
+    setGame((prev) => !prev ? prev : {
+      ...prev,
+      score_a: side === "A" ? Number(prev.score_a || 0) + d : Number(prev.score_a || 0),
+      score_b: side === "B" ? Number(prev.score_b || 0) + d : Number(prev.score_b || 0),
+    });
+    const ptsKey = `${player.player_id}:pts`;
+    setStatTotals((prev) => ({ ...prev, [ptsKey]: (prev[ptsKey] || 0) + d }));
+    const { error: statErr } = await supabase.rpc("rpc_add_stat", {
+      p_game_id: game.id, p_league_id: norm(game.league_key), p_sport: norm(game.sport),
+      p_player_id: String(player.player_id), p_player_name: String(player.player_name || player.player_id),
+      p_team_name: String(player?.team_name || ""), p_stat_key: "pts", p_delta: d,
+    });
+    if (statErr) { setErr(statErr.message); refreshStats(); refreshGame(); return; }
+    const { error: scoreErr } = await supabase.rpc("rpc_add_score", { p_game_id: game.id, p_side: side, p_delta: d });
+    if (scoreErr) { setErr(scoreErr.message); refreshStats(); refreshGame(); return; }
+    refreshStats();
+    refreshGame();
   }
 
   async function undoHoopPoints(player, side) {
-    if (!game || actionBusy) return;
+    if (tapRef.current || !game) return;
+    tapRef.current = true;
+    setTimeout(() => { tapRef.current = false; }, 300);
     setErr("");
     const current = getVal(player.player_id, "pts");
     if (current <= 0) return;
-    setActionBusy(true);
-    try {
-      const { error: statErr } = await supabase.rpc("rpc_add_stat", {
-        p_game_id: game.id, p_league_id: norm(game.league_key), p_sport: norm(game.sport),
-        p_player_id: String(player.player_id), p_player_name: String(player.player_name || player.player_id),
-        p_team_name: String(player?.team_name || ""), p_stat_key: "pts", p_delta: -1,
-      });
-      if (statErr) { setErr(statErr.message); return; }
-
-      const sideScore = side === "A" ? Number(game.score_a || 0) : Number(game.score_b || 0);
-      if (sideScore > 0) {
-        const { error: scoreErr } = await supabase.rpc("rpc_add_score", { p_game_id: game.id, p_side: side, p_delta: -1 });
-        if (scoreErr) { setErr(scoreErr.message); return; }
-      }
-
-      await refreshStats();
-      await refreshGame();
-    } finally {
-      setActionBusy(false);
+    // Optimistic updates
+    const ptsKey = `${player.player_id}:pts`;
+    setStatTotals((prev) => ({ ...prev, [ptsKey]: Math.max(0, (prev[ptsKey] || 0) - 1) }));
+    setGame((prev) => !prev ? prev : {
+      ...prev,
+      score_a: side === "A" ? Math.max(0, Number(prev.score_a || 0) - 1) : Number(prev.score_a || 0),
+      score_b: side === "B" ? Math.max(0, Number(prev.score_b || 0) - 1) : Number(prev.score_b || 0),
+    });
+    const { error: statErr } = await supabase.rpc("rpc_add_stat", {
+      p_game_id: game.id, p_league_id: norm(game.league_key), p_sport: norm(game.sport),
+      p_player_id: String(player.player_id), p_player_name: String(player.player_name || player.player_id),
+      p_team_name: String(player?.team_name || ""), p_stat_key: "pts", p_delta: -1,
+    });
+    if (statErr) { setErr(statErr.message); refreshStats(); refreshGame(); return; }
+    const sideScore = side === "A" ? Number(game.score_a || 0) : Number(game.score_b || 0);
+    if (sideScore > 0) {
+      const { error: scoreErr } = await supabase.rpc("rpc_add_score", { p_game_id: game.id, p_side: side, p_delta: -1 });
+      if (scoreErr) { setErr(scoreErr.message); refreshStats(); refreshGame(); return; }
     }
+    refreshStats();
+    refreshGame();
   }
 
   async function bumpGoalWithScore(player, side, delta) {
-    if (!game || actionBusy) return;
+    if (tapRef.current || !game) return;
+    tapRef.current = true;
+    setTimeout(() => { tapRef.current = false; }, 300);
     setErr("");
     const d = Math.floor(Number(delta));
     if (!Number.isFinite(d) || d === 0) return;
-    setActionBusy(true);
-    try {
-      const { error: statErr } = await supabase.rpc("rpc_add_stat", {
-        p_game_id: game.id, p_league_id: norm(game.league_key), p_sport: norm(game.sport),
-        p_player_id: String(player.player_id), p_player_name: String(player.player_name || player.player_id),
-        p_team_name: String(player?.team_name || ""), p_stat_key: "g", p_delta: d,
-      });
-      if (statErr) { setErr(statErr.message); return; }
-
-      const { error: scoreErr } = await supabase.rpc("rpc_add_score", { p_game_id: game.id, p_side: side, p_delta: d });
-      if (scoreErr) { setErr(scoreErr.message); return; }
-
-      await refreshStats();
-      await refreshGame();
-    } finally {
-      setActionBusy(false);
-    }
+    // Optimistic updates
+    setGame((prev) => !prev ? prev : {
+      ...prev,
+      score_a: side === "A" ? Number(prev.score_a || 0) + d : Number(prev.score_a || 0),
+      score_b: side === "B" ? Number(prev.score_b || 0) + d : Number(prev.score_b || 0),
+    });
+    const gKey = `${player.player_id}:g`;
+    setStatTotals((prev) => ({ ...prev, [gKey]: (prev[gKey] || 0) + d }));
+    const { error: statErr } = await supabase.rpc("rpc_add_stat", {
+      p_game_id: game.id, p_league_id: norm(game.league_key), p_sport: norm(game.sport),
+      p_player_id: String(player.player_id), p_player_name: String(player.player_name || player.player_id),
+      p_team_name: String(player?.team_name || ""), p_stat_key: "g", p_delta: d,
+    });
+    if (statErr) { setErr(statErr.message); refreshStats(); refreshGame(); return; }
+    const { error: scoreErr } = await supabase.rpc("rpc_add_score", { p_game_id: game.id, p_side: side, p_delta: d });
+    if (scoreErr) { setErr(scoreErr.message); refreshStats(); refreshGame(); return; }
+    refreshStats();
+    refreshGame();
   }
 
   async function undoGoalWithScore(player, side) {
-    if (!game || actionBusy) return;
+    if (tapRef.current || !game) return;
+    tapRef.current = true;
+    setTimeout(() => { tapRef.current = false; }, 300);
     setErr("");
     const current = getVal(player.player_id, "g");
     if (current <= 0) return;
-    setActionBusy(true);
-    try {
-      const { error: statErr } = await supabase.rpc("rpc_add_stat", {
-        p_game_id: game.id, p_league_id: norm(game.league_key), p_sport: norm(game.sport),
-        p_player_id: String(player.player_id), p_player_name: String(player.player_name || player.player_id),
-        p_team_name: String(player?.team_name || ""), p_stat_key: "g", p_delta: -1,
-      });
-      if (statErr) { setErr(statErr.message); return; }
-
-      const sideScore = side === "A" ? Number(game.score_a || 0) : Number(game.score_b || 0);
-      if (sideScore > 0) {
-        const { error: scoreErr } = await supabase.rpc("rpc_add_score", { p_game_id: game.id, p_side: side, p_delta: -1 });
-        if (scoreErr) { setErr(scoreErr.message); return; }
-      }
-
-      await refreshStats();
-      await refreshGame();
-    } finally {
-      setActionBusy(false);
+    // Optimistic updates
+    const gKey = `${player.player_id}:g`;
+    setStatTotals((prev) => ({ ...prev, [gKey]: Math.max(0, (prev[gKey] || 0) - 1) }));
+    setGame((prev) => !prev ? prev : {
+      ...prev,
+      score_a: side === "A" ? Math.max(0, Number(prev.score_a || 0) - 1) : Number(prev.score_a || 0),
+      score_b: side === "B" ? Math.max(0, Number(prev.score_b || 0) - 1) : Number(prev.score_b || 0),
+    });
+    const { error: statErr } = await supabase.rpc("rpc_add_stat", {
+      p_game_id: game.id, p_league_id: norm(game.league_key), p_sport: norm(game.sport),
+      p_player_id: String(player.player_id), p_player_name: String(player.player_name || player.player_id),
+      p_team_name: String(player?.team_name || ""), p_stat_key: "g", p_delta: -1,
+    });
+    if (statErr) { setErr(statErr.message); refreshStats(); refreshGame(); return; }
+    const sideScore = side === "A" ? Number(game.score_a || 0) : Number(game.score_b || 0);
+    if (sideScore > 0) {
+      const { error: scoreErr } = await supabase.rpc("rpc_add_score", { p_game_id: game.id, p_side: side, p_delta: -1 });
+      if (scoreErr) { setErr(scoreErr.message); refreshStats(); refreshGame(); return; }
     }
+    refreshStats();
+    refreshGame();
   }
 
   async function bumpStat(player, statKey, delta) {
-    if (!game || actionBusy) return;
+    if (tapRef.current || !game) return;
+    tapRef.current = true;
+    setTimeout(() => { tapRef.current = false; }, 300);
     setErr("");
     const d = Math.floor(Number(delta));
     if (!Number.isFinite(d) || d === 0) return;
-    setActionBusy(true);
-    try {
-      const { error } = await supabase.rpc("rpc_add_stat", {
-        p_game_id: game.id, p_league_id: norm(game.league_key), p_sport: norm(game.sport),
-        p_player_id: String(player.player_id), p_player_name: String(player.player_name || player.player_id),
-        p_team_name: String(player?.team_name || ""), p_stat_key: norm(statKey), p_delta: d,
-      });
-      if (error) { setErr(error.message); return; }
-      await refreshStats();
-    } finally {
-      setActionBusy(false);
-    }
+    // Optimistic update
+    const key = `${player.player_id}:${norm(statKey)}`;
+    setStatTotals((prev) => ({ ...prev, [key]: (prev[key] || 0) + d }));
+    const { error } = await supabase.rpc("rpc_add_stat", {
+      p_game_id: game.id, p_league_id: norm(game.league_key), p_sport: norm(game.sport),
+      p_player_id: String(player.player_id), p_player_name: String(player.player_name || player.player_id),
+      p_team_name: String(player?.team_name || ""), p_stat_key: norm(statKey), p_delta: d,
+    });
+    if (error) { setErr(error.message); refreshStats(); return; }
+    refreshStats();
   }
 
   async function togglePlaying(player) {
