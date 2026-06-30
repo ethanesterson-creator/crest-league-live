@@ -5,7 +5,7 @@ import { supabase } from "@/lib/supabase";
 
 const SCENES = [
   "camp",
-  "live",
+  "rivalry",
   "finals",
   "leaders_seniors",
   "leaders_juniors",
@@ -15,7 +15,7 @@ const SCENES = [
 
 const SCENE_LABELS = {
   camp: "Camp Standings",
-  live: "Live Now",
+  rivalry: "Rivalry Tracker",
   finals: "Recent Finals",
   leaders_seniors: "Seniors Stat Leaders",
   leaders_juniors: "Juniors Stat Leaders",
@@ -49,6 +49,44 @@ function fmtClock(d) {
   });
 }
 
+function computeRivalries(rows) {
+  const records = {};
+
+  function pairKey(x, y) {
+    return [x, y].sort().join("||");
+  }
+
+  for (const g of rows || []) {
+    if (g.deleted) continue;
+    const sa = Number(g.score_a || 0);
+    const sb = Number(g.score_b || 0);
+    if (sa === sb) continue;
+
+    const aTeams = [g.team_a, g.team_a2].filter(Boolean).map((t) => String(t).toLowerCase());
+    const bTeams = [g.team_b, g.team_b2].filter(Boolean).map((t) => String(t).toLowerCase());
+
+    const aWon = sa > sb;
+    const winners = aWon ? aTeams : bTeams;
+    const losers = aWon ? bTeams : aTeams;
+
+    for (const w of winners) {
+      for (const l of losers) {
+        if (w === l) continue;
+        const key = pairKey(w, l);
+        if (!records[key]) {
+          const [t1, t2] = key.split("||");
+          records[key] = { t1, t2, t1Wins: 0, t2Wins: 0 };
+        }
+        const r = records[key];
+        if (r.t1 === w) r.t1Wins += 1;
+        else r.t2Wins += 1;
+      }
+    }
+  }
+
+  return Object.values(records).sort((a, b) => (a.t1 + a.t2).localeCompare(b.t1 + b.t2));
+}
+
 export default function DisplayPage() {
   const [scene, setScene] = useState("standings");
   const [league, setLeague] = useState("seniors");
@@ -66,6 +104,7 @@ export default function DisplayPage() {
 
   const [now, setNow] = useState(Date.now());
   const [highlightIndex, setHighlightIndex] = useState(0);
+  const [rivalries, setRivalries] = useState([]);
 
   const wrapRef = useRef(null);
 
@@ -170,6 +209,16 @@ export default function DisplayPage() {
       juniors: juniorsLeaders,
       sophomores: sophomoresLeaders,
     });
+
+    // rivalry tracker — every finalized game, head-to-head across the whole summer
+    const { data: allFinalGames } = await supabase
+      .from("games")
+      .select("team_a, team_a2, team_b, team_b2, score_a, score_b, deleted")
+      .eq("status", "final")
+      .eq("deleted", false)
+      .limit(2000);
+
+    setRivalries(computeRivalries(allFinalGames || []));
 
     // highlights
     const { data: h } = await supabase
@@ -419,6 +468,59 @@ export default function DisplayPage() {
             </div>
           </div>
         ))}
+      </div>
+    );
+  }
+
+  function renderRivalries() {
+    if (!rivalries.length) {
+      return (
+        <div className="flex h-full items-center justify-center text-2xl font-black text-white/40">
+          No head-to-head results yet.
+        </div>
+      );
+    }
+
+    return (
+      <div className="h-full rounded-[32px] border border-white/10 bg-gradient-to-br from-slate-950 to-slate-900 p-8 shadow-2xl">
+        <div className="mb-8 flex items-center justify-between">
+          <div>
+            <div className="text-sm font-black uppercase tracking-[0.3em] text-blue-500">Camp-Wide</div>
+            <div className="text-5xl font-black text-white">Rivalry Tracker</div>
+          </div>
+          <div className="rounded-2xl border border-blue-500/40 bg-blue-500/15 px-6 py-4">
+            <div className="text-xs font-bold uppercase tracking-widest text-blue-300">ALL-TIME SERIES</div>
+          </div>
+        </div>
+
+        <div className="grid h-[calc(100%-160px)] grid-cols-1 gap-5 overflow-y-auto xl:grid-cols-2">
+          {rivalries.map((r) => {
+            const leaderIsT1 = r.t1Wins > r.t2Wins;
+            const leaderIsT2 = r.t2Wins > r.t1Wins;
+            return (
+              <div
+                key={`${r.t1}-${r.t2}`}
+                className="flex items-center justify-between rounded-[28px] border border-white/10 bg-white/[0.04] px-8 py-7"
+              >
+                <div className={cx("truncate text-3xl font-black", leaderIsT1 ? "text-white" : "text-white/50")}>
+                  {r.t1}
+                </div>
+                <div className="flex shrink-0 items-center gap-4">
+                  <div className={cx("text-6xl font-black tabular-nums", leaderIsT1 ? "text-blue-400" : "text-white/40")}>
+                    {r.t1Wins}
+                  </div>
+                  <div className="text-2xl font-black text-white/30">–</div>
+                  <div className={cx("text-6xl font-black tabular-nums", leaderIsT2 ? "text-blue-400" : "text-white/40")}>
+                    {r.t2Wins}
+                  </div>
+                </div>
+                <div className={cx("truncate text-right text-3xl font-black", leaderIsT2 ? "text-white" : "text-white/50")}>
+                  {r.t2}
+                </div>
+              </div>
+            );
+          })}
+        </div>
       </div>
     );
   }
@@ -729,7 +831,7 @@ export default function DisplayPage() {
             </div>
           )}
 
-          {scene === "live" && renderLiveGames()}
+          {scene === "rivalry" && renderRivalries()}
           {scene === "finals" && renderFinals()}
           {scene === "leaders_seniors" && renderLeaders("seniors")}
           {scene === "leaders_juniors" && renderLeaders("juniors")}
