@@ -209,10 +209,12 @@ export default function PastGameDetailPage() {
     if (!game) return [];
     const points = [];
 
+    const leftLabelTP = game.matchup_type === "two_team" ? matchupLabel(game.team_a1, game.team_a2) : norm(game.team_a1);
+    const rightLabelTP = game.matchup_type === "two_team" ? matchupLabel(game.team_b1, game.team_b2) : norm(game.team_b1);
     const sa = Number(game.score_a || 0);
     const sb = Number(game.score_b || 0);
-    const winnerName = sa > sb ? leftLabel : rightLabel;
-    const loserName = sa > sb ? rightLabel : leftLabel;
+    const winnerName = sa > sb ? leftLabelTP : rightLabelTP;
+    const loserName = sa > sb ? rightLabelTP : leftLabelTP;
     const m = Math.abs(sa - sb);
 
     if (m >= 15) {
@@ -248,7 +250,7 @@ export default function PastGameDetailPage() {
     }
 
     return points;
-  }, [game, leftLabel, rightLabel, playerOfGame, teamLeaders, statDefs, seriesRecord]);
+  }, [game, playerOfGame, teamLeaders, statDefs, seriesRecord]);
 
   if (loading) {
     return (
