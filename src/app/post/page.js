@@ -23,6 +23,7 @@ const NON_GAME_REASONS = [
   "Sweep",
   "Pickleball",
   "Bombardment",
+  "Frisbee",
   "Other",
 ];
 

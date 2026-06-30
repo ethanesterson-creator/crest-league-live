@@ -778,6 +778,10 @@ export default function LiveGamePage() {
   const scoreButtons = rules?.scoreButtons?.length ? rules.scoreButtons : [1];
   const statDefs = rules?.stats ?? [];
   const isHoop = norm(game.sport) === "hoop";
+  // No-stat, no-clock sports (Volleyball, Newcomb, Kickball) get a giant
+  // tap-to-score scoreboard instead of the small button row, since coaches
+  // are tapping fast and there's nothing else for this screen to show.
+  const isNoStatSport = !rules?.clock?.enabled && (rules?.stats?.length ?? 0) === 0;
   const clockPresets = activeClockMode?.presets ?? [300, 600, 900, 1200, 1800];
   const chipPad = superCompact ? "px-2 py-1" : "px-3 py-2";
   const chipText = superCompact ? "text-[11px]" : "text-sm";
@@ -990,6 +994,77 @@ export default function LiveGamePage() {
               </div>
             </div>
           </div>
+        ) : isNoStatSport ? (
+          <div className="grid grid-cols-[1fr_auto_1fr] items-stretch gap-2">
+
+            {/* Team A — giant tap-to-score panel */}
+            <button
+              onClick={() => bumpScore("A", 1)}
+              disabled={actionBusy}
+              className="flex min-h-[150px] flex-col items-center justify-center rounded-2xl border border-white/10 bg-white/5 px-2 py-3 transition active:scale-[0.98] active:bg-white/10 disabled:opacity-60"
+            >
+              <div className="truncate text-sm font-black uppercase tracking-widest text-blue-400/70">{leftLabel}</div>
+              <div className="mt-1 text-8xl font-black leading-none tabular-nums text-white">{scoreA}</div>
+              <div className="mt-2 text-[10px] font-bold uppercase tracking-wider text-white/30">Tap anywhere · +1</div>
+            </button>
+
+            {/* Center: Series / Innings / Finalize */}
+            <div className="flex flex-col items-center justify-center gap-2 px-1">
+              {isSeriesSport(game.sport) ? (
+                <div className="flex flex-col items-center gap-1.5 rounded-xl border border-white/10 bg-white/[0.04] px-5 py-4">
+                  <div className="text-[10px] font-black uppercase tracking-widest text-white/40">Series (Bo{seriesFormat})</div>
+                  <div className="text-5xl font-black tabular-nums text-white">{seriesA} - {seriesB}</div>
+                  <button
+                    onClick={endSet}
+                    disabled={actionBusy || scoreA === scoreB}
+                    className="mt-1 rounded-xl border border-amber-400/40 bg-amber-500/15 px-6 py-3 text-base font-black text-amber-200 active:scale-95 disabled:opacity-30"
+                  >
+                    End Set
+                  </button>
+                </div>
+              ) : null}
+
+              {norm(game.sport) === "kickball" ? (
+                <div className="flex flex-col items-center gap-1 rounded-xl border border-white/10 bg-white/[0.04] px-4 py-2.5">
+                  <div className="text-[10px] font-black uppercase tracking-widest text-white/40">Inning</div>
+                  <div className="text-3xl font-black tabular-nums text-white">{inning}</div>
+                  <div className="flex items-center gap-1.5">
+                    <button onClick={() => setInning((v) => Math.max(1, v - 1))} disabled={inning <= 1}
+                      className="rounded-lg border border-white/10 bg-white/10 px-2.5 py-1 text-sm font-black active:scale-95 disabled:opacity-20">-1</button>
+                    <button onClick={() => setInning((v) => v + 1)}
+                      className="rounded-lg border border-white/10 bg-white/10 px-2.5 py-1 text-sm font-black active:scale-95">+1</button>
+                  </div>
+                </div>
+              ) : null}
+
+              <button onClick={() => setConfirmFinalizeOpen(true)}
+                className="rounded-xl border border-emerald-500/40 bg-emerald-500/15 px-6 py-3 text-base font-black text-emerald-200 active:scale-95 hover:bg-emerald-500/20">
+                Finalize
+              </button>
+
+              <div className="mt-1 flex items-center gap-2">
+                <button onClick={() => undoScore("A")} disabled={scoreA <= 0 || actionBusy}
+                  className="rounded-lg border border-red-500/30 bg-red-500/10 px-2.5 py-1.5 text-[10px] font-black text-red-300 active:scale-95 disabled:opacity-20">
+                  {leftLabel} -1
+                </button>
+                <button onClick={() => undoScore("B")} disabled={scoreB <= 0 || actionBusy}
+                  className="rounded-lg border border-red-500/30 bg-red-500/10 px-2.5 py-1.5 text-[10px] font-black text-red-300 active:scale-95 disabled:opacity-20">
+                  {rightLabel} -1
+                </button>
+              </div>
+            </div>
+
+            {/* Team B — giant tap-to-score panel */}
+            <button
+              onClick={() => bumpScore("B", 1)}
+              disabled={actionBusy}
+              className="flex min-h-[150px] flex-col items-center justify-center rounded-2xl border border-white/10 bg-white/5 px-2 py-3 transition active:scale-[0.98] active:bg-white/10 disabled:opacity-60"
+            >
+              <div className="truncate text-sm font-black uppercase tracking-widest text-blue-400/70">{rightLabel}</div>
+              <div className="mt-1 text-8xl font-black leading-none tabular-nums text-white">{scoreB}</div>
+              <div className="mt-2 text-[10px] font-bold uppercase tracking-wider text-white/30">Tap anywhere · +1</div>
+            </button>
+          </div>
         ) : (
         <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2">
 
@@ -1062,23 +1137,8 @@ export default function LiveGamePage() {
               </div>
             )}
 
-            {/* Series tracker — Volleyball and Newcomb */}
-            {isSeriesSport(game.sport) ? (
-              <div className="flex flex-col items-center gap-1 rounded-lg border border-white/10 bg-white/[0.04] px-3 py-2">
-                <div className="text-[10px] font-black uppercase tracking-widest text-white/40">Series (Bo{seriesFormat})</div>
-                <div className="text-2xl font-black tabular-nums text-white">{seriesA} - {seriesB}</div>
-                <button
-                  onClick={endSet}
-                  disabled={actionBusy || (Number(game.score_a || 0) === Number(game.score_b || 0))}
-                  className="rounded-lg border border-amber-400/40 bg-amber-500/15 px-3 py-1.5 text-xs font-black text-amber-200 active:scale-95 disabled:opacity-30"
-                >
-                  End Set
-                </button>
-              </div>
-            ) : null}
-
-            {/* Innings counter — softball and kickball only */}
-            {(norm(game.sport) === "softball" || norm(game.sport) === "kickball") ? (
+            {/* Innings counter — softball only here (kickball moved to no-stat layout) */}
+            {norm(game.sport) === "softball" ? (
               <div className="flex flex-col items-center gap-1 rounded-lg border border-white/10 bg-white/[0.04] px-3 py-2">
                 <div className="text-[10px] font-black uppercase tracking-widest text-white/40">Inning</div>
                 <div className="text-2xl font-black tabular-nums text-white">{inning}</div>
@@ -1130,6 +1190,7 @@ export default function LiveGamePage() {
       </div>
 
       {/* ── ROSTERS ── */}
+      {!isNoStatSport ? (
       <div className="grid grid-cols-2 gap-2 p-3">
 
         {/* Team A roster */}
@@ -1204,6 +1265,11 @@ export default function LiveGamePage() {
           ) : null}
         </div>
       </div>
+      ) : (
+        <div className="px-3 pt-3 text-center text-[11px] text-white/30">
+          {leftLabel} vs {rightLabel} — no stats tracked for this sport.
+        </div>
+      )}
 
       <div className="px-3 pb-8 text-[10px] text-white/20">ID: {String(game.id)}</div>
 
