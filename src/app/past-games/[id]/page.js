@@ -52,6 +52,7 @@ export default function PastGameDetailPage() {
   const [rosterA, setRosterA] = useState([]);
   const [rosterB, setRosterB] = useState([]);
   const [statTotals, setStatTotals] = useState({});
+  const [seriesRecord, setSeriesRecord] = useState(null);
 
   useEffect(() => {
     if (!gameId) return;
@@ -93,6 +94,46 @@ export default function PastGameDetailPage() {
           totals[key] = (totals[key] || 0) + Number(row.delta || 0);
         }
         setStatTotals(totals);
+
+        // Head-to-head series record between the two main teams in this
+        // game, across every finalized game all summer — gives the
+        // broadcasting kids instant "leads the season series X-Y" context.
+        try {
+          const teamX = norm(g.team_a1);
+          const teamY = norm(g.team_b1);
+          const { data: allGames } = await supabase
+            .from("games")
+            .select("team_a, team_a2, team_b, team_b2, score_a, score_b, deleted")
+            .eq("status", "final")
+            .eq("deleted", false)
+            .limit(2000);
+
+          let xWins = 0;
+          let yWins = 0;
+          for (const row of allGames || []) {
+            const sa = Number(row.score_a || 0);
+            const sb = Number(row.score_b || 0);
+            if (sa === sb) continue;
+            const aTeams = [row.team_a, row.team_a2].filter(Boolean).map(norm);
+            const bTeams = [row.team_b, row.team_b2].filter(Boolean).map(norm);
+            const aHasX = aTeams.includes(teamX);
+            const aHasY = aTeams.includes(teamY);
+            const bHasX = bTeams.includes(teamX);
+            const bHasY = bTeams.includes(teamY);
+            if ((aHasX && bHasY) || (bHasX && aHasY)) {
+              const aWon = sa > sb;
+              const xOnA = aHasX;
+              const xWon = xOnA ? aWon : !aWon;
+              if (xWon) xWins += 1;
+              else yWins += 1;
+            }
+          }
+          if (xWins + yWins > 0) {
+            setSeriesRecord({ teamX, teamY, xWins, yWins });
+          }
+        } catch {
+          // non-fatal — box score still works without series context
+        }
       } catch (e) {
         setErr(e?.message ?? String(e));
       } finally {
@@ -160,6 +201,54 @@ export default function PastGameDetailPage() {
     }
     return out;
   }, [enrichedA, enrichedB, statDefs]);
+
+  // ── Talking Points ──────────────────────────────────────────────────────
+  // Auto-generated, podcast-ready sentences built purely from data already
+  // computed above (margin, player of game, team leaders, series record).
+  const talkingPoints = useMemo(() => {
+    if (!game) return [];
+    const points = [];
+
+    const sa = Number(game.score_a || 0);
+    const sb = Number(game.score_b || 0);
+    const winnerName = sa > sb ? leftLabel : rightLabel;
+    const loserName = sa > sb ? rightLabel : leftLabel;
+    const m = Math.abs(sa - sb);
+
+    if (m >= 15) {
+      points.push(`${winnerName} dominated, beating ${loserName} by ${m} — one of the bigger margins this summer.`);
+    } else if (m <= 3) {
+      points.push(`A nail-biter — ${winnerName} edged out ${loserName} by just ${m}.`);
+    } else {
+      points.push(`${winnerName} beat ${loserName}, ${Math.max(sa, sb)}-${Math.min(sa, sb)}.`);
+    }
+
+    if (playerOfGame) {
+      const line = statDefs.map((sd) => `${playerOfGame.totals[sd.key] ?? 0} ${sd.label}`).join(", ");
+      points.push(`${playerOfGame.player_name || playerOfGame.player_id} led the way for ${playerOfGame.team_name} with ${line}.`);
+    }
+
+    if (teamLeaders.length) {
+      const other = teamLeaders.find((tl) => tl.player.team_name !== playerOfGame?.team_name);
+      if (other) {
+        points.push(`${other.player.player_name || other.player.player_id} paced ${other.player.team_name} with ${other.value} ${other.statLabel}.`);
+      }
+    }
+
+    if (seriesRecord) {
+      const { teamX, teamY, xWins, yWins } = seriesRecord;
+      if (xWins === yWins) {
+        points.push(`The season series between these two teams is now tied at ${xWins}-${yWins}.`);
+      } else {
+        const leader = xWins > yWins ? teamX : teamY;
+        const leadCount = Math.max(xWins, yWins);
+        const trailCount = Math.min(xWins, yWins);
+        points.push(`${leader} now leads the season series ${leadCount}-${trailCount}.`);
+      }
+    }
+
+    return points;
+  }, [game, leftLabel, rightLabel, playerOfGame, teamLeaders, statDefs, seriesRecord]);
 
   if (loading) {
     return (
@@ -283,6 +372,36 @@ export default function PastGameDetailPage() {
 
           {/* Quick Stats panel */}
           <div className="space-y-4">
+            {talkingPoints.length > 0 ? (
+              <div className="rounded-2xl border border-blue-500/20 bg-blue-950/20 p-4">
+                <div className="text-xs font-black uppercase tracking-widest text-blue-300">Talking Points</div>
+                <div className="mt-3 space-y-2">
+                  {talkingPoints.map((tp, i) => (
+                    <div key={i} className="rounded-lg border border-blue-500/10 bg-slate-950/40 px-3 py-2 text-sm text-slate-200">
+                      {tp}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : null}
+
+            {seriesRecord ? (
+              <div className="rounded-2xl border border-slate-800 bg-slate-900/60 p-4">
+                <div className="text-xs font-black uppercase tracking-widest text-slate-400">Season Series</div>
+                <div className="mt-3 flex items-center justify-between">
+                  <div className={seriesRecord.xWins >= seriesRecord.yWins ? "text-base font-black text-white" : "text-base font-bold text-slate-400"}>
+                    {seriesRecord.teamX}
+                  </div>
+                  <div className="text-2xl font-black tabular-nums text-emerald-300">
+                    {seriesRecord.xWins} - {seriesRecord.yWins}
+                  </div>
+                  <div className={seriesRecord.yWins >= seriesRecord.xWins ? "text-base font-black text-white" : "text-base font-bold text-slate-400"}>
+                    {seriesRecord.teamY}
+                  </div>
+                </div>
+              </div>
+            ) : null}
+
             <div className="rounded-2xl border border-emerald-500/20 bg-emerald-950/20 p-4">
               <div className="text-xs font-black uppercase tracking-widest text-emerald-300">Quick Stats</div>
 

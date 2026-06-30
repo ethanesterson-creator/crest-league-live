@@ -35,6 +35,7 @@ export default function PastGamesPage() {
   const [leagueFilter, setLeagueFilter] = useState("");
   const [sportFilter, setSportFilter] = useState("");
   const [levelFilter, setLevelFilter] = useState("");
+  const [teamFilter, setTeamFilter] = useState("");
 
   async function loadGames() {
     setLoading(true);
@@ -77,14 +78,29 @@ export default function PastGamesPage() {
     return Array.from(set).sort();
   }, [games]);
 
+  const teams = useMemo(() => {
+    const set = new Set();
+    for (const g of games) {
+      [g.team_a1, g.team_a2, g.team_b1, g.team_b2].forEach((t) => {
+        const n = norm(t);
+        if (n) set.add(n);
+      });
+    }
+    return Array.from(set).sort();
+  }, [games]);
+
   const filtered = useMemo(() => {
     return games.filter((g) => {
       if (leagueFilter && norm(g.league_key) !== leagueFilter) return false;
       if (sportFilter && norm(g.sport) !== sportFilter) return false;
       if (levelFilter && String(g.level || "").toUpperCase() !== levelFilter) return false;
+      if (teamFilter) {
+        const gameTeams = [g.team_a1, g.team_a2, g.team_b1, g.team_b2].map(norm);
+        if (!gameTeams.includes(teamFilter)) return false;
+      }
       return true;
     });
-  }, [games, leagueFilter, sportFilter, levelFilter]);
+  }, [games, leagueFilter, sportFilter, levelFilter, teamFilter]);
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100">
@@ -105,7 +121,7 @@ export default function PastGamesPage() {
         </div>
 
         {/* Filters */}
-        <div className="mt-4 grid grid-cols-1 gap-3 rounded-2xl border border-slate-800 bg-slate-900/60 p-4 sm:grid-cols-3">
+        <div className="mt-4 grid grid-cols-1 gap-3 rounded-2xl border border-slate-800 bg-slate-900/60 p-4 sm:grid-cols-4">
           <label className="text-sm">
             <div className="mb-1 text-slate-300">League</div>
             <select
@@ -117,6 +133,22 @@ export default function PastGamesPage() {
               {leagues.map((l) => (
                 <option key={l} value={l}>
                   {fmtLeague(l)}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <label className="text-sm">
+            <div className="mb-1 text-slate-300">Team</div>
+            <select
+              className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 outline-none focus:border-slate-500"
+              value={teamFilter}
+              onChange={(e) => setTeamFilter(e.target.value)}
+            >
+              <option value="">All teams</option>
+              {teams.map((t) => (
+                <option key={t} value={t}>
+                  {t}
                 </option>
               ))}
             </select>
@@ -155,7 +187,7 @@ export default function PastGamesPage() {
           </label>
         </div>
 
-        {(leagueFilter || sportFilter || levelFilter) ? (
+        {(leagueFilter || sportFilter || levelFilter || teamFilter) ? (
           <div className="mt-3 flex items-center gap-2">
             <div className="text-xs text-slate-400">
               Showing {filtered.length} of {games.length} games
@@ -165,6 +197,7 @@ export default function PastGamesPage() {
                 setLeagueFilter("");
                 setSportFilter("");
                 setLevelFilter("");
+                setTeamFilter("");
               }}
               className="rounded-lg border border-slate-700 bg-slate-900 px-3 py-1 text-xs font-semibold text-slate-300 hover:bg-slate-800"
             >
