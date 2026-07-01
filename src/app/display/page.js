@@ -627,6 +627,7 @@ export default function DisplayPage() {
   }
 
   function renderSpotlight() {
+    if (typeof window === "undefined") return null;
     const medals = ["#FFD700", "#C0C0C0", "#CD7F32"];
     const ranks = ["#1", "#2", "#3"];
 
