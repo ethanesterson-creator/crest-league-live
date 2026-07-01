@@ -312,6 +312,7 @@ export default function DisplayPage() {
           }
         }
 
+        console.log('SPOTLIGHT DEBUG', { ydIds: ydIds.length, evts: evts?.length, rosters: rosters?.length, allScored: allScored?.length, scored: scored?.length });
         setSpotlight(scored);
       } else {
         setSpotlight([]);
