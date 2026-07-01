@@ -225,7 +225,7 @@ export default function DisplayPage() {
 
     // camper spotlight — top 3 individual performances from yesterday
     try {
-      const sixHoursAgo = new Date(Date.now() - 6 * 60 * 60 * 1000).toISOString();
+      const sixHoursAgo = new Date(Date.now() - 12 * 60 * 60 * 1000).toISOString();
 
       const { data: ydGames } = await supabase
         .from("live_games")
@@ -270,7 +270,7 @@ export default function DisplayPage() {
           return 0;
         }
 
-        const scored = Object.values(perPlayerGame)
+        const allScored = Object.values(perPlayerGame)
           .map((entry) => {
             const g = gameMap[entry.game_id];
             const r = rosterMap[`${entry.game_id}::${entry.player_id}`];
@@ -280,13 +280,37 @@ export default function DisplayPage() {
               player_name: r?.player_name || entry.player_id,
               team_name: r?.team_name || "",
               sport: g?.sport || "",
+              game_id: entry.game_id,
               stats: entry.stats,
               score,
             };
           })
           .filter(Boolean)
-          .sort((a, b) => b.score - a.score)
-          .slice(0, 3);
+          .sort((a, b) => b.score - a.score);
+
+        // Enforce variety: max 1 player per game, max 1 per sport
+        const usedGames = new Set();
+        const usedSports = new Set();
+        const scored = [];
+        for (const p of allScored) {
+          if (scored.length >= 3) break;
+          if (usedGames.has(p.game_id)) continue;
+          if (usedSports.has(norm(p.sport))) continue;
+          usedGames.add(p.game_id);
+          usedSports.add(norm(p.sport));
+          scored.push(p);
+        }
+
+        // If we couldn't fill 3 with full variety, relax the sport constraint
+        if (scored.length < 3) {
+          for (const p of allScored) {
+            if (scored.length >= 3) break;
+            if (usedGames.has(p.game_id)) continue;
+            if (scored.find((s) => s.player_name === p.player_name)) continue;
+            usedGames.add(p.game_id);
+            scored.push(p);
+          }
+        }
 
         setSpotlight(scored);
       } else {
