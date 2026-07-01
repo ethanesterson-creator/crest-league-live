@@ -223,43 +223,53 @@ export default function DisplayPage() {
 
     setRivalries(computeRivalries(allFinalGames || []));
 
-    // camper spotlight — top 3 individual performances from yesterday
+    // camper spotlight — top 3 individual performances from last 12 hours
     try {
-      const sixHoursAgo = new Date(Date.now() - 12 * 60 * 60 * 1000).toISOString();
+      const cutoff = new Date(Date.now() - 12 * 60 * 60 * 1000).toISOString();
 
-      const { data: ydGames } = await supabase
+      const { data: recentGames } = await supabase
         .from("live_games")
         .select("id, sport, league_key")
         .eq("status", "final")
-        .gte("created_at", sixHoursAgo);
+        .gte("created_at", cutoff);
 
-      const ydIds = (ydGames || []).map((g) => g.id);
+      const recentIds = (recentGames || []).map((g) => g.id);
 
-      if (ydIds.length) {
-        const [{ data: evts }, { data: rosters }] = await Promise.all([
-          supabase.from("live_events").select("game_id, player_id, stat_key, delta").eq("event_type", "stat").in("game_id", ydIds).limit(20000),
-          supabase.from("game_roster").select("game_id, player_id, player_name, team_name").in("game_id", ydIds).limit(5000),
-        ]);
-
-        // Build a lookup: game_id -> sport
+      if (recentIds.length === 0) {
+        setSpotlight([]);
+      } else {
         const gameMap = {};
-        for (const g of ydGames || []) gameMap[g.id] = g;
+        for (const g of recentGames || []) gameMap[g.id] = g;
 
-        // Aggregate stats per player per game
-        const perPlayerGame = {};
-        for (const e of evts || []) {
-          const k = `${e.game_id}::${e.player_id}`;
-          if (!perPlayerGame[k]) perPlayerGame[k] = { game_id: e.game_id, player_id: e.player_id, stats: {} };
-          perPlayerGame[k].stats[e.stat_key] = (perPlayerGame[k].stats[e.stat_key] || 0) + Number(e.delta || 0);
-        }
+        const { data: evts } = await supabase
+          .from("live_events")
+          .select("game_id, player_id, stat_key, delta")
+          .eq("event_type", "stat")
+          .in("game_id", recentIds)
+          .limit(20000);
 
-        // Roster lookup for names/teams
+        const { data: rosters } = await supabase
+          .from("game_roster")
+          .select("game_id, player_id, player_name, team_name")
+          .in("game_id", recentIds)
+          .limit(5000);
+
         const rosterMap = {};
         for (const r of rosters || []) {
           rosterMap[`${r.game_id}::${r.player_id}`] = r;
         }
 
-        // Efficiency formula — same as past games
+        // Aggregate stats per player per game
+        const perPlayerGame = {};
+        for (const e of evts || []) {
+          if (!e.stat_key) continue;
+          const k = `${e.game_id}::${e.player_id}`;
+          if (!perPlayerGame[k]) {
+            perPlayerGame[k] = { game_id: e.game_id, player_id: e.player_id, stats: {} };
+          }
+          perPlayerGame[k].stats[e.stat_key] = (perPlayerGame[k].stats[e.stat_key] || 0) + Number(e.delta || 0);
+        }
+
         function eff(sport, stats) {
           const s = String(sport || "").toLowerCase();
           const v = (k) => Number(stats[k] || 0);
@@ -267,6 +277,7 @@ export default function DisplayPage() {
           if (s === "softball") return v("h") + v("hr") * 2;
           if (["euro", "soccer", "hockey", "speedball"].includes(s)) return v("g") * 2 + v("a");
           if (s === "football") return v("td") * 6;
+          if (s === "volleyball") return v("ace") + v("kill");
           return 0;
         }
 
@@ -288,20 +299,21 @@ export default function DisplayPage() {
           .filter(Boolean)
           .sort((a, b) => b.score - a.score);
 
-        // Enforce variety: max 1 player per game, max 1 per sport
+        // Enforce variety: one player per game, one per sport
         const usedGames = new Set();
         const usedSports = new Set();
         const scored = [];
+
         for (const p of allScored) {
           if (scored.length >= 3) break;
           if (usedGames.has(p.game_id)) continue;
-          if (usedSports.has(norm(p.sport))) continue;
+          if (usedSports.has(String(p.sport).toLowerCase())) continue;
           usedGames.add(p.game_id);
-          usedSports.add(norm(p.sport));
+          usedSports.add(String(p.sport).toLowerCase());
           scored.push(p);
         }
 
-        // If we couldn't fill 3 with full variety, relax the sport constraint
+        // Fallback: relax sport constraint if we don't have 3 yet
         if (scored.length < 3) {
           for (const p of allScored) {
             if (scored.length >= 3) break;
@@ -312,10 +324,7 @@ export default function DisplayPage() {
           }
         }
 
-        console.log('SPOTLIGHT DEBUG', { ydIds: ydIds.length, evts: evts?.length, rosters: rosters?.length, allScored: allScored?.length, scored: scored?.length });
         setSpotlight(scored);
-      } else {
-        setSpotlight([]);
       }
     } catch {
       setSpotlight([]);
