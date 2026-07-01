@@ -5,6 +5,7 @@ import { supabase } from "@/lib/supabase";
 
 const SCENES = [
   "camp",
+  "spotlight",
   "rivalry",
   "finals",
   "leaders_seniors",
@@ -15,6 +16,7 @@ const SCENES = [
 
 const SCENE_LABELS = {
   camp: "Camp Standings",
+  spotlight: "Camper Spotlight",
   rivalry: "Rivalry Tracker",
   finals: "Recent Finals",
   leaders_seniors: "Seniors Stat Leaders",
@@ -97,6 +99,7 @@ export default function DisplayPage() {
   const [finalGames, setFinalGames] = useState([]);
   const [leadersByLeague, setLeadersByLeague] = useState({ seniors: [], juniors: [], sophomores: [] });
   const [highlights, setHighlights] = useState([]);
+  const [spotlight, setSpotlight] = useState([]);
 
   const [rotateSeconds, setRotateSeconds] = useState(18);
   const [autoRotate, setAutoRotate] = useState(true);
@@ -219,6 +222,82 @@ export default function DisplayPage() {
       .limit(2000);
 
     setRivalries(computeRivalries(allFinalGames || []));
+
+    // camper spotlight — top 3 individual performances from yesterday
+    try {
+      const yd = new Date();
+      yd.setDate(yd.getDate() - 1);
+      const ydStr = yd.toISOString().slice(0, 10);
+
+      const { data: ydGames } = await supabase
+        .from("live_games")
+        .select("id, sport, league_key")
+        .eq("status", "final")
+        .gte("created_at", `${ydStr}T00:00:00.000Z`)
+        .lt("created_at", `${ydStr}T23:59:59.999Z`);
+
+      const ydIds = (ydGames || []).map((g) => g.id);
+
+      if (ydIds.length) {
+        const [{ data: evts }, { data: rosters }] = await Promise.all([
+          supabase.from("live_events").select("game_id, player_id, stat_key, delta").eq("event_type", "stat").in("game_id", ydIds).limit(20000),
+          supabase.from("game_roster").select("game_id, player_id, player_name, team_name").in("game_id", ydIds).limit(5000),
+        ]);
+
+        // Build a lookup: game_id -> sport
+        const gameMap = {};
+        for (const g of ydGames || []) gameMap[g.id] = g;
+
+        // Aggregate stats per player per game
+        const perPlayerGame = {};
+        for (const e of evts || []) {
+          const k = `${e.game_id}::${e.player_id}`;
+          if (!perPlayerGame[k]) perPlayerGame[k] = { game_id: e.game_id, player_id: e.player_id, stats: {} };
+          perPlayerGame[k].stats[e.stat_key] = (perPlayerGame[k].stats[e.stat_key] || 0) + Number(e.delta || 0);
+        }
+
+        // Roster lookup for names/teams
+        const rosterMap = {};
+        for (const r of rosters || []) {
+          rosterMap[`${r.game_id}::${r.player_id}`] = r;
+        }
+
+        // Efficiency formula — same as past games
+        function eff(sport, stats) {
+          const s = String(sport || "").toLowerCase();
+          const v = (k) => Number(stats[k] || 0);
+          if (s === "hoop") return v("pts") - v("foul");
+          if (s === "softball") return v("h") + v("hr") * 2;
+          if (["euro", "soccer", "hockey", "speedball"].includes(s)) return v("g") * 2 + v("a");
+          if (s === "football") return v("td") * 6;
+          return 0;
+        }
+
+        const scored = Object.values(perPlayerGame)
+          .map((entry) => {
+            const g = gameMap[entry.game_id];
+            const r = rosterMap[`${entry.game_id}::${entry.player_id}`];
+            const score = eff(g?.sport, entry.stats);
+            if (score <= 0) return null;
+            return {
+              player_name: r?.player_name || entry.player_id,
+              team_name: r?.team_name || "",
+              sport: g?.sport || "",
+              stats: entry.stats,
+              score,
+            };
+          })
+          .filter(Boolean)
+          .sort((a, b) => b.score - a.score)
+          .slice(0, 3);
+
+        setSpotlight(scored);
+      } else {
+        setSpotlight([]);
+      }
+    } catch {
+      setSpotlight([]);
+    }
 
     // highlights
     const { data: h } = await supabase
@@ -520,6 +599,89 @@ export default function DisplayPage() {
               </div>
             );
           })}
+        </div>
+      </div>
+    );
+  }
+
+  function renderSpotlight() {
+    const medals = ["#FFD700", "#C0C0C0", "#CD7F32"];
+    const ranks = ["#1", "#2", "#3"];
+
+    function statLine(sport, stats) {
+      const s = String(sport || "").toLowerCase();
+      const v = (k) => Number(stats[k] || 0);
+      if (s === "hoop") return `${v("pts")} PTS · ${v("foul")} F`;
+      if (s === "softball") return `${v("h")} H · ${v("hr")} HR`;
+      if (["euro", "soccer", "hockey", "speedball"].includes(s)) return `${v("g")} G · ${v("a")} A`;
+      if (s === "football") return `${v("td")} TD`;
+      return Object.entries(stats).map(([k, val]) => `${val} ${k.toUpperCase()}`).join(" · ");
+    }
+
+    if (!spotlight.length) {
+      return (
+        <div className="flex h-full items-center justify-center text-2xl font-black text-white/40">
+          No performances tracked yet — check back after tonight's games.
+        </div>
+      );
+    }
+
+    return (
+      <div className="flex h-full flex-col">
+        <div className="mb-8 flex items-center justify-between">
+          <div>
+            <div className="text-sm font-black uppercase tracking-[0.3em] text-blue-400">Last Night</div>
+            <div className="text-5xl font-black text-white">Camper Spotlight</div>
+          </div>
+          <div className="rounded-2xl border border-blue-500/30 bg-blue-500/10 px-6 py-3 text-sm font-black uppercase tracking-widest text-blue-300">
+            Top Performances
+          </div>
+        </div>
+
+        <div className={`grid flex-1 gap-6 ${spotlight.length === 3 ? "grid-cols-3" : spotlight.length === 2 ? "grid-cols-2" : "grid-cols-1"}`}>
+          {spotlight.map((p, i) => (
+            <div
+              key={i}
+              className="relative flex flex-col justify-between overflow-hidden rounded-[40px] border border-white/10 bg-gradient-to-br from-white/[0.06] to-white/[0.02] p-10"
+              style={{ boxShadow: `0 0 60px ${medals[i]}18` }}
+            >
+              {/* Rank badge */}
+              <div
+                className="absolute right-8 top-8 text-6xl font-black tabular-nums opacity-20"
+                style={{ color: medals[i] }}
+              >
+                {ranks[i]}
+              </div>
+
+              {/* Sport tag */}
+              <div className="inline-flex w-fit items-center rounded-full border border-white/10 bg-white/5 px-4 py-1.5">
+                <span className="text-xs font-black uppercase tracking-[0.2em] text-white/50">
+                  {String(p.sport).toUpperCase()}
+                </span>
+              </div>
+
+              {/* Name + team */}
+              <div className="mt-6 flex-1">
+                <div
+                  className="text-5xl font-black leading-tight text-white xl:text-6xl"
+                  style={{ textShadow: `0 0 40px ${medals[i]}60` }}
+                >
+                  {p.player_name}
+                </div>
+                <div className="mt-3 text-xl font-black uppercase tracking-widest" style={{ color: medals[i] }}>
+                  {p.team_name}
+                </div>
+              </div>
+
+              {/* Stat line */}
+              <div className="mt-8 rounded-2xl border border-white/10 bg-black/20 px-6 py-5">
+                <div className="text-xs font-black uppercase tracking-widest text-white/30">Stat Line</div>
+                <div className="mt-2 text-3xl font-black tabular-nums text-white xl:text-4xl">
+                  {statLine(p.sport, p.stats)}
+                </div>
+              </div>
+            </div>
+          ))}
         </div>
       </div>
     );
@@ -833,6 +995,7 @@ export default function DisplayPage() {
 
           {scene === "rivalry" && renderRivalries()}
           {scene === "finals" && renderFinals()}
+          {scene === "spotlight" && renderSpotlight()}
           {scene === "leaders_seniors" && renderLeaders("seniors")}
           {scene === "leaders_juniors" && renderLeaders("juniors")}
           {scene === "leaders_sophomores" && renderLeaders("sophomores")}
