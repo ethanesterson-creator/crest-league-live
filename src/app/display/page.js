@@ -225,16 +225,13 @@ export default function DisplayPage() {
 
     // camper spotlight — top 3 individual performances from yesterday
     try {
-      const yd = new Date();
-      yd.setDate(yd.getDate() - 1);
-      const ydStr = yd.toISOString().slice(0, 10);
+      const sixHoursAgo = new Date(Date.now() - 6 * 60 * 60 * 1000).toISOString();
 
       const { data: ydGames } = await supabase
         .from("live_games")
         .select("id, sport, league_key")
         .eq("status", "final")
-        .gte("created_at", `${ydStr}T00:00:00.000Z`)
-        .lt("created_at", `${ydStr}T23:59:59.999Z`);
+        .gte("created_at", sixHoursAgo);
 
       const ydIds = (ydGames || []).map((g) => g.id);
 
