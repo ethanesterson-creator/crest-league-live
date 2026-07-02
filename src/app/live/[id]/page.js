@@ -1,10 +1,13 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import { getSportRules } from "@/lib/sportRules";
 
+// ────────────────────────────────────────────────────────────────────────────
+// Helpers (module scope — never recreated on render)
+// ────────────────────────────────────────────────────────────────────────────
 function norm(s) { return String(s ?? "").trim().toLowerCase(); }
 
 function fmtClock(seconds) {
@@ -13,8 +16,7 @@ function fmtClock(seconds) {
 }
 
 function parseMMSS(input) {
-  const t = String(input ?? "").trim();
-  const m = t.match(/^(\d{1,3}):([0-5]\d)$/);
+  const m = String(input ?? "").trim().match(/^(\d{1,3}):([0-5]\d)$/);
   if (!m) return null;
   return Number(m[1]) * 60 + Number(m[2]);
 }
@@ -33,27 +35,46 @@ function matchupLabel(a1, a2) {
   return x1 || "—";
 }
 
-const isSoftball   = (s) => norm(s) === "softball";
+// Compute clock remaining at call time — no state needed
+function computeRemaining(game) {
+  if (!game) return 0;
+  const running  = !!game.timer_running;
+  const anchorTs = Number(game.timer_anchor_ts ?? 0);
+  const atAnchor = Number(game.timer_remaining_at_anchor ?? game.timer_remaining_seconds ?? 0);
+  if (running && anchorTs > 0) {
+    return Math.max(0, atAnchor - (Date.now() / 1000 - anchorTs));
+  }
+  return Number(game.timer_remaining_seconds ?? atAnchor ?? 0);
+}
+
+const isSoftball     = (s) => norm(s) === "softball";
 const isBattingSport = (s) => ["softball", "kickball"].includes(norm(s));
 const isSeriesSport  = (s) => ["volleyball", "newcomb"].includes(norm(s));
-const isNoStatSport  = (rules) => !rules?.clock?.enabled && (rules?.stats?.length ?? 0) === 0;
 const GOAL_AUTO_SCORE_SPORTS = ["euro", "soccer", "hockey", "speedball"];
 
 const AT_BAT_OUTCOMES = [
-  { key: "1b",  label: "1B",   statKey: "h",  color: "emerald", isHit: true  },
-  { key: "2b",  label: "2B",   statKey: "h",  color: "emerald", isHit: true  },
-  { key: "3b",  label: "3B",   statKey: "h",  color: "emerald", isHit: true  },
-  { key: "hr",  label: "HR",   statKey: "hr", color: "amber",   isHit: true  },
-  { key: "bb",  label: "BB",   statKey: null, color: "blue",    isHit: false },
-  { key: "hbp", label: "HBP",  statKey: null, color: "blue",    isHit: false },
-  { key: "k",   label: "K",    statKey: null, color: "red",     isHit: false, isOut: true },
-  { key: "bk",  label: "ꓘ",    statKey: null, color: "red",     isHit: false, isOut: true },
-  { key: "go",  label: "GO",   statKey: null, color: "red",     isHit: false, isOut: true },
-  { key: "fo",  label: "FO",   statKey: null, color: "red",     isHit: false, isOut: true },
-  { key: "sf",  label: "SF",   statKey: null, color: "red",     isHit: false, isOut: true },
-  { key: "e",   label: "E",    statKey: null, color: "orange",  isHit: false },
-  { key: "fc",  label: "FC",   statKey: null, color: "orange",  isHit: false },
+  { key: "1b",  label: "1B",  statKey: "h",  color: "emerald", isOut: false },
+  { key: "2b",  label: "2B",  statKey: "h",  color: "emerald", isOut: false },
+  { key: "3b",  label: "3B",  statKey: "h",  color: "emerald", isOut: false },
+  { key: "hr",  label: "HR",  statKey: "hr", color: "amber",   isOut: false },
+  { key: "bb",  label: "BB",  statKey: null, color: "blue",    isOut: false },
+  { key: "hbp", label: "HBP", statKey: null, color: "blue",    isOut: false },
+  { key: "k",   label: "K",   statKey: null, color: "red",     isOut: true  },
+  { key: "bk",  label: "ꓘ",   statKey: null, color: "red",     isOut: true  },
+  { key: "go",  label: "GO",  statKey: null, color: "red",     isOut: true  },
+  { key: "fo",  label: "FO",  statKey: null, color: "red",     isOut: true  },
+  { key: "sf",  label: "SF",  statKey: null, color: "red",     isOut: true  },
+  { key: "e",   label: "E",   statKey: null, color: "orange",  isOut: false },
+  { key: "fc",  label: "FC",  statKey: null, color: "orange",  isOut: false },
 ];
+
+const OUTCOME_COLORS = {
+  emerald: "border-emerald-500/40 bg-emerald-500/15 text-emerald-200 active:bg-emerald-500/40",
+  amber:   "border-amber-400/40 bg-amber-500/15 text-amber-200 active:bg-amber-500/40",
+  blue:    "border-blue-400/40 bg-blue-500/15 text-blue-200 active:bg-blue-500/40",
+  red:     "border-red-500/40 bg-red-500/15 text-red-300 active:bg-red-500/40",
+  orange:  "border-orange-400/40 bg-orange-500/15 text-orange-200 active:bg-orange-500/40",
+};
 
 function parseSeriesNotes(notes) {
   try {
@@ -78,93 +99,216 @@ async function fetchCaptainIds({ leagueId, teamNames }) {
   return ids;
 }
 
+function hoopShortName(n) {
+  const parts = String(n || "").trim().split(/\s+/);
+  if (parts.length < 2) return n || "";
+  return `${parts[0].charAt(0)}. ${parts.slice(1).join(" ")}`;
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// ClockButton — the ONLY thing that ticks. Isolated so the rest of the page
+// never re-renders on clock updates. This was the core cause of eaten taps:
+// the old page re-rendered (and remounted every button) 4 times per second.
+// ────────────────────────────────────────────────────────────────────────────
+function ClockButton({ game, onOpen, big }) {
+  const [, force] = useState(0);
+  useEffect(() => {
+    if (!game?.timer_running) return;
+    const t = setInterval(() => force((v) => v + 1), 250);
+    return () => clearInterval(t);
+  }, [game?.timer_running]);
+  return (
+    <button onClick={onOpen}
+      className={big
+        ? "touch-manipulation select-none rounded-xl border border-white/10 bg-black/30 px-4 py-2 text-3xl font-black tabular-nums text-white active:scale-[0.98]"
+        : "touch-manipulation select-none rounded-lg border border-white/10 bg-black/30 px-3 py-1.5 text-xl font-black tabular-nums text-white active:scale-[0.98]"}>
+      {fmtClock(computeRemaining(game))}
+    </button>
+  );
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// Row components — module scope so React preserves their DOM across renders.
+// Defined-inside-parent components get remounted on every parent render,
+// which destroys buttons mid-tap. Never again.
+// ────────────────────────────────────────────────────────────────────────────
+const BTN = "touch-manipulation select-none";
+
+function StatChip({ p, sd, side, value, chipPad, chipText, onBump, onUndo }) {
+  const deltas = sd?.deltas?.length ? sd.deltas : [1];
+  return (
+    <div className="flex flex-1 items-center gap-1.5 rounded-lg border border-white/10 bg-white/5 px-2 py-1.5">
+      <span className="text-[10px] font-black uppercase tracking-wider text-white/50">{sd.label}</span>
+      <span className="min-w-[18px] text-center text-sm font-black tabular-nums text-white">{value}</span>
+      <button onClick={() => onUndo(p, sd, side)} disabled={value <= 0}
+        className={`${BTN} flex-1 rounded border border-red-500/30 bg-red-500/10 ${chipPad} ${chipText} font-black text-red-300 active:scale-95 disabled:opacity-20`}>-1</button>
+      {deltas.map((d) => (
+        <button key={d} onClick={() => onBump(p, sd, side, d)}
+          className={`${BTN} flex-1 rounded border border-white/10 bg-white/10 ${chipPad} ${chipText} font-black active:scale-95`}>+{d}</button>
+      ))}
+    </div>
+  );
+}
+
+function PlayerRow({ p, idx, total, side, showBatting, isCap, statDefs, getVal, chipPad, chipText, onBumpChip, onUndoChip, onToggle, onMove }) {
+  return (
+    <div className="rounded-lg border border-white/10 bg-white/[0.04] p-2.5">
+      <div className="flex items-center justify-between gap-2">
+        {showBatting ? (
+          <div className="flex shrink-0 items-center gap-1">
+            <span className="w-5 text-center text-[10px] font-black opacity-60">{idx + 1}</span>
+            <button onClick={() => onMove(p, "up")} disabled={idx === 0} className={`${BTN} rounded border border-white/10 bg-white/10 px-2 py-1.5 text-[10px] font-black disabled:opacity-30`}>↑</button>
+            <button onClick={() => onMove(p, "down")} disabled={idx === total - 1} className={`${BTN} rounded border border-white/10 bg-white/10 px-2 py-1.5 text-[10px] font-black disabled:opacity-30`}>↓</button>
+          </div>
+        ) : null}
+        <div className="min-w-0 flex-1">
+          <div className="truncate text-sm font-black text-white">{isCap ? "⭐ " : ""}{p.player_name || p.player_id}</div>
+        </div>
+        <button onClick={() => onToggle(p)}
+          className={`${BTN} shrink-0 rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-2 text-[11px] font-black text-red-300 active:scale-95`}>Out</button>
+      </div>
+      {statDefs.length > 0 && (
+        <div className="mt-2 flex gap-1.5">
+          {statDefs.map((sd) => (
+            <StatChip key={`${p.player_id}-${sd.key}`} p={p} sd={sd} side={side}
+              value={getVal(p.player_id, sd.key)} chipPad={chipPad} chipText={chipText}
+              onBump={onBumpChip} onUndo={onUndoChip} />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function HoopPlayerRow({ p, side, isCap, pts, fouls, onBumpPts, onUndoPts, onBumpFoul, onUndoFoul, onToggle }) {
+  return (
+    <div className="flex items-end gap-1.5 rounded-lg border border-white/10 bg-white/[0.04] px-2 py-1.5">
+      <div className="min-w-0 flex-1 self-center">
+        <div className="truncate text-[13px] font-black text-white">{isCap ? "⭐ " : ""}{hoopShortName(p.player_name || p.player_id)}</div>
+      </div>
+      <div className="flex flex-col items-center shrink-0">
+        <span className="text-[8px] font-black uppercase leading-tight text-white/40">PTS · {pts}</span>
+        <div className="mt-0.5 flex items-center gap-1">
+          <button onClick={() => onUndoPts(p, side)} disabled={pts <= 0}
+            className={`${BTN} rounded border border-red-500/30 bg-red-500/10 px-2 py-1.5 text-[10px] font-black text-red-300 active:scale-95 disabled:opacity-20`}>-1</button>
+          {[1, 2, 3].map((d) => (
+            <button key={d} onClick={() => onBumpPts(p, side, d)}
+              className={`${BTN} rounded border border-white/15 bg-white/10 px-2 py-1.5 text-[10px] font-black active:scale-95`}>+{d}</button>
+          ))}
+        </div>
+      </div>
+      <div className="flex flex-col items-center shrink-0 border-l border-white/10 pl-1.5">
+        <span className="text-[8px] font-black uppercase leading-tight text-white/40">F · {fouls}</span>
+        <div className="mt-0.5 flex items-center gap-1">
+          <button onClick={() => onUndoFoul(p)} disabled={fouls <= 0}
+            className={`${BTN} rounded border border-red-500/30 bg-red-500/10 px-2 py-1.5 text-[10px] font-black text-red-300 active:scale-95 disabled:opacity-20`}>-1</button>
+          <button onClick={() => onBumpFoul(p)}
+            className={`${BTN} rounded border border-white/15 bg-white/10 px-2 py-1.5 text-[10px] font-black active:scale-95`}>+1</button>
+        </div>
+      </div>
+      <button onClick={() => onToggle(p)}
+        className={`${BTN} shrink-0 self-center rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-[10px] font-black text-red-300 active:scale-95`}>Out</button>
+    </div>
+  );
+}
+
+function BenchRow({ p, isCap, onToggle }) {
+  return (
+    <div className="flex items-center justify-between rounded-lg border border-white/5 bg-white/[0.02] px-3 py-2">
+      <span className="truncate text-xs font-semibold text-white/70">{isCap ? "⭐ " : ""}{p.player_name || p.player_id}</span>
+      <button onClick={() => onToggle(p)}
+        className={`${BTN} shrink-0 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-4 py-2 text-[11px] font-black text-emerald-300 active:scale-95`}>In</button>
+    </div>
+  );
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// Main page
+// ────────────────────────────────────────────────────────────────────────────
 export default function LiveGamePage() {
   const params = useParams();
   const router = useRouter();
   const gameId = params?.id;
-  const tapRef = useRef(false);
 
-  const [loading, setLoading]   = useState(true);
-  const [err, setErr]           = useState("");
-  const [game, setGame]         = useState(null);
-  const [rosterA, setRosterA]   = useState([]);
-  const [rosterB, setRosterB]   = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [err, setErr]         = useState("");
+  const [game, setGame]       = useState(null);
+  const [rosterA, setRosterA] = useState([]);
+  const [rosterB, setRosterB] = useState([]);
   const [statTotals, setStatTotals] = useState({});
   const [captainIds, setCaptainIds] = useState(new Set());
 
   const [confirmFinalizeOpen, setConfirmFinalizeOpen] = useState(false);
   const [finalizing, setFinalizing] = useState(false);
 
-  const [clockMode, setClockMode] = useState("");
-  const [showBenchA, setShowBenchA] = useState(true);
-  const [showBenchB, setShowBenchB] = useState(true);
+  const [clockMode, setClockMode]     = useState("");
+  const [showBenchA, setShowBenchA]   = useState(true);
+  const [showBenchB, setShowBenchB]   = useState(true);
   const [superCompact, setSuperCompact] = useState(true);
-  const [showTopBar, setShowTopBar]     = useState(true);
-  const [setTimeOpen, setSetTimeOpen]   = useState(false);
-  const [timeInput, setTimeInput]       = useState("00:00");
+  const [showTopBar, setShowTopBar]   = useState(true);
+  const [setTimeOpen, setSetTimeOpen] = useState(false);
+  const [timeInput, setTimeInput]     = useState("00:00");
+  const [isOnline, setIsOnline]       = useState(typeof navigator !== "undefined" ? navigator.onLine : true);
 
-  const [nowMs, setNowMs]   = useState(Date.now());
-  const [isOnline, setIsOnline] = useState(typeof navigator !== "undefined" ? navigator.onLine : true);
-
-  const [inning, setInning]         = useState(1);
-  const [inningHalf, setInningHalf] = useState("top");
+  const [inning, setInning]           = useState(1);
+  const [inningHalf, setInningHalf]   = useState("top");
   const [seriesFormat, setSeriesFormat] = useState(3);
   const [seriesA, setSeriesA] = useState(0);
   const [seriesB, setSeriesB] = useState(0);
 
-  // ── Softball-specific state ──────────────────────────────────────────────
-  // lineupOpen: controls the lineup setup popup
-  // lineupDone:  true once counselor hits Done — popup never reopens
-  // homeTeam:    "A" or "B" — the home team bats second
-  // battingTeam: "A" or "B" — who is currently up
-  // atBatResults: array of {playerId, playerName, outcome, half, inning}
-  // currentBatterIdx: index into the playing list for the batting team
-  const [lineupOpen, setLineupOpen]       = useState(false);
-  const [lineupDone, setLineupDone]       = useState(false);
-  const [homeTeam, setHomeTeam]           = useState("B");   // B = home by default (away bats first)
-  const [battingTeam, setBattingTeam]     = useState("A");   // A = away bats first
-  const [atBatResults, setAtBatResults]   = useState([]);    // local only, not persisted
+  // Softball
+  const [lineupOpen, setLineupOpen] = useState(false);
+  const [lineupDone, setLineupDone] = useState(false);
+  const [homeTeam, setHomeTeam]     = useState("B");
+  const [battingTeam, setBattingTeam] = useState("A");
+  const [atBatResults, setAtBatResults] = useState([]);
   const [currentBatterIdx, setCurrentBatterIdx] = useState(0);
-  const [outsThisHalf, setOutsThisHalf]   = useState(0);
+  const [outsThisHalf, setOutsThisHalf] = useState(0);
+
+  // Guard only for single-shot actions (advance batter, end set) —
+  // NOT for repeatable +1 taps, which counselors fire rapidly on purpose.
+  const singleShotRef = useRef(false);
+  function singleShot(fn) {
+    return async (...args) => {
+      if (singleShotRef.current) return;
+      singleShotRef.current = true;
+      setTimeout(() => { singleShotRef.current = false; }, 300);
+      await fn(...args);
+    };
+  }
+
+  // Trailing-debounced background syncs: rapid taps trigger ONE refresh
+  // 800ms after the burst ends, instead of a refresh per tap (which caused
+  // score flicker and could briefly overwrite optimistic state).
+  const gameSyncTimer  = useRef(null);
+  const statsSyncTimer = useRef(null);
+  function scheduleGameSync()  { clearTimeout(gameSyncTimer.current);  gameSyncTimer.current  = setTimeout(() => loadGame({ quiet: true }), 800); }
+  function scheduleStatsSync() { clearTimeout(statsSyncTimer.current); statsSyncTimer.current = setTimeout(() => { if (gameRef.current) loadEventTotals(gameRef.current); }, 800); }
+  useEffect(() => () => { clearTimeout(gameSyncTimer.current); clearTimeout(statsSyncTimer.current); }, []);
+
+  // Keep a ref of game for timers/closures
+  const gameRef = useRef(null);
+  useEffect(() => { gameRef.current = game; }, [game]);
 
   useEffect(() => {
-    const t = setInterval(() => setNowMs(Date.now()), 250);
-    return () => clearInterval(t);
-  }, []);
-
-  useEffect(() => {
-    const on  = () => setIsOnline(true);
+    const on = () => setIsOnline(true);
     const off = () => setIsOnline(false);
     window.addEventListener("online", on);
     window.addEventListener("offline", off);
     return () => { window.removeEventListener("online", on); window.removeEventListener("offline", off); };
   }, []);
 
-  const rules = useMemo(() => getSportRules(game?.sport), [game?.sport]);
+  const rules = getSportRules(game?.sport);
 
   useEffect(() => {
     if (!rules?.clock?.enabled) return;
     setClockMode(rules?.clock?.defaultMode || rules?.clock?.modes?.[0]?.id || "");
-  }, [rules?.clock?.enabled, rules?.clock?.defaultMode, rules?.clock?.modes]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [game?.sport]);
 
-  const activeClockMode = useMemo(() => {
-    if (!rules?.clock?.enabled) return null;
-    const modes = rules?.clock?.modes ?? [];
-    return modes.find((m) => m.id === clockMode) ?? modes[0] ?? null;
-  }, [rules, clockMode]);
-
-  const derived = useMemo(() => {
-    if (!game) return { remaining: 0, isRunning: false };
-    const running   = !!game.timer_running;
-    const anchorTs  = Number(game.timer_anchor_ts ?? 0);
-    const atAnchor  = Number(game.timer_remaining_at_anchor ?? game.timer_remaining_seconds ?? 0);
-    const stored    = Number(game.timer_remaining_seconds ?? atAnchor ?? 0);
-    if (running && anchorTs > 0) {
-      const rem = Math.max(0, atAnchor - (nowMs / 1000 - anchorTs));
-      return { remaining: rem, isRunning: true };
-    }
-    return { remaining: stored, isRunning: false };
-  }, [game, nowMs]);
+  const activeClockMode = rules?.clock?.enabled
+    ? ((rules?.clock?.modes ?? []).find((m) => m.id === clockMode) ?? rules?.clock?.modes?.[0] ?? null)
+    : null;
 
   // ── Data loading ──────────────────────────────────────────────────────────
   async function loadGame({ quiet = false } = {}) {
@@ -177,7 +321,6 @@ export default function LiveGamePage() {
         const p = parseSeriesNotes(data.notes);
         setSeriesFormat(p.format); setSeriesA(p.seriesA); setSeriesB(p.seriesB);
       }
-      // Open lineup popup automatically for softball if not done yet
       if (isSoftball(data?.sport) && !lineupDone) setLineupOpen(true);
     } catch (e) {
       setErr(e?.message ?? String(e));
@@ -186,10 +329,8 @@ export default function LiveGamePage() {
     }
   }
 
-  function refreshGame() { loadGame({ quiet: true }); }
-
   async function loadEventTotals(g) {
-    const { data } = await supabase.from("live_events").select("player_id, stat_key, delta, event_type")
+    const { data } = await supabase.from("live_events").select("player_id, stat_key, delta")
       .eq("game_id", g.id).eq("event_type", "stat").limit(10000);
     const totals = {};
     for (const row of data || []) {
@@ -199,11 +340,7 @@ export default function LiveGamePage() {
     setStatTotals(totals);
   }
 
-  function refreshStats() { if (game) loadEventTotals(game); }
-
-  function uniqNonEmpty(arr) {
-    return Array.from(new Set((arr || []).map(norm).filter(Boolean)));
-  }
+  function uniqNonEmpty(arr) { return Array.from(new Set((arr || []).map(norm).filter(Boolean))); }
 
   async function ensureRoster(g) {
     const { data: r1 } = await supabase.from("game_roster")
@@ -213,8 +350,6 @@ export default function LiveGamePage() {
     if (r1 && r1.length) {
       setRosterA(r1.filter((x) => x.team_side === "A"));
       setRosterB(r1.filter((x) => x.team_side === "B"));
-      if (!r1.filter((x) => x.team_side === "A" && x.is_playing).length) setShowBenchA(true);
-      if (!r1.filter((x) => x.team_side === "B" && x.is_playing).length) setShowBenchB(true);
       return;
     }
 
@@ -257,13 +392,12 @@ export default function LiveGamePage() {
 
     setRosterA((r2 || []).filter((x) => x.team_side === "A"));
     setRosterB((r2 || []).filter((x) => x.team_side === "B"));
-    setShowBenchA(true); setShowBenchB(true);
   }
 
-  useEffect(() => { if (gameId) loadGame(); }, [gameId]);
+  useEffect(() => { if (gameId) loadGame(); /* eslint-disable-next-line */ }, [gameId]);
 
   useEffect(() => {
-    if (!game) return;
+    if (!game?.id) return;
     (async () => {
       await ensureRoster(game);
       await loadEventTotals(game);
@@ -272,19 +406,8 @@ export default function LiveGamePage() {
         setCaptainIds(await fetchCaptainIds({ leagueId: norm(game.league_key), teamNames }));
       } catch {}
     })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [game?.id]);
-
-  // ── Debounced action helper ───────────────────────────────────────────────
-  // 300ms debounce prevents accidental double-taps without blocking buttons
-  // for the full network round-trip like the old actionBusy did.
-  function tap(fn) {
-    return async (...args) => {
-      if (tapRef.current) return;
-      tapRef.current = true;
-      setTimeout(() => { tapRef.current = false; }, 300);
-      await fn(...args);
-    };
-  }
 
   async function updateLiveGame(patch) {
     const { data, error } = await supabase.from("live_games")
@@ -295,37 +418,36 @@ export default function LiveGamePage() {
     return data;
   }
 
-  // ── Timer functions ───────────────────────────────────────────────────────
-  const onStart = tap(async () => {
-    const rem = derived.remaining;
-    const nowSec = Date.now() / 1000;
-    await updateLiveGame({ timer_running: true, timer_anchor_ts: nowSec, timer_remaining_at_anchor: Math.floor(rem), timer_remaining_seconds: Math.floor(rem) });
-  });
-
-  const onPause = tap(async () => {
-    const rem = derived.remaining;
+  // ── Timer handlers (compute remaining at call time) ───────────────────────
+  async function onStart() {
+    if (!game) return;
+    const rem = computeRemaining(game);
+    await updateLiveGame({ timer_running: true, timer_anchor_ts: Date.now() / 1000, timer_remaining_at_anchor: Math.floor(rem), timer_remaining_seconds: Math.floor(rem) });
+  }
+  async function onPause() {
+    if (!game) return;
+    const rem = computeRemaining(game);
     await updateLiveGame({ timer_running: false, timer_anchor_ts: null, timer_remaining_at_anchor: Math.floor(rem), timer_remaining_seconds: Math.floor(rem) });
-  });
-
-  const onReset = tap(async (seconds) => {
+  }
+  async function onReset(seconds) {
+    if (!game) return;
     const s = Math.max(0, Math.floor(Number(seconds)));
     await updateLiveGame({ timer_running: false, timer_anchor_ts: null, duration_seconds: s, timer_remaining_at_anchor: s, timer_remaining_seconds: s });
-  });
-
-  const setExactRemaining = tap(async (seconds) => {
+  }
+  async function setExactRemaining(seconds) {
+    if (!game) return;
     const s = Math.max(0, Math.floor(Number(seconds)));
     await updateLiveGame({ timer_running: false, timer_anchor_ts: null, timer_remaining_at_anchor: s, timer_remaining_seconds: s });
-  });
-
+  }
   async function openSetTimeModal() {
     if (!rules?.clock?.enabled) return;
-    if (derived.isRunning) await onPause();
-    setTimeInput(fmtClock(derived.remaining));
+    if (game?.timer_running) await onPause();
+    setTimeInput(fmtClock(computeRemaining(gameRef.current)));
     setSetTimeOpen(true);
   }
 
-  // ── Scoring functions — optimistic updates + background sync ─────────────
-  const bumpScore = tap(async (side, delta) => {
+  // ── Scoring — NO debounce. Optimistic instantly, one trailing sync. ──────
+  function bumpScore(side, delta) {
     if (!game) return;
     const d = Math.floor(Number(delta));
     if (!Number.isFinite(d) || d === 0) return;
@@ -334,12 +456,11 @@ export default function LiveGamePage() {
       score_a: side === "A" ? Number(prev.score_a || 0) + d : Number(prev.score_a || 0),
       score_b: side === "B" ? Number(prev.score_b || 0) + d : Number(prev.score_b || 0),
     });
-    const { error } = await supabase.rpc("rpc_add_score", { p_game_id: game.id, p_side: side, p_delta: d });
-    if (error) { setErr(error.message); refreshGame(); return; }
-    refreshGame();
-  });
+    supabase.rpc("rpc_add_score", { p_game_id: game.id, p_side: side, p_delta: d })
+      .then(({ error }) => { if (error) setErr(error.message); scheduleGameSync(); });
+  }
 
-  const undoScore = tap(async (side) => {
+  function undoScore(side) {
     if (!game) return;
     const current = side === "A" ? Number(game.score_a || 0) : Number(game.score_b || 0);
     if (current <= 0) return;
@@ -348,138 +469,105 @@ export default function LiveGamePage() {
       score_a: side === "A" ? Math.max(0, Number(prev.score_a || 0) - 1) : Number(prev.score_a || 0),
       score_b: side === "B" ? Math.max(0, Number(prev.score_b || 0) - 1) : Number(prev.score_b || 0),
     });
-    const { error } = await supabase.rpc("rpc_add_score", { p_game_id: game.id, p_side: side, p_delta: -1 });
-    if (error) { setErr(error.message); refreshGame(); return; }
-    refreshGame();
-  });
+    supabase.rpc("rpc_add_score", { p_game_id: game.id, p_side: side, p_delta: -1 })
+      .then(({ error }) => { if (error) setErr(error.message); scheduleGameSync(); });
+  }
 
-  const bumpStat = tap(async (player, statKey, delta) => {
+  function addStatEvent(player, statKey, delta) {
+    supabase.rpc("rpc_add_stat", {
+      p_game_id: game.id, p_league_id: norm(game.league_key), p_sport: norm(game.sport),
+      p_player_id: String(player.player_id), p_player_name: String(player.player_name || player.player_id),
+      p_team_name: String(player?.team_name || ""), p_stat_key: norm(statKey), p_delta: delta,
+    }).then(({ error }) => { if (error) setErr(error.message); scheduleStatsSync(); });
+  }
+
+  function bumpStat(player, statKey, delta) {
     if (!game) return;
     const d = Math.floor(Number(delta));
     if (!Number.isFinite(d) || d === 0) return;
     const key = `${player.player_id}:${norm(statKey)}`;
     setStatTotals((prev) => ({ ...prev, [key]: (prev[key] || 0) + d }));
-    const { error } = await supabase.rpc("rpc_add_stat", {
-      p_game_id: game.id, p_league_id: norm(game.league_key), p_sport: norm(game.sport),
-      p_player_id: String(player.player_id), p_player_name: String(player.player_name || player.player_id),
-      p_team_name: String(player?.team_name || ""), p_stat_key: norm(statKey), p_delta: d,
-    });
-    if (error) { setErr(error.message); refreshStats(); return; }
-    refreshStats();
-  });
+    addStatEvent(player, statKey, d);
+  }
 
-  const undoStat = tap(async (player, statKey) => {
+  function undoStat(player, statKey) {
     if (!game) return;
     const key = `${player.player_id}:${norm(statKey)}`;
-    const current = Number(statTotals[key] || 0);
-    if (current <= 0) return;
+    if (Number(statTotals[key] || 0) <= 0) return;
     setStatTotals((prev) => ({ ...prev, [key]: Math.max(0, (prev[key] || 0) - 1) }));
-    const { error } = await supabase.rpc("rpc_add_stat", {
-      p_game_id: game.id, p_league_id: norm(game.league_key), p_sport: norm(game.sport),
-      p_player_id: String(player.player_id), p_player_name: String(player.player_name || player.player_id),
-      p_team_name: String(player?.team_name || ""), p_stat_key: norm(statKey), p_delta: -1,
-    });
-    if (error) { setErr(error.message); refreshStats(); return; }
-    refreshStats();
-  });
+    addStatEvent(player, statKey, -1);
+  }
 
-  const bumpHoopPoints = tap(async (player, side, delta) => {
+  function bumpHoopPoints(player, side, delta) {
     if (!game) return;
     const d = Math.floor(Number(delta));
     if (!Number.isFinite(d) || d === 0) return;
-    setGame((prev) => !prev ? prev : {
-      ...prev,
-      score_a: side === "A" ? Number(prev.score_a || 0) + d : Number(prev.score_a || 0),
-      score_b: side === "B" ? Number(prev.score_b || 0) + d : Number(prev.score_b || 0),
-    });
     const ptsKey = `${player.player_id}:pts`;
     setStatTotals((prev) => ({ ...prev, [ptsKey]: (prev[ptsKey] || 0) + d }));
-    const { error: e1 } = await supabase.rpc("rpc_add_stat", {
-      p_game_id: game.id, p_league_id: norm(game.league_key), p_sport: norm(game.sport),
-      p_player_id: String(player.player_id), p_player_name: String(player.player_name || player.player_id),
-      p_team_name: String(player?.team_name || ""), p_stat_key: "pts", p_delta: d,
-    });
-    if (e1) { setErr(e1.message); refreshStats(); refreshGame(); return; }
-    const { error: e2 } = await supabase.rpc("rpc_add_score", { p_game_id: game.id, p_side: side, p_delta: d });
-    if (e2) { setErr(e2.message); refreshStats(); refreshGame(); return; }
-    refreshStats(); refreshGame();
-  });
-
-  const undoHoopPoints = tap(async (player, side) => {
-    if (!game) return;
-    const ptsKey = `${player.player_id}:pts`;
-    if ((statTotals[ptsKey] || 0) <= 0) return;
-    setStatTotals((prev) => ({ ...prev, [ptsKey]: Math.max(0, (prev[ptsKey] || 0) - 1) }));
-    setGame((prev) => !prev ? prev : {
-      ...prev,
-      score_a: side === "A" ? Math.max(0, Number(prev.score_a || 0) - 1) : Number(prev.score_a || 0),
-      score_b: side === "B" ? Math.max(0, Number(prev.score_b || 0) - 1) : Number(prev.score_b || 0),
-    });
-    const { error: e1 } = await supabase.rpc("rpc_add_stat", {
-      p_game_id: game.id, p_league_id: norm(game.league_key), p_sport: norm(game.sport),
-      p_player_id: String(player.player_id), p_player_name: String(player.player_name || player.player_id),
-      p_team_name: String(player?.team_name || ""), p_stat_key: "pts", p_delta: -1,
-    });
-    if (e1) { setErr(e1.message); refreshStats(); refreshGame(); return; }
-    const sideScore = side === "A" ? Number(game.score_a || 0) : Number(game.score_b || 0);
-    if (sideScore > 0) {
-      const { error: e2 } = await supabase.rpc("rpc_add_score", { p_game_id: game.id, p_side: side, p_delta: -1 });
-      if (e2) { setErr(e2.message); refreshStats(); refreshGame(); return; }
-    }
-    refreshStats(); refreshGame();
-  });
-
-  const bumpGoalWithScore = tap(async (player, side, delta) => {
-    if (!game) return;
-    const d = Math.floor(Number(delta));
-    if (!Number.isFinite(d) || d === 0) return;
     setGame((prev) => !prev ? prev : {
       ...prev,
       score_a: side === "A" ? Number(prev.score_a || 0) + d : Number(prev.score_a || 0),
       score_b: side === "B" ? Number(prev.score_b || 0) + d : Number(prev.score_b || 0),
     });
-    const gKey = `${player.player_id}:g`;
-    setStatTotals((prev) => ({ ...prev, [gKey]: (prev[gKey] || 0) + d }));
-    const { error: e1 } = await supabase.rpc("rpc_add_stat", {
-      p_game_id: game.id, p_league_id: norm(game.league_key), p_sport: norm(game.sport),
-      p_player_id: String(player.player_id), p_player_name: String(player.player_name || player.player_id),
-      p_team_name: String(player?.team_name || ""), p_stat_key: "g", p_delta: d,
-    });
-    if (e1) { setErr(e1.message); refreshStats(); refreshGame(); return; }
-    const { error: e2 } = await supabase.rpc("rpc_add_score", { p_game_id: game.id, p_side: side, p_delta: d });
-    if (e2) { setErr(e2.message); refreshStats(); refreshGame(); return; }
-    refreshStats(); refreshGame();
-  });
+    addStatEvent(player, "pts", d);
+    supabase.rpc("rpc_add_score", { p_game_id: game.id, p_side: side, p_delta: d })
+      .then(({ error }) => { if (error) setErr(error.message); scheduleGameSync(); });
+  }
 
-  const undoGoalWithScore = tap(async (player, side) => {
+  function undoHoopPoints(player, side) {
     if (!game) return;
-    const gKey = `${player.player_id}:g`;
-    if ((statTotals[gKey] || 0) <= 0) return;
-    setStatTotals((prev) => ({ ...prev, [gKey]: Math.max(0, (prev[gKey] || 0) - 1) }));
+    const ptsKey = `${player.player_id}:pts`;
+    if (Number(statTotals[ptsKey] || 0) <= 0) return;
+    setStatTotals((prev) => ({ ...prev, [ptsKey]: Math.max(0, (prev[ptsKey] || 0) - 1) }));
+    const sideScore = side === "A" ? Number(game.score_a || 0) : Number(game.score_b || 0);
     setGame((prev) => !prev ? prev : {
       ...prev,
       score_a: side === "A" ? Math.max(0, Number(prev.score_a || 0) - 1) : Number(prev.score_a || 0),
       score_b: side === "B" ? Math.max(0, Number(prev.score_b || 0) - 1) : Number(prev.score_b || 0),
     });
-    const { error: e1 } = await supabase.rpc("rpc_add_stat", {
-      p_game_id: game.id, p_league_id: norm(game.league_key), p_sport: norm(game.sport),
-      p_player_id: String(player.player_id), p_player_name: String(player.player_name || player.player_id),
-      p_team_name: String(player?.team_name || ""), p_stat_key: "g", p_delta: -1,
-    });
-    if (e1) { setErr(e1.message); refreshStats(); refreshGame(); return; }
-    const sideScore = side === "A" ? Number(game.score_a || 0) : Number(game.score_b || 0);
+    addStatEvent(player, "pts", -1);
     if (sideScore > 0) {
-      const { error: e2 } = await supabase.rpc("rpc_add_score", { p_game_id: game.id, p_side: side, p_delta: -1 });
-      if (e2) { setErr(e2.message); refreshStats(); refreshGame(); return; }
+      supabase.rpc("rpc_add_score", { p_game_id: game.id, p_side: side, p_delta: -1 })
+        .then(({ error }) => { if (error) setErr(error.message); scheduleGameSync(); });
     }
-    refreshStats(); refreshGame();
-  });
+  }
 
-  // ── togglePlaying — with debounce + optimistic update ────────────────────
-  async function togglePlaying(player) {
-    if (tapRef.current) return;
-    tapRef.current = true;
-    setTimeout(() => { tapRef.current = false; }, 300);
+  function bumpGoalWithScore(player, side, delta) {
+    if (!game) return;
+    const d = Math.floor(Number(delta));
+    if (!Number.isFinite(d) || d === 0) return;
+    const gKey = `${player.player_id}:g`;
+    setStatTotals((prev) => ({ ...prev, [gKey]: (prev[gKey] || 0) + d }));
+    setGame((prev) => !prev ? prev : {
+      ...prev,
+      score_a: side === "A" ? Number(prev.score_a || 0) + d : Number(prev.score_a || 0),
+      score_b: side === "B" ? Number(prev.score_b || 0) + d : Number(prev.score_b || 0),
+    });
+    addStatEvent(player, "g", d);
+    supabase.rpc("rpc_add_score", { p_game_id: game.id, p_side: side, p_delta: d })
+      .then(({ error }) => { if (error) setErr(error.message); scheduleGameSync(); });
+  }
+
+  function undoGoalWithScore(player, side) {
+    if (!game) return;
+    const gKey = `${player.player_id}:g`;
+    if (Number(statTotals[gKey] || 0) <= 0) return;
+    setStatTotals((prev) => ({ ...prev, [gKey]: Math.max(0, (prev[gKey] || 0) - 1) }));
+    const sideScore = side === "A" ? Number(game.score_a || 0) : Number(game.score_b || 0);
+    setGame((prev) => !prev ? prev : {
+      ...prev,
+      score_a: side === "A" ? Math.max(0, Number(prev.score_a || 0) - 1) : Number(prev.score_a || 0),
+      score_b: side === "B" ? Math.max(0, Number(prev.score_b || 0) - 1) : Number(prev.score_b || 0),
+    });
+    addStatEvent(player, "g", -1);
+    if (sideScore > 0) {
+      supabase.rpc("rpc_add_score", { p_game_id: game.id, p_side: side, p_delta: -1 })
+        .then(({ error }) => { if (error) setErr(error.message); scheduleGameSync(); });
+    }
+  }
+
+  // In/Out — optimistic; short guard so a double-tap doesn't toggle in+out
+  const togglePlaying = singleShot(async (player) => {
     setErr("");
     const next = !player.is_playing;
     const isBatting = isBattingSport(game?.sport);
@@ -490,21 +578,17 @@ export default function LiveGamePage() {
       const activeOrders = list.filter((p) => p.is_playing && p.player_id !== player.player_id).map((p) => Number(p.sort_order || 0));
       newSortOrder = activeOrders.length ? Math.max(...activeOrders) + 1 : 0;
     }
-    // Optimistic
     const apply = (arr) => arr.map((p) => p.player_id === player.player_id ? { ...p, is_playing: next, sort_order: newSortOrder } : p);
-    if (side === "A") setRosterA((r) => apply(r));
-    else setRosterB((r) => apply(r));
+    if (side === "A") setRosterA(apply); else setRosterB(apply);
 
     const patch = next && isBatting ? { is_playing: next, sort_order: newSortOrder } : { is_playing: next };
     const { error } = await supabase.from("game_roster").update(patch).eq("game_id", player.game_id).eq("player_id", player.player_id);
     if (error) {
       setErr(error.message);
-      // revert
       const revert = (arr) => arr.map((p) => p.player_id === player.player_id ? { ...p, is_playing: !next } : p);
-      if (side === "A") setRosterA((r) => revert(r));
-      else setRosterB((r) => revert(r));
+      if (side === "A") setRosterA(revert); else setRosterB(revert);
     }
-  }
+  });
 
   async function moveInOrder(player, dir) {
     if (!isBattingSport(game?.sport)) return;
@@ -524,45 +608,30 @@ export default function LiveGamePage() {
     await supabase.from("game_roster").update({ sort_order: a.sort_order }).eq("game_id", b.game_id).eq("player_id", b.player_id);
   }
 
-  // ── Softball at-bat handler ───────────────────────────────────────────────
-  async function recordAtBat(outcome) {
-    if (tapRef.current || !game) return;
-    tapRef.current = true;
-    setTimeout(() => { tapRef.current = false; }, 300);
-
-    const battingRoster = (battingTeam === "A" ? rosterA : rosterB).filter((p) => p.is_playing).sort((a, b) => Number(a.sort_order || 0) - Number(b.sort_order || 0));
+  // ── Softball at-bat (single-shot guarded — advancing twice is harmful) ───
+  const recordAtBat = singleShot(async (outcome) => {
+    if (!game) return;
+    const battingRoster = (battingTeam === "A" ? rosterA : rosterB)
+      .filter((p) => p.is_playing)
+      .sort((a, b) => Number(a.sort_order || 0) - Number(b.sort_order || 0));
     if (!battingRoster.length) return;
 
     const batter = battingRoster[currentBatterIdx % battingRoster.length];
 
-    // Log stat if applicable
     if (outcome.statKey && batter) {
       const key = `${batter.player_id}:${outcome.statKey}`;
       setStatTotals((prev) => ({ ...prev, [key]: (prev[key] || 0) + 1 }));
-      supabase.rpc("rpc_add_stat", {
-        p_game_id: game.id, p_league_id: norm(game.league_key), p_sport: norm(game.sport),
-        p_player_id: String(batter.player_id), p_player_name: String(batter.player_name || batter.player_id),
-        p_team_name: String(batter.team_name || ""), p_stat_key: outcome.statKey, p_delta: 1,
-      }).then(({ error }) => { if (error) refreshStats(); });
+      addStatEvent(batter, outcome.statKey, 1);
     }
 
-    // Record locally
     setAtBatResults((prev) => [...prev, {
-      playerId: batter.player_id,
-      playerName: batter.player_name,
-      outcome: outcome.key,
-      label: outcome.label,
-      inning,
-      half: inningHalf,
+      playerId: batter.player_id, playerName: batter.player_name,
+      outcome: outcome.key, label: outcome.label, inning, half: inningHalf,
     }]);
 
-    // Handle outs
-    let newOuts = outsThisHalf;
     if (outcome.isOut) {
-      newOuts = outsThisHalf + 1;
+      const newOuts = outsThisHalf + 1;
       if (newOuts >= 3) {
-        // 3 outs — flip sides
-        newOuts = 0;
         if (inningHalf === "top") {
           setInningHalf("bottom");
           setBattingTeam(homeTeam);
@@ -575,28 +644,37 @@ export default function LiveGamePage() {
         setOutsThisHalf(0);
         return;
       }
+      setOutsThisHalf(newOuts);
     }
-    setOutsThisHalf(newOuts);
-    // Advance to next batter
     setCurrentBatterIdx((prev) => (prev + 1) % battingRoster.length);
-  }
+  });
 
-  // ── Series / endSet ───────────────────────────────────────────────────────
-  async function endSet() {
-    if (tapRef.current || !game) return;
-    tapRef.current = true;
-    setTimeout(() => { tapRef.current = false; }, 300);
+  const endSet = singleShot(async () => {
+    if (!game) return;
     const sa = Number(game.score_a || 0), sb = Number(game.score_b || 0);
     if (sa === sb) { setErr("Set is tied. A set must have a winner before ending it."); return; }
     const newSA = sa > sb ? seriesA + 1 : seriesA;
     const newSB = sb > sa ? seriesB + 1 : seriesB;
     const notes = stringifySeriesNotes(seriesFormat, newSA, newSB);
-    const { data, error } = await supabase.from("live_games").update({ score_a: 0, score_b: 0, notes, updated_at: new Date().toISOString() }).eq("id", game.id).select("*").single();
+    const { data, error } = await supabase.from("live_games")
+      .update({ score_a: 0, score_b: 0, notes, updated_at: new Date().toISOString() })
+      .eq("id", game.id).select("*").single();
     if (error) { setErr(error.message); return; }
     setGame(data); setSeriesA(newSA); setSeriesB(newSB);
-  }
+  });
 
-  // ── Finalize ──────────────────────────────────────────────────────────────
+  const nextHalfSoftball = singleShot(async () => {
+    if (inningHalf === "top") { setInningHalf("bottom"); setBattingTeam(homeTeam); }
+    else { setInningHalf("top"); setInning((v) => v + 1); setBattingTeam(homeTeam === "A" ? "B" : "A"); }
+    setCurrentBatterIdx(0);
+    setOutsThisHalf(0);
+  });
+
+  const nextHalfKickball = singleShot(async () => {
+    if (inningHalf === "top") setInningHalf("bottom");
+    else { setInningHalf("top"); setInning((v) => v + 1); }
+  });
+
   async function finalizeGame() {
     if (!game || finalizing) return;
     setErr("");
@@ -614,14 +692,14 @@ export default function LiveGamePage() {
       } finally { setFinalizing(false); }
       return;
     }
-    if (rules?.clock?.enabled && derived.isRunning) { setErr("Pause the clock before finalizing."); return; }
+    if (rules?.clock?.enabled && game.timer_running) { setErr("Pause the clock before finalizing."); return; }
     const sa = Number(game.score_a || 0), sb = Number(game.score_b || 0);
     if (sa === 0 && sb === 0) { setErr("Score is 0-0. Add points before finalizing."); return; }
     if (sa === sb) { setErr("Score is tied. Bauercrest has no ties — adjust before finalizing."); return; }
     setFinalizing(true);
     try {
       if (rules?.clock?.enabled) {
-        const rem = Math.floor(derived.remaining);
+        const rem = Math.floor(computeRemaining(game));
         const g2 = await updateLiveGame({ timer_running: false, timer_anchor_ts: null, timer_remaining_at_anchor: rem, timer_remaining_seconds: rem });
         if (!g2) return;
       }
@@ -641,317 +719,31 @@ export default function LiveGamePage() {
   const scoreA = Number(game.score_a || 0);
   const scoreB = Number(game.score_b || 0);
 
-  function getVal(pid, statKey) { return Number(statTotals[`${pid}:${norm(statKey)}`] || 0); }
+  const getVal = (pid, statKey) => Number(statTotals[`${pid}:${norm(statKey)}`] || 0);
+  const isCapFn = (pid) => captainIds instanceof Set && captainIds.has(String(pid));
 
   const playingA = rosterA.filter((p) => p.is_playing).sort((a, b) => Number(a.sort_order || 0) - Number(b.sort_order || 0));
   const benchA   = rosterA.filter((p) => !p.is_playing);
   const playingB = rosterB.filter((p) => p.is_playing).sort((a, b) => Number(a.sort_order || 0) - Number(b.sort_order || 0));
   const benchB   = rosterB.filter((p) => !p.is_playing);
 
-  const scoreButtons  = rules?.scoreButtons?.length ? rules.scoreButtons : [1];
-  const statDefs      = rules?.stats ?? [];
-  const isHoop        = norm(game.sport) === "hoop";
+  const scoreButtons = rules?.scoreButtons?.length ? rules.scoreButtons : [1];
+  const statDefs = rules?.stats ?? [];
+  const isHoop = norm(game.sport) === "hoop";
   const isSoftballGame = isSoftball(game.sport);
-  const noStat        = isNoStatSport(rules);
-  const clockPresets  = activeClockMode?.presets ?? [300, 600, 900, 1200, 1800];
+  const noStat = !rules?.clock?.enabled && (rules?.stats?.length ?? 0) === 0;
+  const clockPresets = activeClockMode?.presets ?? [300, 600, 900, 1200, 1800];
   const chipPad = superCompact ? "px-2 py-1" : "px-3 py-2";
   const chipText = superCompact ? "text-[11px]" : "text-sm";
 
-  // Softball batting roster for the active batting team
-  const battingRoster = (battingTeam === "A" ? playingA : playingB);
-  const currentBatter = battingRoster[currentBatterIdx % Math.max(1, battingRoster.length)];
+  const battingRoster = battingTeam === "A" ? playingA : playingB;
+  const currentBatter = battingRoster.length ? battingRoster[currentBatterIdx % battingRoster.length] : null;
 
-  // ── Sub-components ────────────────────────────────────────────────────────
-  function StatChip({ p, sd, side }) {
-    const deltas = sd?.deltas?.length ? sd.deltas : [1];
-    const v = getVal(p.player_id, sd.key);
-    const isGoal = sd.key === "g" && GOAL_AUTO_SCORE_SPORTS.includes(norm(game?.sport));
-    const handleBump = (d) => isGoal ? bumpGoalWithScore(p, side, d) : bumpStat(p, sd.key, d);
-    const handleUndo = () => isGoal ? undoGoalWithScore(p, side) : undoStat(p, sd.key);
-    return (
-      <div className="flex flex-1 items-center gap-1.5 rounded-lg border border-white/10 bg-white/5 px-2 py-1.5">
-        <span className="text-[10px] font-black uppercase tracking-wider text-white/50">{sd.label}</span>
-        <span className="min-w-[18px] text-center text-sm font-black tabular-nums text-white">{v}</span>
-        <button onClick={handleUndo} disabled={v <= 0}
-          className={`flex-1 rounded border border-red-500/30 bg-red-500/10 ${chipPad} ${chipText} font-black text-red-300 active:scale-95 disabled:opacity-20`}>-1</button>
-        {deltas.map((d) => (
-          <button key={d} onClick={() => handleBump(d)}
-            className={`flex-1 rounded border border-white/10 bg-white/10 ${chipPad} ${chipText} font-black active:scale-95`}>+{d}</button>
-        ))}
-      </div>
-    );
-  }
+  const onBumpChip = (p, sd, side, d) => sd.key === "g" && GOAL_AUTO_SCORE_SPORTS.includes(norm(game?.sport)) ? bumpGoalWithScore(p, side, d) : bumpStat(p, sd.key, d);
+  const onUndoChip = (p, sd, side)   => sd.key === "g" && GOAL_AUTO_SCORE_SPORTS.includes(norm(game?.sport)) ? undoGoalWithScore(p, side) : undoStat(p, sd.key);
 
-  function PlayerRow({ p, idx, total, side }) {
-    const showBatting = isBattingSport(game?.sport);
-    const isCap = captainIds instanceof Set ? captainIds.has(String(p.player_id)) : false;
-    return (
-      <div className="rounded-lg border border-white/10 bg-white/[0.04] p-2.5">
-        <div className="flex items-center justify-between gap-2">
-          {showBatting ? (
-            <div className="flex shrink-0 items-center gap-1">
-              <span className="w-5 text-center text-[10px] font-black opacity-60">{idx + 1}</span>
-              <button onClick={() => moveInOrder(p, "up")} disabled={idx === 0} className="rounded border border-white/10 bg-white/10 px-2 py-1.5 text-[10px] font-black disabled:opacity-30">↑</button>
-              <button onClick={() => moveInOrder(p, "down")} disabled={idx === total - 1} className="rounded border border-white/10 bg-white/10 px-2 py-1.5 text-[10px] font-black disabled:opacity-30">↓</button>
-            </div>
-          ) : null}
-          <div className="min-w-0 flex-1">
-            <div className="truncate text-sm font-black text-white">{isCap ? "⭐ " : ""}{p.player_name || p.player_id}</div>
-          </div>
-          <button onClick={() => togglePlaying(p)}
-            className="shrink-0 rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-2 text-[11px] font-black text-red-300 active:scale-95">Out</button>
-        </div>
-        {statDefs.length > 0 && (
-          <div className="mt-2 flex gap-1.5">
-            {statDefs.map((sd) => <StatChip key={`${p.player_id}-${sd.key}`} p={p} sd={sd} side={side} />)}
-          </div>
-        )}
-      </div>
-    );
-  }
-
-  function hoopShortName(n) {
-    const parts = String(n || "").trim().split(/\s+/);
-    if (parts.length < 2) return n || "";
-    return `${parts[0].charAt(0)}. ${parts.slice(1).join(" ")}`;
-  }
-
-  function HoopPlayerRow({ p, side }) {
-    const isCap = captainIds instanceof Set ? captainIds.has(String(p.player_id)) : false;
-    const pts   = getVal(p.player_id, "pts");
-    const fouls = getVal(p.player_id, "foul");
-    return (
-      <div className="flex items-end gap-1.5 rounded-lg border border-white/10 bg-white/[0.04] px-2 py-1.5">
-        <div className="min-w-0 flex-1 self-center">
-          <div className="truncate text-[13px] font-black text-white">{isCap ? "⭐ " : ""}{hoopShortName(p.player_name || p.player_id)}</div>
-        </div>
-        <div className="flex flex-col items-center shrink-0">
-          <span className="text-[8px] font-black uppercase leading-tight text-white/40">PTS · {pts}</span>
-          <div className="mt-0.5 flex items-center gap-1">
-            <button onClick={() => undoHoopPoints(p, side)} disabled={pts <= 0}
-              className="rounded border border-red-500/30 bg-red-500/10 px-2 py-1.5 text-[10px] font-black text-red-300 active:scale-95 disabled:opacity-20">-1</button>
-            {[1, 2, 3].map((d) => (
-              <button key={d} onClick={() => bumpHoopPoints(p, side, d)}
-                className="rounded border border-white/15 bg-white/10 px-2 py-1.5 text-[10px] font-black active:scale-95">+{d}</button>
-            ))}
-          </div>
-        </div>
-        <div className="flex flex-col items-center shrink-0 border-l border-white/10 pl-1.5">
-          <span className="text-[8px] font-black uppercase leading-tight text-white/40">F · {fouls}</span>
-          <div className="mt-0.5 flex items-center gap-1">
-            <button onClick={() => undoStat(p, "foul")} disabled={fouls <= 0}
-              className="rounded border border-red-500/30 bg-red-500/10 px-2 py-1.5 text-[10px] font-black text-red-300 active:scale-95 disabled:opacity-20">-1</button>
-            <button onClick={() => bumpStat(p, "foul", 1)}
-              className="rounded border border-white/15 bg-white/10 px-2 py-1.5 text-[10px] font-black active:scale-95">+1</button>
-          </div>
-        </div>
-        <button onClick={() => togglePlaying(p)}
-          className="shrink-0 self-center rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-[10px] font-black text-red-300 active:scale-95">Out</button>
-      </div>
-    );
-  }
-
-  function BenchRow({ p }) {
-    const isCap = captainIds instanceof Set ? captainIds.has(String(p.player_id)) : false;
-    return (
-      <div className="flex items-center justify-between rounded-lg border border-white/5 bg-white/[0.02] px-3 py-2">
-        <span className="truncate text-xs font-semibold text-white/70">{isCap ? "⭐ " : ""}{p.player_name || p.player_id}</span>
-        <button onClick={() => togglePlaying(p)}
-          className="shrink-0 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-4 py-2 text-[11px] font-black text-emerald-300 active:scale-95">In</button>
-      </div>
-    );
-  }
-
-  // ── Softball lineup popup ─────────────────────────────────────────────────
-  function LineupModal() {
-    return (
-      <div className="fixed inset-0 z-[60] flex items-end bg-black/80 sm:items-center sm:justify-center">
-        <div className="w-full max-w-2xl rounded-t-3xl border border-white/15 bg-[#08172c] p-5 sm:rounded-3xl">
-          <div className="flex items-center justify-between">
-            <div>
-              <div className="text-xl font-black text-white">Set Lineup</div>
-              <div className="mt-0.5 text-xs text-white/50">Mark who's In, set batting order, pick Home team. Then tap Done — this won't reopen.</div>
-            </div>
-          </div>
-
-          {/* Home / Away toggle */}
-          <div className="mt-4 flex items-center gap-3">
-            <span className="text-xs font-black uppercase tracking-widest text-white/40">Home team:</span>
-            <button
-              onClick={() => setHomeTeam("A")}
-              className={`rounded-xl border px-4 py-2 text-xs font-black transition ${homeTeam === "A" ? "border-blue-400/60 bg-blue-500/20 text-blue-200" : "border-white/10 bg-white/5 text-white/40"}`}>
-              {leftLabel}
-            </button>
-            <button
-              onClick={() => setHomeTeam("B")}
-              className={`rounded-xl border px-4 py-2 text-xs font-black transition ${homeTeam === "B" ? "border-blue-400/60 bg-blue-500/20 text-blue-200" : "border-white/10 bg-white/5 text-white/40"}`}>
-              {rightLabel}
-            </button>
-          </div>
-
-          <div className="mt-4 grid grid-cols-2 gap-3 max-h-[55vh] overflow-y-auto">
-            {/* Team A */}
-            <div>
-              <div className="mb-2 text-xs font-black uppercase tracking-wider text-white/60">{leftLabel}</div>
-              <div className="space-y-1">
-                {rosterA.sort((a, b) => Number(a.sort_order || 0) - Number(b.sort_order || 0)).map((p, idx) => (
-                  <div key={p.player_id} className={`flex items-center gap-2 rounded-lg border px-2 py-1.5 ${p.is_playing ? "border-emerald-500/30 bg-emerald-500/10" : "border-white/5 bg-white/[0.02]"}`}>
-                    {p.is_playing ? <span className="w-4 text-center text-[10px] font-black text-white/50">{playingA.findIndex((x) => x.player_id === p.player_id) + 1}</span> : <span className="w-4" />}
-                    <span className="flex-1 truncate text-[11px] font-semibold text-white">{p.player_name}</span>
-                    <div className="flex items-center gap-0.5">
-                      {p.is_playing && (
-                        <>
-                          <button onClick={() => moveInOrder(p, "up")} className="rounded border border-white/10 bg-white/10 px-1 py-0.5 text-[9px] font-black">↑</button>
-                          <button onClick={() => moveInOrder(p, "down")} className="rounded border border-white/10 bg-white/10 px-1 py-0.5 text-[9px] font-black">↓</button>
-                        </>
-                      )}
-                      <button onClick={() => togglePlaying(p)}
-                        className={`rounded-lg border px-2.5 py-1 text-[10px] font-black ${p.is_playing ? "border-red-500/30 bg-red-500/10 text-red-300" : "border-emerald-500/30 bg-emerald-500/10 text-emerald-300"}`}>
-                        {p.is_playing ? "Out" : "In"}
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {/* Team B */}
-            <div>
-              <div className="mb-2 text-xs font-black uppercase tracking-wider text-white/60">{rightLabel}</div>
-              <div className="space-y-1">
-                {rosterB.sort((a, b) => Number(a.sort_order || 0) - Number(b.sort_order || 0)).map((p, idx) => (
-                  <div key={p.player_id} className={`flex items-center gap-2 rounded-lg border px-2 py-1.5 ${p.is_playing ? "border-emerald-500/30 bg-emerald-500/10" : "border-white/5 bg-white/[0.02]"}`}>
-                    {p.is_playing ? <span className="w-4 text-center text-[10px] font-black text-white/50">{playingB.findIndex((x) => x.player_id === p.player_id) + 1}</span> : <span className="w-4" />}
-                    <span className="flex-1 truncate text-[11px] font-semibold text-white">{p.player_name}</span>
-                    <div className="flex items-center gap-0.5">
-                      {p.is_playing && (
-                        <>
-                          <button onClick={() => moveInOrder(p, "up")} className="rounded border border-white/10 bg-white/10 px-1 py-0.5 text-[9px] font-black">↑</button>
-                          <button onClick={() => moveInOrder(p, "down")} className="rounded border border-white/10 bg-white/10 px-1 py-0.5 text-[9px] font-black">↓</button>
-                        </>
-                      )}
-                      <button onClick={() => togglePlaying(p)}
-                        className={`rounded-lg border px-2.5 py-1 text-[10px] font-black ${p.is_playing ? "border-red-500/30 bg-red-500/10 text-red-300" : "border-emerald-500/30 bg-emerald-500/10 text-emerald-300"}`}>
-                        {p.is_playing ? "Out" : "In"}
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
-
-          <button
-            onClick={() => {
-              // Away team bats first
-              setBattingTeam(homeTeam === "A" ? "B" : "A");
-              setCurrentBatterIdx(0);
-              setOutsThisHalf(0);
-              setLineupDone(true);
-              setLineupOpen(false);
-            }}
-            className="mt-5 w-full rounded-2xl bg-blue-600 py-4 text-base font-black text-white active:scale-[0.98]">
-            Done — Start Game
-          </button>
-        </div>
-      </div>
-    );
-  }
-
-  // ── Softball at-bat UI ────────────────────────────────────────────────────
-  function SoftballAtBatPanel() {
-    const battingLabel = battingTeam === "A" ? leftLabel : rightLabel;
-    const battingSide  = battingTeam;
-
-    const colorMap = {
-      emerald: "border-emerald-500/40 bg-emerald-500/15 text-emerald-200 active:bg-emerald-500/30",
-      amber:   "border-amber-400/40 bg-amber-500/15 text-amber-200 active:bg-amber-500/30",
-      blue:    "border-blue-400/40 bg-blue-500/15 text-blue-200 active:bg-blue-500/30",
-      red:     "border-red-500/40 bg-red-500/15 text-red-300 active:bg-red-500/30",
-      orange:  "border-orange-400/40 bg-orange-500/15 text-orange-200 active:bg-orange-500/30",
-    };
-
-    return (
-      <div className="p-3 space-y-3">
-        {/* Current batter */}
-        <div className="rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-4">
-          <div className="flex items-center justify-between">
-            <div>
-              <div className="text-[10px] font-black uppercase tracking-widest text-blue-400/70">Now Batting · {battingLabel}</div>
-              <div className="mt-1 text-3xl font-black text-white">
-                {currentBatter ? currentBatter.player_name : "—"}
-              </div>
-              {currentBatter && (
-                <div className="mt-0.5 text-xs text-white/40">
-                  #{(currentBatterIdx % Math.max(1, battingRoster.length)) + 1} in order · H: {getVal(currentBatter.player_id, "h")} · HR: {getVal(currentBatter.player_id, "hr")}
-                </div>
-              )}
-            </div>
-            {/* Outs indicator */}
-            <div className="flex flex-col items-center gap-1">
-              <div className="text-[9px] font-black uppercase tracking-widest text-white/30">Outs</div>
-              <div className="flex gap-1.5">
-                {[0, 1, 2].map((i) => (
-                  <div key={i} className={`h-4 w-4 rounded-full border-2 transition-colors ${i < outsThisHalf ? "border-red-400 bg-red-400" : "border-white/20 bg-transparent"}`} />
-                ))}
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* At-bat outcome buttons */}
-        <div className="grid grid-cols-4 gap-2">
-          {AT_BAT_OUTCOMES.map((o) => (
-            <button
-              key={o.key}
-              onClick={() => recordAtBat(o)}
-              className={`rounded-xl border py-4 text-lg font-black active:scale-95 ${colorMap[o.color]}`}>
-              {o.label}
-            </button>
-          ))}
-        </div>
-
-        {/* Recent at-bats this half inning */}
-        {atBatResults.filter((r) => r.inning === inning && r.half === inningHalf).length > 0 && (
-          <div className="rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2">
-            <div className="text-[9px] font-black uppercase tracking-widest text-white/30 mb-1">This half inning</div>
-            <div className="flex flex-wrap gap-1.5">
-              {atBatResults.filter((r) => r.inning === inning && r.half === inningHalf).map((r, i) => (
-                <span key={i} className="rounded-lg border border-white/10 bg-white/5 px-2 py-0.5 text-[10px] font-black text-white/60">
-                  {r.playerName?.split(" ")[0]}: {r.label}
-                </span>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* Batting order list */}
-        <div className="grid grid-cols-2 gap-2">
-          {[{ side: "A", roster: playingA, label: leftLabel }, { side: "B", roster: playingB, label: rightLabel }].map(({ side, roster, label }) => (
-            <div key={side} className={`rounded-xl border p-2 ${battingTeam === side ? "border-blue-500/30 bg-blue-500/5" : "border-white/5 bg-white/[0.02]"}`}>
-              <div className="mb-1 text-[9px] font-black uppercase tracking-wider text-white/40">{label} {battingTeam === side ? "· Batting" : ""}</div>
-              <div className="space-y-0.5">
-                {roster.map((p, idx) => {
-                  const isUp = battingTeam === side && idx === (currentBatterIdx % Math.max(1, roster.length));
-                  return (
-                    <div key={p.player_id} className={`flex items-center gap-1.5 rounded px-1.5 py-0.5 text-[11px] ${isUp ? "bg-blue-500/20 font-black text-white" : "text-white/40"}`}>
-                      <span className="w-3 text-[9px]">{idx + 1}</span>
-                      <span className="truncate">{p.player_name?.split(" ")[0]}</span>
-                      {isUp && <span className="ml-auto text-[9px] text-blue-400">▶</span>}
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
-    );
-  }
-
-  // ── Main render ───────────────────────────────────────────────────────────
   return (
-    <div className="fixed inset-0 z-[999] overflow-y-auto bg-[#0a1628] text-white">
+    <div className="fixed inset-0 z-[999] overflow-y-auto bg-[#0a1628] text-white" style={{ touchAction: "manipulation" }}>
 
       {!isOnline && (
         <div className="sticky top-0 z-50 bg-red-600 px-4 py-2.5 text-center text-sm font-black text-white">
@@ -973,18 +765,18 @@ export default function LiveGamePage() {
           </div>
           <div className="flex items-center gap-2">
             <button onClick={() => setSuperCompact((v) => !v)}
-              className="rounded-lg border border-white/10 bg-white/5 px-2.5 py-1.5 text-[10px] font-bold text-white/60">
+              className={`${BTN} rounded-lg border border-white/10 bg-white/5 px-2.5 py-1.5 text-[10px] font-bold text-white/60`}>
               {superCompact ? "Compact" : "Large"}
             </button>
             <button onClick={() => router.push("/")}
-              className="rounded-lg border border-white/10 bg-white/5 px-2.5 py-1.5 text-[10px] font-bold text-white/60">Home</button>
+              className={`${BTN} rounded-lg border border-white/10 bg-white/5 px-2.5 py-1.5 text-[10px] font-bold text-white/60`}>Home</button>
             <button onClick={() => setShowTopBar(false)}
-              className="rounded-lg border border-white/10 bg-white/5 px-2 py-1.5 text-[10px] font-bold text-white/60">▲</button>
+              className={`${BTN} rounded-lg border border-white/10 bg-white/5 px-2 py-1.5 text-[10px] font-bold text-white/60`}>▲</button>
           </div>
         </div>
       ) : (
         <button onClick={() => setShowTopBar(true)}
-          className="flex w-full items-center justify-center border-b border-white/10 bg-[#06101f] py-1 text-white/30">
+          className={`${BTN} flex w-full items-center justify-center border-b border-white/10 bg-[#06101f] py-1 text-white/30`}>
           <span className="text-[10px]">☰</span>
         </button>
       )}
@@ -1000,23 +792,20 @@ export default function LiveGamePage() {
             <div className="flex flex-col items-center gap-1">
               {rules?.clock?.enabled ? (
                 <>
-                  <button onClick={openSetTimeModal}
-                    className="rounded-lg border border-white/10 bg-black/30 px-3 py-1.5 text-xl font-black tabular-nums text-white active:scale-[0.98]">
-                    {fmtClock(derived.remaining)}
-                  </button>
+                  <ClockButton game={game} onOpen={openSetTimeModal} />
                   <div className="flex items-center gap-1.5">
                     {game.timer_running
-                      ? <button onClick={onPause} className="rounded-lg bg-white px-4 py-2 text-xs font-black text-black active:scale-95">Pause</button>
-                      : <button onClick={onStart} className="rounded-lg bg-white px-4 py-2 text-xs font-black text-black active:scale-95">Start</button>}
+                      ? <button onClick={onPause} className={`${BTN} rounded-lg bg-white px-4 py-2 text-xs font-black text-black active:scale-95`}>Pause</button>
+                      : <button onClick={onStart} className={`${BTN} rounded-lg bg-white px-4 py-2 text-xs font-black text-black active:scale-95`}>Start</button>}
                     <button onClick={() => onReset(game.duration_seconds || clockPresets[clockPresets.length - 1] || 1800)}
-                      className="rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-xs font-black active:scale-95">Reset</button>
+                      className={`${BTN} rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-xs font-black active:scale-95`}>Reset</button>
                     <button onClick={() => setConfirmFinalizeOpen(true)}
-                      className="rounded-lg border border-emerald-500/40 bg-emerald-500/15 px-3 py-2 text-xs font-black text-emerald-200 active:scale-95">Finalize</button>
+                      className={`${BTN} rounded-lg border border-emerald-500/40 bg-emerald-500/15 px-3 py-2 text-xs font-black text-emerald-200 active:scale-95`}>Finalize</button>
                   </div>
                 </>
               ) : (
                 <button onClick={() => setConfirmFinalizeOpen(true)}
-                  className="rounded-lg border border-emerald-500/40 bg-emerald-500/15 px-4 py-2 text-xs font-black text-emerald-200 active:scale-95">Finalize</button>
+                  className={`${BTN} rounded-lg border border-emerald-500/40 bg-emerald-500/15 px-4 py-2 text-xs font-black text-emerald-200 active:scale-95`}>Finalize</button>
               )}
             </div>
             <div className="text-right">
@@ -1027,41 +816,39 @@ export default function LiveGamePage() {
         ) : noStat ? (
           <div className="grid grid-cols-[1fr_auto_1fr] items-stretch gap-2">
             <button onClick={() => bumpScore("A", 1)}
-              className="flex min-h-[150px] flex-col items-center justify-center rounded-2xl border border-white/10 bg-white/5 px-2 py-3 active:scale-[0.98] active:bg-white/10">
+              className={`${BTN} flex min-h-[150px] flex-col items-center justify-center rounded-2xl border border-white/10 bg-white/5 px-2 py-3 active:scale-[0.98] active:bg-white/10`}>
               <div className="truncate text-sm font-black uppercase tracking-widest text-blue-400/70">{leftLabel}</div>
               <div className="mt-1 text-8xl font-black leading-none tabular-nums text-white">{scoreA}</div>
               <div className="mt-2 text-[10px] font-bold uppercase tracking-wider text-white/30">Tap · +1</div>
             </button>
             <div className="flex flex-col items-center justify-center gap-2 px-1">
-              {isSeriesSport(game.sport) ? (
+              {isSeriesSport(game.sport) && (
                 <div className="flex flex-col items-center gap-1.5 rounded-xl border border-white/10 bg-white/[0.04] px-5 py-4">
                   <div className="text-[10px] font-black uppercase tracking-widest text-white/40">Series (Bo{seriesFormat})</div>
                   <div className="text-5xl font-black tabular-nums text-white">{seriesA} - {seriesB}</div>
                   <button onClick={endSet} disabled={scoreA === scoreB}
-                    className="mt-1 rounded-xl border border-amber-400/40 bg-amber-500/15 px-6 py-3 text-base font-black text-amber-200 active:scale-95 disabled:opacity-30">End Set</button>
+                    className={`${BTN} mt-1 rounded-xl border border-amber-400/40 bg-amber-500/15 px-6 py-3 text-base font-black text-amber-200 active:scale-95 disabled:opacity-30`}>End Set</button>
                 </div>
-              ) : null}
-              {norm(game.sport) === "kickball" ? (
+              )}
+              {norm(game.sport) === "kickball" && (
                 <div className="flex flex-col items-center gap-1 rounded-xl border border-white/10 bg-white/[0.04] px-4 py-2.5">
                   <div className="text-[9px] font-black uppercase tracking-widest text-white/40">{inningHalf === "top" ? "▲ TOP" : "▼ BOT"}</div>
                   <div className="text-4xl font-black tabular-nums text-white">{inning}</div>
-                  <button onClick={() => {
-                    if (inningHalf === "top") { setInningHalf("bottom"); }
-                    else { setInningHalf("top"); setInning((v) => v + 1); }
-                  }} className="mt-1 rounded-xl border border-white/15 bg-white/10 px-4 py-2 text-xs font-black active:scale-95">Next Half</button>
+                  <button onClick={nextHalfKickball}
+                    className={`${BTN} mt-1 rounded-xl border border-white/15 bg-white/10 px-4 py-2 text-xs font-black active:scale-95`}>Next Half</button>
                 </div>
-              ) : null}
+              )}
               <button onClick={() => setConfirmFinalizeOpen(true)}
-                className="rounded-xl border border-emerald-500/40 bg-emerald-500/15 px-6 py-3 text-base font-black text-emerald-200 active:scale-95">Finalize</button>
+                className={`${BTN} rounded-xl border border-emerald-500/40 bg-emerald-500/15 px-6 py-3 text-base font-black text-emerald-200 active:scale-95`}>Finalize</button>
               <div className="flex items-center gap-2">
                 <button onClick={() => undoScore("A")} disabled={scoreA <= 0}
-                  className="rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-1.5 text-[10px] font-black text-red-300 active:scale-95 disabled:opacity-20">{leftLabel} -1</button>
+                  className={`${BTN} rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-1.5 text-[10px] font-black text-red-300 active:scale-95 disabled:opacity-20`}>{leftLabel} -1</button>
                 <button onClick={() => undoScore("B")} disabled={scoreB <= 0}
-                  className="rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-1.5 text-[10px] font-black text-red-300 active:scale-95 disabled:opacity-20">{rightLabel} -1</button>
+                  className={`${BTN} rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-1.5 text-[10px] font-black text-red-300 active:scale-95 disabled:opacity-20`}>{rightLabel} -1</button>
               </div>
             </div>
             <button onClick={() => bumpScore("B", 1)}
-              className="flex min-h-[150px] flex-col items-center justify-center rounded-2xl border border-white/10 bg-white/5 px-2 py-3 active:scale-[0.98] active:bg-white/10">
+              className={`${BTN} flex min-h-[150px] flex-col items-center justify-center rounded-2xl border border-white/10 bg-white/5 px-2 py-3 active:scale-[0.98] active:bg-white/10`}>
               <div className="truncate text-sm font-black uppercase tracking-widest text-blue-400/70">{rightLabel}</div>
               <div className="mt-1 text-8xl font-black leading-none tabular-nums text-white">{scoreB}</div>
               <div className="mt-2 text-[10px] font-bold uppercase tracking-wider text-white/30">Tap · +1</div>
@@ -1075,31 +862,28 @@ export default function LiveGamePage() {
               <div className="mt-1 text-5xl font-black tabular-nums text-white">{scoreA}</div>
               <div className="mt-2 flex flex-wrap gap-1.5">
                 <button onClick={() => undoScore("A")} disabled={scoreA <= 0}
-                  className="flex-1 rounded-lg border border-red-500/30 bg-red-500/10 py-2 text-sm font-black text-red-300 active:scale-95 disabled:opacity-20">-1</button>
+                  className={`${BTN} flex-1 rounded-lg border border-red-500/30 bg-red-500/10 py-2.5 text-sm font-black text-red-300 active:scale-95 disabled:opacity-20`}>-1</button>
                 {scoreButtons.map((d) => (
                   <button key={`A-${d}`} onClick={() => bumpScore("A", d)}
-                    className="flex-1 rounded-lg border border-white/15 bg-white/10 py-2 text-sm font-black active:scale-95">+{d}</button>
+                    className={`${BTN} flex-1 rounded-lg border border-white/15 bg-white/10 py-2.5 text-sm font-black active:scale-95`}>+{d}</button>
                 ))}
               </div>
             </div>
             <div className="flex flex-col items-center gap-1 px-2">
               {rules?.clock?.enabled ? (
                 <>
-                  <button onClick={openSetTimeModal}
-                    className="rounded-xl border border-white/10 bg-black/30 px-4 py-2 text-3xl font-black tabular-nums text-white active:scale-[0.98]">
-                    {fmtClock(derived.remaining)}
-                  </button>
+                  <ClockButton game={game} onOpen={openSetTimeModal} big />
                   <div className="flex items-center gap-1.5">
                     {game.timer_running
-                      ? <button onClick={onPause} className="rounded-lg bg-white px-3 py-1.5 text-xs font-black text-black active:scale-95">Pause</button>
-                      : <button onClick={onStart} className="rounded-lg bg-white px-3 py-1.5 text-xs font-black text-black active:scale-95">Start</button>}
+                      ? <button onClick={onPause} className={`${BTN} rounded-lg bg-white px-3 py-1.5 text-xs font-black text-black active:scale-95`}>Pause</button>
+                      : <button onClick={onStart} className={`${BTN} rounded-lg bg-white px-3 py-1.5 text-xs font-black text-black active:scale-95`}>Start</button>}
                     <button onClick={() => onReset(game.duration_seconds || clockPresets[clockPresets.length - 1] || 1800)}
-                      className="rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-black active:scale-95">Reset</button>
+                      className={`${BTN} rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-black active:scale-95`}>Reset</button>
                   </div>
                   <div className="flex gap-1 overflow-x-auto pb-0.5 max-w-[120px]">
                     {clockPresets.map((s) => (
                       <button key={`preset-${s}`} onClick={() => onReset(s)}
-                        className="shrink-0 rounded border border-white/10 bg-white/5 px-1.5 py-1 text-[10px] font-bold active:scale-95">
+                        className={`${BTN} shrink-0 rounded border border-white/10 bg-white/5 px-1.5 py-1 text-[10px] font-bold active:scale-95`}>
                         {fmtClock(s)}
                       </button>
                     ))}
@@ -1121,22 +905,19 @@ export default function LiveGamePage() {
                   <div className="text-[10px] font-black uppercase tracking-widest text-white/40">Series (Bo{seriesFormat})</div>
                   <div className="text-2xl font-black tabular-nums text-white">{seriesA} - {seriesB}</div>
                   <button onClick={endSet} disabled={scoreA === scoreB}
-                    className="rounded-lg border border-amber-400/40 bg-amber-500/15 px-3 py-1.5 text-xs font-black text-amber-200 active:scale-95 disabled:opacity-30">End Set</button>
+                    className={`${BTN} rounded-lg border border-amber-400/40 bg-amber-500/15 px-3 py-1.5 text-xs font-black text-amber-200 active:scale-95 disabled:opacity-30`}>End Set</button>
                 </div>
               )}
               {isSoftballGame && (
                 <div className="flex flex-col items-center gap-1 rounded-lg border border-white/10 bg-white/[0.04] px-3 py-2">
                   <div className="text-[9px] font-black uppercase tracking-widest text-white/40">{inningHalf === "top" ? "▲ TOP" : "▼ BOT"}</div>
                   <div className="text-2xl font-black tabular-nums text-white">{inning}</div>
-                  <div className="text-[9px] font-black uppercase tracking-widest text-white/20 h-3">{inningHalf === "bottom" ? "▲" : ""}</div>
-                  <button onClick={() => {
-                    if (inningHalf === "top") { setInningHalf("bottom"); setBattingTeam(homeTeam); }
-                    else { setInningHalf("top"); setInning((v) => v + 1); setBattingTeam(homeTeam === "A" ? "B" : "A"); setCurrentBatterIdx(0); setOutsThisHalf(0); }
-                  }} className="rounded-lg border border-white/15 bg-white/10 px-3 py-1.5 text-[10px] font-black active:scale-95">Next Half</button>
+                  <button onClick={nextHalfSoftball}
+                    className={`${BTN} rounded-lg border border-white/15 bg-white/10 px-3 py-1.5 text-[10px] font-black active:scale-95`}>Next Half</button>
                 </div>
               )}
               <button onClick={() => setConfirmFinalizeOpen(true)}
-                className="mt-1 rounded-lg border border-emerald-500/40 bg-emerald-500/15 px-4 py-2 text-xs font-black text-emerald-200 active:scale-95">Finalize</button>
+                className={`${BTN} mt-1 rounded-lg border border-emerald-500/40 bg-emerald-500/15 px-4 py-2 text-xs font-black text-emerald-200 active:scale-95`}>Finalize</button>
             </div>
             <div className="text-right">
               <div className="text-[10px] font-black uppercase tracking-widest text-blue-400/60">Away</div>
@@ -1145,19 +926,85 @@ export default function LiveGamePage() {
               <div className="mt-2 flex flex-wrap justify-end gap-1.5">
                 {scoreButtons.map((d) => (
                   <button key={`B-${d}`} onClick={() => bumpScore("B", d)}
-                    className="flex-1 rounded-lg border border-white/15 bg-white/10 py-2 text-sm font-black active:scale-95">+{d}</button>
+                    className={`${BTN} flex-1 rounded-lg border border-white/15 bg-white/10 py-2.5 text-sm font-black active:scale-95`}>+{d}</button>
                 ))}
                 <button onClick={() => undoScore("B")} disabled={scoreB <= 0}
-                  className="flex-1 rounded-lg border border-red-500/30 bg-red-500/10 py-2 text-sm font-black text-red-300 active:scale-95 disabled:opacity-20">-1</button>
+                  className={`${BTN} flex-1 rounded-lg border border-red-500/30 bg-red-500/10 py-2.5 text-sm font-black text-red-300 active:scale-95 disabled:opacity-20`}>-1</button>
               </div>
             </div>
           </div>
         )}
       </div>
 
-      {/* ── BODY — softball gets at-bat UI, everything else gets rosters ── */}
+      {/* ── BODY ── */}
       {isSoftballGame && lineupDone ? (
-        <SoftballAtBatPanel />
+        <div className="p-3 space-y-3">
+          <div className="rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <div className="text-[10px] font-black uppercase tracking-widest text-blue-400/70">
+                  Now Batting · {battingTeam === "A" ? leftLabel : rightLabel}
+                </div>
+                <div className="mt-1 text-3xl font-black text-white">{currentBatter ? currentBatter.player_name : "—"}</div>
+                {currentBatter && (
+                  <div className="mt-0.5 text-xs text-white/40">
+                    #{(currentBatterIdx % Math.max(1, battingRoster.length)) + 1} in order · H: {getVal(currentBatter.player_id, "h")} · HR: {getVal(currentBatter.player_id, "hr")}
+                  </div>
+                )}
+              </div>
+              <div className="flex flex-col items-center gap-1">
+                <div className="text-[9px] font-black uppercase tracking-widest text-white/30">Outs</div>
+                <div className="flex gap-1.5">
+                  {[0, 1, 2].map((i) => (
+                    <div key={i} className={`h-4 w-4 rounded-full border-2 transition-colors ${i < outsThisHalf ? "border-red-400 bg-red-400" : "border-white/20 bg-transparent"}`} />
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-4 gap-2">
+            {AT_BAT_OUTCOMES.map((o) => (
+              <button key={o.key} onClick={() => recordAtBat(o)}
+                className={`${BTN} rounded-xl border py-4 text-lg font-black active:scale-95 ${OUTCOME_COLORS[o.color]}`}>
+                {o.label}
+              </button>
+            ))}
+          </div>
+
+          {atBatResults.filter((r) => r.inning === inning && r.half === inningHalf).length > 0 && (
+            <div className="rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2">
+              <div className="text-[9px] font-black uppercase tracking-widest text-white/30 mb-1">This half inning</div>
+              <div className="flex flex-wrap gap-1.5">
+                {atBatResults.filter((r) => r.inning === inning && r.half === inningHalf).map((r, i) => (
+                  <span key={i} className="rounded-lg border border-white/10 bg-white/5 px-2 py-0.5 text-[10px] font-black text-white/60">
+                    {r.playerName?.split(" ")[0]}: {r.label}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+
+          <div className="grid grid-cols-2 gap-2">
+            {[{ side: "A", roster: playingA, label: leftLabel }, { side: "B", roster: playingB, label: rightLabel }].map(({ side, roster, label }) => (
+              <div key={side} className={`rounded-xl border p-2 ${battingTeam === side ? "border-blue-500/30 bg-blue-500/5" : "border-white/5 bg-white/[0.02]"}`}>
+                <div className="mb-1 text-[9px] font-black uppercase tracking-wider text-white/40">{label} {battingTeam === side ? "· Batting" : ""}</div>
+                <div className="space-y-0.5">
+                  {roster.map((p, idx) => {
+                    const isUp = battingTeam === side && idx === (currentBatterIdx % Math.max(1, roster.length));
+                    return (
+                      <div key={p.player_id} className={`flex items-center gap-1.5 rounded px-1.5 py-0.5 text-[11px] ${isUp ? "bg-blue-500/20 font-black text-white" : "text-white/40"}`}>
+                        <span className="w-3 text-[9px]">{idx + 1}</span>
+                        <span className="truncate">{p.player_name?.split(" ")[0]}</span>
+                        {isUp && <span className="ml-auto text-[9px] text-blue-400">▶</span>}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
       ) : !noStat ? (
         <div className="grid grid-cols-2 gap-2 p-3">
           {[
@@ -1168,7 +1015,7 @@ export default function LiveGamePage() {
               <div className="mb-2 flex items-center justify-between">
                 <div className="text-xs font-black uppercase tracking-wider text-white/60">{label}</div>
                 <button onClick={() => setShow((v) => !v)}
-                  className="rounded-md border border-white/10 bg-white/5 px-2 py-1 text-[10px] font-bold text-white/50">
+                  className={`${BTN} rounded-md border border-white/10 bg-white/5 px-2 py-1 text-[10px] font-bold text-white/50`}>
                   {show ? "Bench ▲" : `Bench (${bench.length}) ▼`}
                 </button>
               </div>
@@ -1176,9 +1023,19 @@ export default function LiveGamePage() {
                 {playing.length ? (
                   playing.map((p) => {
                     const idx = roster.findIndex((x) => x.player_id === p.player_id);
-                    return norm(game.sport) === "hoop"
-                      ? <HoopPlayerRow key={p.player_id} p={p} side={side} />
-                      : <PlayerRow key={p.player_id} p={p} idx={Math.max(0, idx)} total={roster.length} side={side} />;
+                    return isHoop ? (
+                      <HoopPlayerRow key={p.player_id} p={p} side={side} isCap={isCapFn(p.player_id)}
+                        pts={getVal(p.player_id, "pts")} fouls={getVal(p.player_id, "foul")}
+                        onBumpPts={bumpHoopPoints} onUndoPts={undoHoopPoints}
+                        onBumpFoul={(pl) => bumpStat(pl, "foul", 1)} onUndoFoul={(pl) => undoStat(pl, "foul")}
+                        onToggle={togglePlaying} />
+                    ) : (
+                      <PlayerRow key={p.player_id} p={p} idx={Math.max(0, idx)} total={roster.length} side={side}
+                        showBatting={isBattingSport(game?.sport)} isCap={isCapFn(p.player_id)}
+                        statDefs={statDefs} getVal={getVal} chipPad={chipPad} chipText={chipText}
+                        onBumpChip={onBumpChip} onUndoChip={onUndoChip}
+                        onToggle={togglePlaying} onMove={moveInOrder} />
+                    );
                   })
                 ) : (
                   <div className="rounded-lg border border-white/5 bg-white/[0.02] p-2 text-[11px] text-white/40">
@@ -1188,7 +1045,7 @@ export default function LiveGamePage() {
               </div>
               {show && (
                 <div className="mt-2 space-y-1">
-                  {bench.length ? bench.map((p) => <BenchRow key={p.player_id} p={p} />) : <div className="text-[10px] text-white/30">No bench.</div>}
+                  {bench.length ? bench.map((p) => <BenchRow key={p.player_id} p={p} isCap={isCapFn(p.player_id)} onToggle={togglePlaying} />) : <div className="text-[10px] text-white/30">No bench.</div>}
                 </div>
               )}
             </div>
@@ -1202,10 +1059,74 @@ export default function LiveGamePage() {
 
       <div className="px-3 pb-8 text-[10px] text-white/20">ID: {String(game.id)}</div>
 
-      {/* Lineup modal */}
-      {lineupOpen && <LineupModal />}
+      {/* ── LINEUP MODAL (softball) ── */}
+      {lineupOpen && (
+        <div className="fixed inset-0 z-[60] flex items-end bg-black/80 sm:items-center sm:justify-center">
+          <div className="w-full max-w-2xl rounded-t-3xl border border-white/15 bg-[#08172c] p-5 sm:rounded-3xl">
+            <div className="text-xl font-black text-white">Set Lineup</div>
+            <div className="mt-0.5 text-xs text-white/50">Mark who's In, set batting order, pick Home team. Then tap Done — this won't reopen.</div>
 
-      {/* Set time modal */}
+            <div className="mt-4 flex items-center gap-3">
+              <span className="text-xs font-black uppercase tracking-widest text-white/40">Home team:</span>
+              <button onClick={() => setHomeTeam("A")}
+                className={`${BTN} rounded-xl border px-4 py-2 text-xs font-black transition ${homeTeam === "A" ? "border-blue-400/60 bg-blue-500/20 text-blue-200" : "border-white/10 bg-white/5 text-white/40"}`}>
+                {leftLabel}
+              </button>
+              <button onClick={() => setHomeTeam("B")}
+                className={`${BTN} rounded-xl border px-4 py-2 text-xs font-black transition ${homeTeam === "B" ? "border-blue-400/60 bg-blue-500/20 text-blue-200" : "border-white/10 bg-white/5 text-white/40"}`}>
+                {rightLabel}
+              </button>
+            </div>
+
+            <div className="mt-4 grid grid-cols-2 gap-3 max-h-[55vh] overflow-y-auto">
+              {[
+                { label: leftLabel, roster: rosterA, playing: playingA },
+                { label: rightLabel, roster: rosterB, playing: playingB },
+              ].map(({ label, roster, playing }, colIdx) => (
+                <div key={colIdx}>
+                  <div className="mb-2 text-xs font-black uppercase tracking-wider text-white/60">{label}</div>
+                  <div className="space-y-1">
+                    {[...roster].sort((a, b) => Number(a.sort_order || 0) - Number(b.sort_order || 0)).map((p) => (
+                      <div key={p.player_id} className={`flex items-center gap-2 rounded-lg border px-2 py-1.5 ${p.is_playing ? "border-emerald-500/30 bg-emerald-500/10" : "border-white/5 bg-white/[0.02]"}`}>
+                        {p.is_playing
+                          ? <span className="w-4 text-center text-[10px] font-black text-white/50">{playing.findIndex((x) => x.player_id === p.player_id) + 1}</span>
+                          : <span className="w-4" />}
+                        <span className="flex-1 truncate text-[11px] font-semibold text-white">{p.player_name}</span>
+                        <div className="flex items-center gap-0.5">
+                          {p.is_playing && (
+                            <>
+                              <button onClick={() => moveInOrder(p, "up")} className={`${BTN} rounded border border-white/10 bg-white/10 px-1.5 py-1 text-[9px] font-black`}>↑</button>
+                              <button onClick={() => moveInOrder(p, "down")} className={`${BTN} rounded border border-white/10 bg-white/10 px-1.5 py-1 text-[9px] font-black`}>↓</button>
+                            </>
+                          )}
+                          <button onClick={() => togglePlaying(p)}
+                            className={`${BTN} rounded-lg border px-2.5 py-1 text-[10px] font-black ${p.is_playing ? "border-red-500/30 bg-red-500/10 text-red-300" : "border-emerald-500/30 bg-emerald-500/10 text-emerald-300"}`}>
+                            {p.is_playing ? "Out" : "In"}
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            <button
+              onClick={() => {
+                setBattingTeam(homeTeam === "A" ? "B" : "A");
+                setCurrentBatterIdx(0);
+                setOutsThisHalf(0);
+                setLineupDone(true);
+                setLineupOpen(false);
+              }}
+              className={`${BTN} mt-5 w-full rounded-2xl bg-blue-600 py-4 text-base font-black text-white active:scale-[0.98]`}>
+              Done — Start Game
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ── SET TIME MODAL ── */}
       {setTimeOpen && (
         <div className="fixed inset-0 z-50 grid place-items-center bg-black/70 p-4">
           <div className="w-full max-w-sm rounded-2xl border border-white/15 bg-[#08172c] p-5">
@@ -1215,27 +1136,26 @@ export default function LiveGamePage() {
               inputMode="numeric" placeholder="mm:ss"
               className="mt-4 w-full rounded-xl border border-white/15 bg-white/5 px-4 py-3 text-center text-3xl font-black tracking-widest text-white outline-none focus:border-white/30" />
             <div className="mt-4 flex gap-2">
-              <button onClick={() => setSetTimeOpen(false)} className="flex-1 rounded-xl border border-white/15 bg-white/5 px-4 py-3 font-bold">Cancel</button>
-              <button className="flex-1 rounded-xl border border-emerald-400/30 bg-emerald-500/15 px-4 py-3 font-black"
+              <button onClick={() => setSetTimeOpen(false)} className={`${BTN} flex-1 rounded-xl border border-white/15 bg-white/5 px-4 py-3 font-bold`}>Cancel</button>
+              <button className={`${BTN} flex-1 rounded-xl border border-emerald-400/30 bg-emerald-500/15 px-4 py-3 font-black`}
                 onClick={async () => {
                   const seconds = parseMMSS(timeInput);
                   if (seconds === null) { setErr("Time must be in mm:ss format (example: 11:05)."); return; }
                   setSetTimeOpen(false);
                   await setExactRemaining(seconds);
-                  refreshGame();
                 }}>Set Time</button>
             </div>
           </div>
         </div>
       )}
 
-      {/* Finalize modal */}
+      {/* ── FINALIZE MODAL ── */}
       {confirmFinalizeOpen && (
         <div className="fixed inset-0 z-50 grid place-items-center bg-black/70 p-4">
           <div className="w-full max-w-md rounded-2xl border border-white/15 bg-[#08172c] p-5">
             <div className="text-lg font-black">Finalize this game?</div>
             <div className="mt-2 text-sm text-white/60">Locks the score and updates standings + stat leaders.</div>
-            {rules?.clock?.enabled && derived.isRunning && (
+            {rules?.clock?.enabled && game.timer_running && (
               <div className="mt-3 rounded-xl border border-red-400/30 bg-red-500/10 p-3 text-sm text-red-200">Pause the clock before finalizing.</div>
             )}
             {(() => {
@@ -1251,9 +1171,9 @@ export default function LiveGamePage() {
               return null;
             })()}
             <div className="mt-4 flex gap-2">
-              <button onClick={() => setConfirmFinalizeOpen(false)} className="flex-1 rounded-xl border border-white/15 bg-white/5 px-4 py-3 font-bold">Cancel</button>
-              <button disabled={(rules?.clock?.enabled && derived.isRunning) || finalizing}
-                className="flex-1 rounded-xl border border-emerald-400/30 bg-emerald-500/15 px-4 py-3 font-black disabled:opacity-40"
+              <button onClick={() => setConfirmFinalizeOpen(false)} className={`${BTN} flex-1 rounded-xl border border-white/15 bg-white/5 px-4 py-3 font-bold`}>Cancel</button>
+              <button disabled={(rules?.clock?.enabled && game.timer_running) || finalizing}
+                className={`${BTN} flex-1 rounded-xl border border-emerald-400/30 bg-emerald-500/15 px-4 py-3 font-black disabled:opacity-40`}
                 onClick={finalizeGame}>
                 {finalizing ? "Finalizing…" : "Finalize"}
               </button>

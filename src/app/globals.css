@@ -100,3 +100,13 @@ select option {
   background: var(--bc-navy);
   color: var(--bc-white);
 }
+
+/* Kill double-tap-zoom tap swallowing + 300ms delay on all interactive elements */
+button, a, select, input, [role="button"] {
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+button {
+  user-select: none;
+  -webkit-user-select: none;
+}
