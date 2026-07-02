@@ -107,6 +107,17 @@ export default function DisplayPage() {
 
   const [now, setNow] = useState(Date.now());
   const [highlightIndex, setHighlightIndex] = useState(0);
+
+  // Advance highlight photo every 8s while the Highlights scene is active.
+  // Interval-driven instead of img onLoad, which doesn't re-fire for cached
+  // images and caused the same photos to repeat.
+  useEffect(() => {
+    if (scene !== "highlights" || highlights.length < 2) return;
+    const t = setInterval(() => {
+      setHighlightIndex((i) => (i + 1) % highlights.length);
+    }, 8000);
+    return () => clearInterval(t);
+  }, [scene, highlights.length]);
   const [rivalries, setRivalries] = useState([]);
 
   const wrapRef = useRef(null);
@@ -853,7 +864,6 @@ export default function DisplayPage() {
                 src={url}
                 alt=""
                 className="h-full w-full object-contain"
-                onLoad={() => setTimeout(goNext, 8000)}
               />
             )}
           </div>
