@@ -64,8 +64,9 @@ const AT_BAT_OUTCOMES = [
   { key: "go",  label: "GO",  statKey: null, color: "red",     isOut: true  },
   { key: "fo",  label: "FO",  statKey: null, color: "red",     isOut: true  },
   { key: "sf",  label: "SF",  statKey: null, color: "red",     isOut: true  },
+  { key: "dp",  label: "DP",  statKey: null, color: "red",     isOut: true, outs: 2 },
   { key: "e",   label: "E",   statKey: null, color: "orange",  isOut: false },
-  { key: "fc",  label: "FC",  statKey: null, color: "orange",  isOut: false },
+  { key: "fc",  label: "FC",  statKey: null, color: "orange",  isOut: true  },
 ];
 
 const OUTCOME_COLORS = {
@@ -256,14 +257,34 @@ export default function LiveGamePage() {
   const [seriesA, setSeriesA] = useState(0);
   const [seriesB, setSeriesB] = useState(0);
 
-  // Softball
+  // Softball — each team keeps its own spot in the batting order, so
+  // switching halves resumes where that team left off.
   const [lineupOpen, setLineupOpen] = useState(false);
   const [lineupDone, setLineupDone] = useState(false);
   const [homeTeam, setHomeTeam]     = useState("B");
   const [battingTeam, setBattingTeam] = useState("A");
   const [atBatResults, setAtBatResults] = useState([]);
-  const [currentBatterIdx, setCurrentBatterIdx] = useState(0);
+  const [batterIdxA, setBatterIdxA] = useState(0);
+  const [batterIdxB, setBatterIdxB] = useState(0);
   const [outsThisHalf, setOutsThisHalf] = useState(0);
+
+  // Persist softball state into live_games.notes so closing the app (or
+  // switching phones) resumes the game exactly where it was.
+  function saveSoftballState(next = {}) {
+    const g = gameRef.current;
+    if (!g || !isSoftball(g.sport)) return;
+    const payload = {
+      softball: {
+        inning, inningHalf, outsThisHalf, homeTeam, battingTeam,
+        batterIdxA, batterIdxB, lineupDone, atBatResults,
+        ...next,
+      },
+    };
+    supabase.from("live_games")
+      .update({ notes: JSON.stringify(payload), updated_at: new Date().toISOString() })
+      .eq("id", g.id)
+      .then(() => {});
+  }
 
   // Guard only for single-shot actions (advance batter, end set) —
   // NOT for repeatable +1 taps, which counselors fire rapidly on purpose.
@@ -321,7 +342,28 @@ export default function LiveGamePage() {
         const p = parseSeriesNotes(data.notes);
         setSeriesFormat(p.format); setSeriesA(p.seriesA); setSeriesB(p.seriesB);
       }
-      if (isSoftball(data?.sport) && !lineupDone) setLineupOpen(true);
+      if (isSoftball(data?.sport) && !quiet) {
+        // Restore persisted softball state (initial load only — quiet
+        // background syncs must not clobber in-progress local state)
+        let restored = false;
+        try {
+          const parsed = JSON.parse(data.notes || "{}");
+          const sb = parsed.softball;
+          if (sb && sb.lineupDone) {
+            setInning(Number(sb.inning) || 1);
+            setInningHalf(sb.inningHalf === "bottom" ? "bottom" : "top");
+            setOutsThisHalf(Number(sb.outsThisHalf) || 0);
+            setHomeTeam(sb.homeTeam === "A" ? "A" : "B");
+            setBattingTeam(sb.battingTeam === "B" ? "B" : "A");
+            setBatterIdxA(Number(sb.batterIdxA) || 0);
+            setBatterIdxB(Number(sb.batterIdxB) || 0);
+            setAtBatResults(Array.isArray(sb.atBatResults) ? sb.atBatResults : []);
+            setLineupDone(true);
+            restored = true;
+          }
+        } catch {}
+        if (!restored && !lineupDone) setLineupOpen(true);
+      }
     } catch (e) {
       setErr(e?.message ?? String(e));
     } finally {
@@ -616,7 +658,8 @@ export default function LiveGamePage() {
       .sort((a, b) => Number(a.sort_order || 0) - Number(b.sort_order || 0));
     if (!battingRoster.length) return;
 
-    const batter = battingRoster[currentBatterIdx % battingRoster.length];
+    const idx = battingTeam === "A" ? batterIdxA : batterIdxB;
+    const batter = battingRoster[idx % battingRoster.length];
 
     if (outcome.statKey && batter) {
       const key = `${batter.player_id}:${outcome.statKey}`;
@@ -624,29 +667,66 @@ export default function LiveGamePage() {
       addStatEvent(batter, outcome.statKey, 1);
     }
 
-    setAtBatResults((prev) => [...prev, {
+    const newResults = [...atBatResults, {
       playerId: batter.player_id, playerName: batter.player_name,
       outcome: outcome.key, label: outcome.label, inning, half: inningHalf,
-    }]);
+    }];
+    setAtBatResults(newResults);
 
-    if (outcome.isOut) {
-      const newOuts = outsThisHalf + 1;
-      if (newOuts >= 3) {
-        if (inningHalf === "top") {
-          setInningHalf("bottom");
-          setBattingTeam(homeTeam);
-        } else {
-          setInningHalf("top");
-          setInning((v) => v + 1);
-          setBattingTeam(homeTeam === "A" ? "B" : "A");
-        }
-        setCurrentBatterIdx(0);
-        setOutsThisHalf(0);
-        return;
-      }
-      setOutsThisHalf(newOuts);
+    // Batter completed their at-bat — advance THIS team's spot in the order
+    const nextIdx = (idx + 1) % battingRoster.length;
+    if (battingTeam === "A") setBatterIdxA(nextIdx);
+    else setBatterIdxB(nextIdx);
+
+    const outsToAdd = outcome.isOut ? (outcome.outs || 1) : 0;
+    const newOuts = outsThisHalf + outsToAdd;
+
+    if (newOuts >= 3) {
+      // Half over — flip sides. Batting positions are preserved per team.
+      const nextHalfIsBottom = inningHalf === "top";
+      const nextInning = nextHalfIsBottom ? inning : inning + 1;
+      const nextBatting = nextHalfIsBottom ? homeTeam : (homeTeam === "A" ? "B" : "A");
+      setInningHalf(nextHalfIsBottom ? "bottom" : "top");
+      setInning(nextInning);
+      setBattingTeam(nextBatting);
+      setOutsThisHalf(0);
+      saveSoftballState({
+        inning: nextInning, inningHalf: nextHalfIsBottom ? "bottom" : "top",
+        outsThisHalf: 0, battingTeam: nextBatting, atBatResults: newResults,
+        batterIdxA: battingTeam === "A" ? nextIdx : batterIdxA,
+        batterIdxB: battingTeam === "B" ? nextIdx : batterIdxB,
+      });
+      return;
     }
-    setCurrentBatterIdx((prev) => (prev + 1) % battingRoster.length);
+
+    setOutsThisHalf(newOuts);
+    saveSoftballState({
+      outsThisHalf: newOuts, atBatResults: newResults,
+      batterIdxA: battingTeam === "A" ? nextIdx : batterIdxA,
+      batterIdxB: battingTeam === "B" ? nextIdx : batterIdxB,
+    });
+  });
+
+  // Standalone +1 Out — baserunning outs (caught stealing, tagged, etc.).
+  // Adds an out WITHOUT advancing the batting order or logging an at-bat.
+  const addOutOnly = singleShot(async () => {
+    const newOuts = outsThisHalf + 1;
+    if (newOuts >= 3) {
+      const nextHalfIsBottom = inningHalf === "top";
+      const nextInning = nextHalfIsBottom ? inning : inning + 1;
+      const nextBatting = nextHalfIsBottom ? homeTeam : (homeTeam === "A" ? "B" : "A");
+      setInningHalf(nextHalfIsBottom ? "bottom" : "top");
+      setInning(nextInning);
+      setBattingTeam(nextBatting);
+      setOutsThisHalf(0);
+      saveSoftballState({
+        inning: nextInning, inningHalf: nextHalfIsBottom ? "bottom" : "top",
+        outsThisHalf: 0, battingTeam: nextBatting,
+      });
+      return;
+    }
+    setOutsThisHalf(newOuts);
+    saveSoftballState({ outsThisHalf: newOuts });
   });
 
   const endSet = singleShot(async () => {
@@ -664,10 +744,18 @@ export default function LiveGamePage() {
   });
 
   const nextHalfSoftball = singleShot(async () => {
-    if (inningHalf === "top") { setInningHalf("bottom"); setBattingTeam(homeTeam); }
-    else { setInningHalf("top"); setInning((v) => v + 1); setBattingTeam(homeTeam === "A" ? "B" : "A"); }
-    setCurrentBatterIdx(0);
+    // Preserves each team's spot in the batting order — no reset.
+    const nextHalfIsBottom = inningHalf === "top";
+    const nextInning = nextHalfIsBottom ? inning : inning + 1;
+    const nextBatting = nextHalfIsBottom ? homeTeam : (homeTeam === "A" ? "B" : "A");
+    setInningHalf(nextHalfIsBottom ? "bottom" : "top");
+    setInning(nextInning);
+    setBattingTeam(nextBatting);
     setOutsThisHalf(0);
+    saveSoftballState({
+      inning: nextInning, inningHalf: nextHalfIsBottom ? "bottom" : "top",
+      outsThisHalf: 0, battingTeam: nextBatting,
+    });
   });
 
   const nextHalfKickball = singleShot(async () => {
@@ -737,7 +825,8 @@ export default function LiveGamePage() {
   const chipText = superCompact ? "text-[11px]" : "text-sm";
 
   const battingRoster = battingTeam === "A" ? playingA : playingB;
-  const currentBatter = battingRoster.length ? battingRoster[currentBatterIdx % battingRoster.length] : null;
+  const activeBatterIdx = battingTeam === "A" ? batterIdxA : batterIdxB;
+  const currentBatter = battingRoster.length ? battingRoster[activeBatterIdx % battingRoster.length] : null;
 
   const onBumpChip = (p, sd, side, d) => sd.key === "g" && GOAL_AUTO_SCORE_SPORTS.includes(norm(game?.sport)) ? bumpGoalWithScore(p, side, d) : bumpStat(p, sd.key, d);
   const onUndoChip = (p, sd, side)   => sd.key === "g" && GOAL_AUTO_SCORE_SPORTS.includes(norm(game?.sport)) ? undoGoalWithScore(p, side) : undoStat(p, sd.key);
@@ -948,17 +1037,21 @@ export default function LiveGamePage() {
                 <div className="mt-1 text-3xl font-black text-white">{currentBatter ? currentBatter.player_name : "—"}</div>
                 {currentBatter && (
                   <div className="mt-0.5 text-xs text-white/40">
-                    #{(currentBatterIdx % Math.max(1, battingRoster.length)) + 1} in order · H: {getVal(currentBatter.player_id, "h")} · HR: {getVal(currentBatter.player_id, "hr")}
+                    #{(activeBatterIdx % Math.max(1, battingRoster.length)) + 1} in order · H: {getVal(currentBatter.player_id, "h")} · HR: {getVal(currentBatter.player_id, "hr")}
                   </div>
                 )}
               </div>
-              <div className="flex flex-col items-center gap-1">
+              <div className="flex flex-col items-center gap-1.5">
                 <div className="text-[9px] font-black uppercase tracking-widest text-white/30">Outs</div>
                 <div className="flex gap-1.5">
                   {[0, 1, 2].map((i) => (
                     <div key={i} className={`h-4 w-4 rounded-full border-2 transition-colors ${i < outsThisHalf ? "border-red-400 bg-red-400" : "border-white/20 bg-transparent"}`} />
                   ))}
                 </div>
+                <button onClick={addOutOnly}
+                  className={`${BTN} rounded-lg border border-red-500/40 bg-red-500/15 px-3 py-1.5 text-[10px] font-black text-red-300 active:scale-95`}>
+                  +1 Out
+                </button>
               </div>
             </div>
           </div>
@@ -991,7 +1084,7 @@ export default function LiveGamePage() {
                 <div className="mb-1 text-[9px] font-black uppercase tracking-wider text-white/40">{label} {battingTeam === side ? "· Batting" : ""}</div>
                 <div className="space-y-0.5">
                   {roster.map((p, idx) => {
-                    const isUp = battingTeam === side && idx === (currentBatterIdx % Math.max(1, roster.length));
+                    const isUp = battingTeam === side && idx === (activeBatterIdx % Math.max(1, roster.length));
                     return (
                       <div key={p.player_id} className={`flex items-center gap-1.5 rounded px-1.5 py-0.5 text-[11px] ${isUp ? "bg-blue-500/20 font-black text-white" : "text-white/40"}`}>
                         <span className="w-3 text-[9px]">{idx + 1}</span>
@@ -1113,11 +1206,17 @@ export default function LiveGamePage() {
 
             <button
               onClick={() => {
-                setBattingTeam(homeTeam === "A" ? "B" : "A");
-                setCurrentBatterIdx(0);
+                const awayTeam = homeTeam === "A" ? "B" : "A";
+                setBattingTeam(awayTeam);
+                setBatterIdxA(0);
+                setBatterIdxB(0);
                 setOutsThisHalf(0);
                 setLineupDone(true);
                 setLineupOpen(false);
+                saveSoftballState({
+                  battingTeam: awayTeam, batterIdxA: 0, batterIdxB: 0,
+                  outsThisHalf: 0, lineupDone: true, inning: 1, inningHalf: "top",
+                });
               }}
               className={`${BTN} mt-5 w-full rounded-2xl bg-blue-600 py-4 text-base font-black text-white active:scale-[0.98]`}>
               Done — Start Game
