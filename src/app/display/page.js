@@ -108,16 +108,16 @@ export default function DisplayPage() {
   const [now, setNow] = useState(Date.now());
   const [highlightIndex, setHighlightIndex] = useState(0);
 
-  // Advance highlight photo every 8s while the Highlights scene is active.
-  // Interval-driven instead of img onLoad, which doesn't re-fire for cached
-  // images and caused the same photos to repeat.
+  // Advance the highlight photo index continuously, independent of which
+  // scene is showing. Whenever the board lands on Highlights it displays
+  // wherever the rotation currently is — so every visit shows new photos.
   useEffect(() => {
-    if (scene !== "highlights" || highlights.length < 2) return;
+    if (highlights.length < 2) return;
     const t = setInterval(() => {
       setHighlightIndex((i) => (i + 1) % highlights.length);
     }, 8000);
     return () => clearInterval(t);
-  }, [scene, highlights.length]);
+  }, [highlights.length]);
   const [rivalries, setRivalries] = useState([]);
 
   const wrapRef = useRef(null);
