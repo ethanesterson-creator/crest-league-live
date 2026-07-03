@@ -108,19 +108,10 @@ export default function DisplayPage() {
   const [now, setNow] = useState(Date.now());
   const [highlightIndex, setHighlightIndex] = useState(0);
 
-  // Advance the highlight photo index continuously, independent of which
-  // scene is showing. Whenever the board lands on Highlights it displays
-  // wherever the rotation currently is — so every visit shows new photos.
-  useEffect(() => {
-    if (highlights.length < 2) return;
-    const t = setInterval(() => {
-      setHighlightIndex((i) => (i + 1) % highlights.length);
-    }, 8000);
-    return () => clearInterval(t);
-  }, [highlights.length]);
+  
   const [rivalries, setRivalries] = useState([]);
 
-  
+
   const wrapRef = useRef(null);
 
   async function loadAll() {
@@ -818,7 +809,10 @@ export default function DisplayPage() {
       </div>
     );
 
-    const safeIndex = highlightIndex % highlights.length;
+    // Time-derived index: advances every 8s since page load, immune to
+    // re-renders, data refreshes, and remounts. `now` already ticks every
+    // second in this component, keeping this fresh.
+    const safeIndex = Math.floor(Date.now() / 8000) % highlights.length;
     const h = highlights[safeIndex];
 
     const { data } = supabase.storage
@@ -848,7 +842,7 @@ export default function DisplayPage() {
             </div>
           </div>
 
-          <div className="aspect-video bg-black">
+          <div className="h-[calc(100%-96px)] bg-black">
             {h.file_type === "video" ? (
               <video
                 key={h.id}
