@@ -120,6 +120,7 @@ export default function DisplayPage() {
   }, [highlights.length]);
   const [rivalries, setRivalries] = useState([]);
 
+  
   const wrapRef = useRef(null);
 
   async function loadAll() {
