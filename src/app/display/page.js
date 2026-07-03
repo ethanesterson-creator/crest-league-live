@@ -646,11 +646,14 @@ export default function DisplayPage() {
     function statLine(sport, stats) {
       const s = String(sport || "").toLowerCase();
       const v = (k) => Number(stats[k] || 0);
-      if (s === "hoop") return `${v("pts")} PTS · ${v("foul")} F`;
-      if (s === "softball") return `${v("h")} H · ${v("hr")} HR`;
-      if (["euro", "soccer", "hockey", "speedball"].includes(s)) return `${v("g")} G · ${v("a")} A`;
-      if (s === "football") return `${v("td")} TD`;
-      return Object.entries(stats).map(([k, val]) => `${val} ${k.toUpperCase()}`).join(" · ");
+      let parts = [];
+      if (s === "hoop") parts = [[v("pts"), "PTS"], [v("foul"), "F"]];
+      else if (s === "softball") parts = [[v("h"), "H"], [v("hr"), "HR"]];
+      else if (["euro", "soccer", "hockey", "speedball"].includes(s)) parts = [[v("g"), "G"], [v("a"), "A"]];
+      else if (s === "football") parts = [[v("td"), "TD"]];
+      else parts = Object.entries(stats).map(([k, val]) => [val, k.toUpperCase()]);
+      const nonZero = parts.filter(([val]) => val > 0);
+      return (nonZero.length ? nonZero : parts.slice(0, 1)).map(([val, label]) => `${val} ${label}`).join(" · ");
     }
 
     if (!spotlight.length) {
@@ -665,7 +668,7 @@ export default function DisplayPage() {
       <div className="flex h-full flex-col">
         <div className="mb-8 flex items-center justify-between">
           <div>
-            <div className="text-sm font-black uppercase tracking-[0.3em] text-blue-400">Last Night</div>
+            <div className="text-sm font-black uppercase tracking-[0.3em] text-blue-400">Recent</div>
             <div className="text-5xl font-black text-white">Camper Spotlight</div>
           </div>
           <div className="rounded-2xl border border-blue-500/30 bg-blue-500/10 px-6 py-3 text-sm font-black uppercase tracking-widest text-blue-300">
