@@ -253,6 +253,10 @@ export default function LiveGamePage() {
 
   const [inning, setInning]           = useState(1);
   const [inningHalf, setInningHalf]   = useState("top");
+  // Period/quarter counter for clocked sports. Hockey = 3 periods,
+  // Speedball = 8, everything else lets the counselor pick halves/quarters.
+  const [period, setPeriod]           = useState(1);
+  const [periodFmt, setPeriodFmt]     = useState("halves");
   const [seriesFormat, setSeriesFormat] = useState(3);
   const [seriesA, setSeriesA] = useState(0);
   const [seriesB, setSeriesB] = useState(0);
@@ -311,6 +315,24 @@ export default function LiveGamePage() {
   const gameRef = useRef(null);
   useEffect(() => { gameRef.current = game; }, [game]);
 
+  // Network-resilient RPC: camp WiFi drops requests, and supabase-js THROWS
+  // on network failure (iOS shows "TypeError: Load failed") instead of
+  // returning { error }. This retries up to 3 times with backoff and always
+  // resolves to { error } so callers never leave unhandled rejections.
+  async function rpcWithRetry(fn, tries = 3) {
+    for (let i = 0; i < tries; i++) {
+      try {
+        const { error } = await fn();
+        if (!error) return { error: null };
+        if (i === tries - 1) return { error };
+      } catch {
+        if (i === tries - 1) return { error: { message: "⚠️ WiFi dropped — that tap did NOT save. Check the score." } };
+      }
+      await new Promise((r) => setTimeout(r, 700 * (i + 1)));
+    }
+    return { error: null };
+  }
+
   useEffect(() => {
     const on = () => setIsOnline(true);
     const off = () => setIsOnline(false);
@@ -365,21 +387,25 @@ export default function LiveGamePage() {
         if (!restored && !lineupDone) setLineupOpen(true);
       }
     } catch (e) {
-      setErr(e?.message ?? String(e));
+      if (!quiet) setErr(e?.message ?? String(e));
     } finally {
       if (!quiet) setLoading(false);
     }
   }
 
   async function loadEventTotals(g) {
-    const { data } = await supabase.from("live_events").select("player_id, stat_key, delta")
-      .eq("game_id", g.id).eq("event_type", "stat").limit(10000);
-    const totals = {};
-    for (const row of data || []) {
-      const k = `${row.player_id}:${row.stat_key}`;
-      totals[k] = (totals[k] || 0) + Number(row.delta || 0);
+    try {
+      const { data } = await supabase.from("live_events").select("player_id, stat_key, delta")
+        .eq("game_id", g.id).eq("event_type", "stat").limit(10000);
+      const totals = {};
+      for (const row of data || []) {
+        const k = `${row.player_id}:${row.stat_key}`;
+        totals[k] = (totals[k] || 0) + Number(row.delta || 0);
+      }
+      setStatTotals(totals);
+    } catch {
+      // network blip during background sync — keep optimistic totals
     }
-    setStatTotals(totals);
   }
 
   function uniqNonEmpty(arr) { return Array.from(new Set((arr || []).map(norm).filter(Boolean))); }
@@ -498,7 +524,7 @@ export default function LiveGamePage() {
       score_a: side === "A" ? Number(prev.score_a || 0) + d : Number(prev.score_a || 0),
       score_b: side === "B" ? Number(prev.score_b || 0) + d : Number(prev.score_b || 0),
     });
-    supabase.rpc("rpc_add_score", { p_game_id: game.id, p_side: side, p_delta: d })
+    rpcWithRetry(() => supabase.rpc("rpc_add_score", { p_game_id: game.id, p_side: side, p_delta: d }))
       .then(({ error }) => { if (error) setErr(error.message); scheduleGameSync(); });
   }
 
@@ -511,16 +537,16 @@ export default function LiveGamePage() {
       score_a: side === "A" ? Math.max(0, Number(prev.score_a || 0) - 1) : Number(prev.score_a || 0),
       score_b: side === "B" ? Math.max(0, Number(prev.score_b || 0) - 1) : Number(prev.score_b || 0),
     });
-    supabase.rpc("rpc_add_score", { p_game_id: game.id, p_side: side, p_delta: -1 })
+    rpcWithRetry(() => supabase.rpc("rpc_add_score", { p_game_id: game.id, p_side: side, p_delta: -1 }))
       .then(({ error }) => { if (error) setErr(error.message); scheduleGameSync(); });
   }
 
   function addStatEvent(player, statKey, delta) {
-    supabase.rpc("rpc_add_stat", {
+    rpcWithRetry(() => supabase.rpc("rpc_add_stat", {
       p_game_id: game.id, p_league_id: norm(game.league_key), p_sport: norm(game.sport),
       p_player_id: String(player.player_id), p_player_name: String(player.player_name || player.player_id),
       p_team_name: String(player?.team_name || ""), p_stat_key: norm(statKey), p_delta: delta,
-    }).then(({ error }) => { if (error) setErr(error.message); scheduleStatsSync(); });
+    })).then(({ error }) => { if (error) setErr(error.message); scheduleStatsSync(); });
   }
 
   function bumpStat(player, statKey, delta) {
@@ -552,7 +578,7 @@ export default function LiveGamePage() {
       score_b: side === "B" ? Number(prev.score_b || 0) + d : Number(prev.score_b || 0),
     });
     addStatEvent(player, "pts", d);
-    supabase.rpc("rpc_add_score", { p_game_id: game.id, p_side: side, p_delta: d })
+    rpcWithRetry(() => supabase.rpc("rpc_add_score", { p_game_id: game.id, p_side: side, p_delta: d }))
       .then(({ error }) => { if (error) setErr(error.message); scheduleGameSync(); });
   }
 
@@ -569,7 +595,7 @@ export default function LiveGamePage() {
     });
     addStatEvent(player, "pts", -1);
     if (sideScore > 0) {
-      supabase.rpc("rpc_add_score", { p_game_id: game.id, p_side: side, p_delta: -1 })
+      rpcWithRetry(() => supabase.rpc("rpc_add_score", { p_game_id: game.id, p_side: side, p_delta: -1 }))
         .then(({ error }) => { if (error) setErr(error.message); scheduleGameSync(); });
     }
   }
@@ -586,7 +612,7 @@ export default function LiveGamePage() {
       score_b: side === "B" ? Number(prev.score_b || 0) + d : Number(prev.score_b || 0),
     });
     addStatEvent(player, "g", d);
-    supabase.rpc("rpc_add_score", { p_game_id: game.id, p_side: side, p_delta: d })
+    rpcWithRetry(() => supabase.rpc("rpc_add_score", { p_game_id: game.id, p_side: side, p_delta: d }))
       .then(({ error }) => { if (error) setErr(error.message); scheduleGameSync(); });
   }
 
@@ -603,7 +629,7 @@ export default function LiveGamePage() {
     });
     addStatEvent(player, "g", -1);
     if (sideScore > 0) {
-      supabase.rpc("rpc_add_score", { p_game_id: game.id, p_side: side, p_delta: -1 })
+      rpcWithRetry(() => supabase.rpc("rpc_add_score", { p_game_id: game.id, p_side: side, p_delta: -1 }))
         .then(({ error }) => { if (error) setErr(error.message); scheduleGameSync(); });
     }
   }
@@ -828,6 +854,14 @@ export default function LiveGamePage() {
   const activeBatterIdx = battingTeam === "A" ? batterIdxA : batterIdxB;
   const currentBatter = battingRoster.length ? battingRoster[activeBatterIdx % battingRoster.length] : null;
 
+  // Period counter config — only for clocked, non-batting sports
+  const sportNorm = norm(game.sport);
+  const showPeriods = !!rules?.clock?.enabled && !isBattingSport(game.sport);
+  const periodIsFixed = sportNorm === "hockey" || sportNorm === "speedball";
+  const periodMax = sportNorm === "hockey" ? 3 : sportNorm === "speedball" ? 8 : (periodFmt === "halves" ? 2 : 4);
+  const periodLabel = periodIsFixed ? "Period" : (periodFmt === "halves" ? "Half" : "Quarter");
+  const periodPrefix = periodIsFixed ? "P" : (periodFmt === "halves" ? "H" : "Q");
+
   const onBumpChip = (p, sd, side, d) => sd.key === "g" && GOAL_AUTO_SCORE_SPORTS.includes(norm(game?.sport)) ? bumpGoalWithScore(p, side, d) : bumpStat(p, sd.key, d);
   const onUndoChip = (p, sd, side)   => sd.key === "g" && GOAL_AUTO_SCORE_SPORTS.includes(norm(game?.sport)) ? undoGoalWithScore(p, side) : undoStat(p, sd.key);
 
@@ -891,6 +925,23 @@ export default function LiveGamePage() {
                     <button onClick={() => setConfirmFinalizeOpen(true)}
                       className={`${BTN} rounded-lg border border-emerald-500/40 bg-emerald-500/15 px-3 py-2 text-xs font-black text-emerald-200 active:scale-95`}>Finalize</button>
                   </div>
+                  {showPeriods && (
+                    <div className="flex items-center gap-1.5">
+                      <button onClick={() => setPeriod((v) => Math.max(1, v - 1))} disabled={period <= 1}
+                        className={`${BTN} rounded border border-white/10 bg-white/10 px-2.5 py-1 text-xs font-black active:scale-95 disabled:opacity-20`}>-1</button>
+                      <span className="text-sm font-black tabular-nums text-white">{periodPrefix}{period}<span className="text-[10px] text-white/30">/{periodMax}</span></span>
+                      <button onClick={() => setPeriod((v) => Math.min(periodMax, v + 1))} disabled={period >= periodMax}
+                        className={`${BTN} rounded border border-white/10 bg-white/10 px-2.5 py-1 text-xs font-black active:scale-95 disabled:opacity-20`}>+1</button>
+                      {!periodIsFixed && (
+                        <select value={periodFmt}
+                          onChange={(e) => { setPeriodFmt(e.target.value); setPeriod(1); }}
+                          className="rounded border border-white/10 bg-[#0a1628] px-1.5 py-0.5 text-[9px] font-bold text-white outline-none">
+                          <option value="halves">H</option>
+                          <option value="quarters">Q</option>
+                        </select>
+                      )}
+                    </div>
+                  )}
                 </>
               ) : (
                 <button onClick={() => setConfirmFinalizeOpen(true)}
@@ -995,6 +1046,26 @@ export default function LiveGamePage() {
                   <div className="text-2xl font-black tabular-nums text-white">{seriesA} - {seriesB}</div>
                   <button onClick={endSet} disabled={scoreA === scoreB}
                     className={`${BTN} rounded-lg border border-amber-400/40 bg-amber-500/15 px-3 py-1.5 text-xs font-black text-amber-200 active:scale-95 disabled:opacity-30`}>End Set</button>
+                </div>
+              )}
+              {showPeriods && (
+                <div className="flex flex-col items-center gap-1 rounded-lg border border-white/10 bg-white/[0.04] px-3 py-2">
+                  <div className="text-[10px] font-black uppercase tracking-widest text-white/40">{periodLabel}</div>
+                  <div className="text-2xl font-black tabular-nums text-white">{periodPrefix}{period}<span className="text-sm text-white/30">/{periodMax}</span></div>
+                  <div className="flex items-center gap-1.5">
+                    <button onClick={() => setPeriod((v) => Math.max(1, v - 1))} disabled={period <= 1}
+                      className={`${BTN} rounded-lg border border-white/10 bg-white/10 px-3 py-1.5 text-sm font-black active:scale-95 disabled:opacity-20`}>-1</button>
+                    <button onClick={() => setPeriod((v) => Math.min(periodMax, v + 1))} disabled={period >= periodMax}
+                      className={`${BTN} rounded-lg border border-white/10 bg-white/10 px-3 py-1.5 text-sm font-black active:scale-95 disabled:opacity-20`}>+1</button>
+                  </div>
+                  {!periodIsFixed && (
+                    <select value={periodFmt}
+                      onChange={(e) => { setPeriodFmt(e.target.value); setPeriod(1); }}
+                      className="rounded-lg border border-white/10 bg-[#0a1628] px-2 py-1 text-[10px] font-bold text-white outline-none">
+                      <option value="halves">Halves</option>
+                      <option value="quarters">Quarters</option>
+                    </select>
+                  )}
                 </div>
               )}
               {isSoftballGame && (
