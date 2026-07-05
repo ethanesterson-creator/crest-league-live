@@ -101,8 +101,6 @@ export default function StandingsPage() {
     try {
       if (tab === "overall") {
         await loadOverallCamp();
-      } else if (tab === "staff") {
-        await loadStaffStandings();
       } else if (tab === "non_game") {
         await loadNonGamePoints();
       }
@@ -166,17 +164,7 @@ export default function StandingsPage() {
             >
               Overall
             </button>
-            <button
-              onClick={async () => {
-                setTab("staff");
-                setTimeout(() => refreshActiveTab(), 0);
-              }}
-              className={`rounded-xl border px-3 py-2 text-sm font-black ${
-                tab === "staff" ? "border-emerald-400/30 bg-emerald-500/10" : "border-white/15 bg-white/5 hover:bg-white/10"
-              }`}
-            >
-              Staff
-            </button>
+            
             <button
               onClick={async () => {
                 setTab("non_game");
@@ -259,45 +247,6 @@ export default function StandingsPage() {
                       <tr>
                         <td className="py-4 text-white/60" colSpan={2}>
                           No overall points yet.
-                        </td>
-                      </tr>
-                    )}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          ) : null}
-
-          {/* STAFF TAB */}
-          {tab === "staff" ? (
-            <div className="mt-6 rounded-2xl border border-white/10 bg-white/5 p-5">
-              <div className="text-lg font-black">Staff Standings</div>
-              <div className="text-sm text-white/70">Points and record from staff games.</div>
-
-              <div className="mt-4 overflow-x-auto">
-                <table className="w-full text-left text-sm">
-                  <thead className="text-white/70">
-                    <tr>
-                      <th className="py-2">Team</th>
-                      <th className="py-2">W</th>
-                      <th className="py-2">L</th>
-                      <th className="py-2">Pts</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {staffRows.length ? (
-                      staffRows.map((r) => (
-                        <tr key={`staff-${r.team_name}`} className="border-t border-white/10">
-                          <td className="py-3 font-extrabold">{r.team_name}</td>
-                          <td className="py-3">{r.wins}</td>
-                          <td className="py-3">{r.losses}</td>
-                          <td className="py-3 font-black">{r.league_points}</td>
-                        </tr>
-                      ))
-                    ) : (
-                      <tr>
-                        <td className="py-4 text-white/60" colSpan={4}>
-                          No staff standings yet. Finalize a staff game to populate it.
                         </td>
                       </tr>
                     )}

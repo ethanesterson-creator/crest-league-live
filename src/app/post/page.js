@@ -281,6 +281,10 @@ export default function PostGamesPage() {
       if (teamErr) throw new Error(teamErr);
 
       const finalLevel = matchupType === "full_team" ? "FULL" : matchupType === "crest_cup" ? "A" : lv;
+
+      if (matchupType === "two_team" && finalLevel === "FULL") {
+        throw new Error("FULL level is only for Full Team matchups. Pick A, B, C, or D for a 2v2 team game.");
+      }
       const finalLeagueKey = matchupType === "crest_cup" ? "crest_cup" : lk;
 
       // Same hard safety net as the live Create Game form — never create a

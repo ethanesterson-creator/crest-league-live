@@ -373,6 +373,11 @@ export default function HomePage() {
     const duration = clockEnabled ? Number(preset || 0) : 0;
 
     const finalLevel = matchupType === "full_team" ? "FULL" : matchupType === "crest_cup" ? "A" : String(level).toUpperCase();
+
+    if (matchupType === "two_team" && finalLevel === "FULL") {
+      setErr("FULL level is only for Full Team matchups. Pick A, B, C, or D for a 2v2 team game.");
+      return;
+    }
     const finalLeagueKey = matchupType === "crest_cup" ? "crest_cup" : norm(leagueKey);
 
     // Hard safety net: confirm a real points_rules row exists for the exact
