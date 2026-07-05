@@ -90,10 +90,8 @@ function computeRivalries(rows) {
 }
 
 export default function DisplayPage() {
-  const [scene, setScene] = useState("standings");
-  const [league, setLeague] = useState("seniors");
+  const [scene, setScene] = useState("camp");
 
-  const [standings, setStandings] = useState([]);
   const [campStandings, setCampStandings] = useState([]);
   const [liveGames, setLiveGames] = useState([]);
   const [finalGames, setFinalGames] = useState([]);
@@ -106,7 +104,6 @@ export default function DisplayPage() {
   const [autoRefresh, setAutoRefresh] = useState(true);
 
   const [now, setNow] = useState(Date.now());
-  const [highlightIndex, setHighlightIndex] = useState(0);
 
   
   const [rivalries, setRivalries] = useState([]);
@@ -115,16 +112,6 @@ export default function DisplayPage() {
   const wrapRef = useRef(null);
 
   async function loadAll() {
-    // standings
-    const { data: standingsData } = await supabase
-      .from("standings")
-      .select("*")
-      .eq("league_id", league)
-      .eq("sport", "overall")
-      .order("league_points", { ascending: false });
-
-    setStandings(standingsData || []);
-
    // camp standings — aggregate points across all leagues per team, INCLUDING non-game points
    const { data: allStandings } = await supabase
   .from("standings")
@@ -234,7 +221,7 @@ export default function DisplayPage() {
         .from("live_games")
         .select("id, sport, league_key")
         .eq("status", "final")
-        .gte("created_at", cutoff);
+        .gte("updated_at", cutoff);
 
       const recentIds = (recentGames || []).map((g) => g.id);
 
@@ -345,7 +332,7 @@ export default function DisplayPage() {
 
   useEffect(() => {
     loadAll();
-  }, [league]);
+  }, []);
 
   useEffect(() => {
     const t = setInterval(() => {
@@ -363,7 +350,7 @@ export default function DisplayPage() {
     }, 15000);
 
     return () => clearInterval(t);
-  }, [autoRefresh, league]);
+  }, [autoRefresh]);
 
  useEffect(() => {
     if (!autoRotate) return;
@@ -377,10 +364,6 @@ export default function DisplayPage() {
         const idx = SCENES.indexOf(prevScene);
         const safeIdx = idx === -1 ? 0 : idx;
         const nextScene = SCENES[(safeIdx + 1) % SCENES.length];
-
-        if (nextScene === "highlights") {
-          setHighlightIndex(0);
-        }
 
         return nextScene;
       });
@@ -400,8 +383,10 @@ export default function DisplayPage() {
   const finals = finalGames.slice(0, 6).map((g) => {
     const a = Number(g.score_a || 0);
     const b = Number(g.score_b || 0);
-    const winner = a > b ? g.team_a : g.team_b;
-    const loser = a > b ? g.team_b : g.team_a;
+    const sideA = [g.team_a, g.team_a2].filter(Boolean).join(" + ");
+    const sideB = [g.team_b, g.team_b2].filter(Boolean).join(" + ");
+    const winner = a > b ? sideA : sideB;
+    const loser = a > b ? sideB : sideA;
     const bowl = g.is_bowl_game ? `${String(g.bowl_name || "BOWL").toUpperCase()}: ` : "";
     return `FINAL: ${bowl}${winner} defeats ${loser}, ${Math.max(a, b)}-${Math.min(a, b)}`;
   });
@@ -432,160 +417,7 @@ export default function DisplayPage() {
   }
 
   /* ===== DATA HELPERS ===== */
-    function renderStandings() {
-    return (
-      <div className="grid h-full grid-cols-1 gap-6 xl:grid-cols-2">
-        <div className="rounded-[32px] border border-white/10 bg-gradient-to-br from-slate-950 to-slate-900 p-8 shadow-2xl">
-          <div className="mb-8 flex items-center justify-between">
-            <div>
-              <div className="text-sm font-black uppercase tracking-[0.3em] text-blue-500">
-                Crest League
-              </div>
-              <div className="text-5xl font-black text-white">
-                {fmtLeague(league)} Standings
-              </div>
-            </div>
-
-            <div className="rounded-2xl border border-blue-500/40 bg-blue-500/15 px-6 py-4">
-              <div className="text-xs font-bold uppercase tracking-widest text-blue-300">
-                LIVE TABLE
-              </div>
-            </div>
-          </div>
-
-          <div className="overflow-hidden rounded-3xl border border-white/10">
-            <table className="w-full">
-              <thead className="bg-white/5">
-                <tr className="text-left text-lg font-black text-white/70">
-                  <th className="px-6 py-5">TEAM</th>
-                  <th className="px-6 py-5 text-center">W</th>
-                  <th className="px-6 py-5 text-center">L</th>
-                  <th className="px-6 py-5 text-center">PTS</th>
-                </tr>
-              </thead>
-
-              <tbody>
-                {standings.map((t, i) => (
-                  <tr
-                    key={`${t.team_name}-${i}`}
-                    className={cx(
-                      "border-t border-white/5",
-                      i === 0 && "bg-blue-500/10"
-                    )}
-                  >
-                    <td className="px-6 py-6 text-3xl font-black text-white">
-                      #{i + 1} {t.team_name}
-                    </td>
-
-                    <td className="px-6 py-6 text-center text-3xl font-black text-white">
-                      {t.wins}
-                    </td>
-
-                    <td className="px-6 py-6 text-center text-3xl font-black text-white/70">
-                      {t.losses}
-                    </td>
-
-                    <td className="px-6 py-6 text-center text-4xl font-black text-blue-400">
-                      {Number(t.league_points || 0)}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-
-        <div className="flex flex-col gap-6">
-          <div className="rounded-[32px] border border-white/10 bg-gradient-to-br from-blue-950/40 to-slate-900 p-8">
-            <div className="text-lg font-black uppercase tracking-widest text-blue-400">
-              League Status
-            </div>
-
-            <div className="mt-4 text-6xl font-black text-white">
-              {liveGames.length}
-            </div>
-
-            <div className="mt-2 text-xl font-bold text-white/70">
-              Games currently live
-            </div>
-          </div>
-
-          <div className="flex-1 rounded-[32px] border border-white/10 bg-gradient-to-br from-slate-900 to-black p-8">
-            <div className="mb-6 text-3xl font-black text-white">
-              Recent Finals
-            </div>
-
-            <div className="space-y-4">
-              {finalGames.slice(0, 5).map((g) => (
-                <div
-                  key={g.id}
-                  className="rounded-2xl border border-white/10 bg-white/[0.03] p-5"
-                >
-                  <div className="text-sm font-black uppercase tracking-widest text-blue-400">
-                    {fmtLeague(g.league_id)} • {fmtSport(g.sport)}
-                  </div>
-
-                  <div className="mt-2 text-2xl font-black text-white">
-                    {g.team_a} vs {g.team_b}
-                  </div>
-
-                  <div className="mt-3 text-5xl font-black text-white">
-                    {g.score_a} - {g.score_b}
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  function renderLiveGames() {
-    if (!liveGames.length) return (
-      <div className="flex h-full items-center justify-center">
-        <div className="text-center">
-          <div className="text-6xl font-black text-white/20">—</div>
-          <div className="mt-4 text-2xl font-black uppercase tracking-widest text-white/30">No Games Live Right Now</div>
-        </div>
-      </div>
-    );
-
-    return (
-      <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
-        {liveGames.map((g) => (
-          <div
-            key={g.id}
-            className="rounded-[32px] border border-blue-500/20 bg-gradient-to-br from-blue-950/20 to-slate-950 p-8 shadow-2xl"
-          >
-            <div className="mb-5 flex items-center justify-between">
-              <div className="rounded-full bg-blue-600 px-4 py-2 text-sm font-black uppercase tracking-widest text-white">
-                LIVE
-              </div>
-
-              <div className="text-sm font-bold uppercase tracking-widest text-white/50">
-                {fmtLeague(g.league_id)} • {fmtSport(g.sport)}
-              </div>
-            </div>
-
-            <div className="text-4xl font-black text-white">
-              {g.team_a}
-            </div>
-
-            <div className="my-4 text-center text-7xl font-black text-blue-400">
-              {g.score_a} - {g.score_b}
-            </div>
-
-            <div className="text-right text-4xl font-black text-white">
-              {g.team_b}
-            </div>
-          </div>
-        ))}
-      </div>
-    );
-  }
-
-  function renderRivalries() {
+      function renderRivalries() {
     if (!rivalries.length) {
       return (
         <div className="flex h-full items-center justify-center text-2xl font-black text-white/40">
@@ -824,10 +656,6 @@ export default function DisplayPage() {
 
     const url = data?.publicUrl;
 
-    function goNext() {
-      setHighlightIndex((i) => (i + 1) % highlights.length);
-    }
-
     return (
       <div className="grid grid-cols-1 gap-8 h-full">
         <div className="overflow-hidden rounded-[40px] border border-white/10 bg-black">
@@ -854,7 +682,6 @@ export default function DisplayPage() {
                 muted
                 playsInline
                 className="h-full w-full object-contain"
-                onEnded={goNext}
               />
             ) : (
               <img

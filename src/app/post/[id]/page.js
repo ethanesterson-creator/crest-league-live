@@ -18,15 +18,14 @@ function matchupLabel(a1, a2) {
 
 function getStatKeysForSport(sport) {
   const s = String(sport ?? "").toLowerCase();
-  if (s === "hoop") return ["PTS", "AST", "REB", "BLK"];
-  if (s === "soccer") return ["G", "A", "S"];
-  if (s === "speedball") return ["G", "A", "S"];
-  if (s === "euro") return ["G", "A", "S"];
-  if (s === "hockey") return ["G", "A", "S"];
-  if (s === "softball") return ["H", "HR", "SO", "RBI"];
-  if (s === "kickball") return ["R", "HR", "RBI", "K"]; // optional; keep or adjust later
-  if (s === "volleyball") return ["Aces", "Kills"];
-  if (s === "football") return ["TD", "INT"];
+  // Matches the live scoring page exactly — no phantom stat categories.
+  if (s === "hoop") return ["PTS", "F"];
+  if (s === "soccer") return ["G", "A"];
+  if (s === "speedball") return ["G", "A"];
+  if (s === "euro") return ["G", "A"];
+  if (s === "hockey") return ["G", "A"];
+  if (s === "softball") return ["H", "HR"];
+  if (s === "football") return ["TD"];
   return [];
 }
 
@@ -277,7 +276,7 @@ export default function PostDraftEditorPage() {
     const { error } = await supabase.rpc("rpc_add_stat", {
       p_game_id: id,
       p_league_id: norm(game?.league_key),
-      p_sport: String(game?.sport ?? ""),
+      p_sport: norm(game?.sport),
       p_player_id: String(player.player_id ?? player.id ?? ""),
       p_player_name: String(player.player_name ?? ""),
       p_team_name: teamName,
@@ -392,6 +391,14 @@ export default function PostDraftEditorPage() {
 
     setFinalizing(true);
     try {
+      // C1 fix: ALWAYS write the typed score to the DB before finalizing.
+      // finalize_game reads the DB score — without this, finalizing with an
+      // unsaved score silently finalized 0-0 (or stale numbers).
+      const { error: scoreErr } = await supabase.from("live_games")
+        .update({ score_a: sa, score_b: sb })
+        .eq("id", id);
+      if (scoreErr) { setErr(scoreErr.message); return; }
+
       const { error } = await supabase.rpc("finalize_game", { gid: id });
       if (error) {
         setErr(error.message);

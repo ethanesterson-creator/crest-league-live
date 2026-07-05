@@ -26,7 +26,6 @@ export const SPORT_RULES = {
     scoreButtons: [1, 2, 3],
     stats: [
       { key: "pts", label: "PTS", deltas: [1, 2, 3] },
-      { key: "ast", label: "AST", deltas: [1] },
       { key: "foul", label: "F", deltas: [1] },
     ],
   },

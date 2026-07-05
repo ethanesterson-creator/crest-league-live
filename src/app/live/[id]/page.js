@@ -271,6 +271,9 @@ export default function LiveGamePage() {
   const [batterIdxA, setBatterIdxA] = useState(0);
   const [batterIdxB, setBatterIdxB] = useState(0);
   const [outsThisHalf, setOutsThisHalf] = useState(0);
+  // Single-level undo: snapshot of everything BEFORE the last at-bat /
+  // +1 Out, plus which stat (if any) to reverse. Survives half-flips.
+  const [lastAtBatSnap, setLastAtBatSnap] = useState(null);
 
   // Persist softball state into live_games.notes so closing the app (or
   // switching phones) resumes the game exactly where it was.
@@ -287,7 +290,7 @@ export default function LiveGamePage() {
     supabase.from("live_games")
       .update({ notes: JSON.stringify(payload), updated_at: new Date().toISOString() })
       .eq("id", g.id)
-      .then(() => {});
+      .then(() => {}, () => {}); // network blip — state re-saves on next action
   }
 
   // Guard only for single-shot actions (advance batter, end set) —
@@ -411,6 +414,7 @@ export default function LiveGamePage() {
   function uniqNonEmpty(arr) { return Array.from(new Set((arr || []).map(norm).filter(Boolean))); }
 
   async function ensureRoster(g) {
+    try {
     const { data: r1 } = await supabase.from("game_roster")
       .select("game_id, player_id, player_name, team_side, team_name, is_playing, sort_order")
       .eq("game_id", g.id).order("team_side").order("sort_order").limit(5000);
@@ -460,6 +464,9 @@ export default function LiveGamePage() {
 
     setRosterA((r2 || []).filter((x) => x.team_side === "A"));
     setRosterB((r2 || []).filter((x) => x.team_side === "B"));
+    } catch {
+      setErr("⚠️ Couldn't load rosters — check WiFi and refresh.");
+    }
   }
 
   useEffect(() => { if (gameId) loadGame(); /* eslint-disable-next-line */ }, [gameId]);
@@ -478,12 +485,17 @@ export default function LiveGamePage() {
   }, [game?.id]);
 
   async function updateLiveGame(patch) {
-    const { data, error } = await supabase.from("live_games")
-      .update({ ...patch, updated_at: new Date().toISOString() })
-      .eq("id", game.id).select("*").single();
-    if (error) { setErr(error.message); return null; }
-    setGame(data);
-    return data;
+    try {
+      const { data, error } = await supabase.from("live_games")
+        .update({ ...patch, updated_at: new Date().toISOString() })
+        .eq("id", game.id).select("*").single();
+      if (error) { setErr(error.message); return null; }
+      setGame(data);
+      return data;
+    } catch {
+      setErr("⚠️ WiFi dropped — that didn't save. Try again.");
+      return null;
+    }
   }
 
   // ── Timer handlers (compute remaining at call time) ───────────────────────
@@ -650,9 +662,11 @@ export default function LiveGamePage() {
     if (side === "A") setRosterA(apply); else setRosterB(apply);
 
     const patch = next && isBatting ? { is_playing: next, sort_order: newSortOrder } : { is_playing: next };
-    const { error } = await supabase.from("game_roster").update(patch).eq("game_id", player.game_id).eq("player_id", player.player_id);
-    if (error) {
-      setErr(error.message);
+    try {
+      const { error } = await supabase.from("game_roster").update(patch).eq("game_id", player.game_id).eq("player_id", player.player_id);
+      if (error) throw error;
+    } catch (e) {
+      setErr(e?.message || "⚠️ WiFi dropped — In/Out didn't save. Tap again.");
       const revert = (arr) => arr.map((p) => p.player_id === player.player_id ? { ...p, is_playing: !next } : p);
       if (side === "A") setRosterA(revert); else setRosterB(revert);
     }
@@ -672,8 +686,12 @@ export default function LiveGamePage() {
     next[j]   = { ...b, sort_order: a.sort_order };
     next.sort((x, y) => Number(x.sort_order || 0) - Number(y.sort_order || 0));
     if (side === "A") setRosterA(next); else setRosterB(next);
-    await supabase.from("game_roster").update({ sort_order: b.sort_order }).eq("game_id", a.game_id).eq("player_id", a.player_id);
-    await supabase.from("game_roster").update({ sort_order: a.sort_order }).eq("game_id", b.game_id).eq("player_id", b.player_id);
+    try {
+      await supabase.from("game_roster").update({ sort_order: b.sort_order }).eq("game_id", a.game_id).eq("player_id", a.player_id);
+      await supabase.from("game_roster").update({ sort_order: a.sort_order }).eq("game_id", b.game_id).eq("player_id", b.player_id);
+    } catch {
+      // order saved locally; server order reconciles on next load
+    }
   }
 
   // ── Softball at-bat (single-shot guarded — advancing twice is harmful) ───
@@ -686,6 +704,13 @@ export default function LiveGamePage() {
 
     const idx = battingTeam === "A" ? batterIdxA : batterIdxB;
     const batter = battingRoster[idx % battingRoster.length];
+
+    // Snapshot state BEFORE this at-bat for single-level undo
+    setLastAtBatSnap({
+      inning, inningHalf, outsThisHalf, battingTeam, batterIdxA, batterIdxB,
+      atBatResults,
+      statReversal: outcome.statKey && batter ? { player: batter, statKey: outcome.statKey } : null,
+    });
 
     if (outcome.statKey && batter) {
       const key = `${batter.player_id}:${outcome.statKey}`;
@@ -736,6 +761,10 @@ export default function LiveGamePage() {
   // Standalone +1 Out — baserunning outs (caught stealing, tagged, etc.).
   // Adds an out WITHOUT advancing the batting order or logging an at-bat.
   const addOutOnly = singleShot(async () => {
+    setLastAtBatSnap({
+      inning, inningHalf, outsThisHalf, battingTeam, batterIdxA, batterIdxB,
+      atBatResults, statReversal: null,
+    });
     const newOuts = outsThisHalf + 1;
     if (newOuts >= 3) {
       const nextHalfIsBottom = inningHalf === "top";
@@ -762,11 +791,41 @@ export default function LiveGamePage() {
     const newSA = sa > sb ? seriesA + 1 : seriesA;
     const newSB = sb > sa ? seriesB + 1 : seriesB;
     const notes = stringifySeriesNotes(seriesFormat, newSA, newSB);
-    const { data, error } = await supabase.from("live_games")
-      .update({ score_a: 0, score_b: 0, notes, updated_at: new Date().toISOString() })
-      .eq("id", game.id).select("*").single();
-    if (error) { setErr(error.message); return; }
-    setGame(data); setSeriesA(newSA); setSeriesB(newSB);
+    try {
+      const { data, error } = await supabase.from("live_games")
+        .update({ score_a: 0, score_b: 0, notes, updated_at: new Date().toISOString() })
+        .eq("id", game.id).select("*").single();
+      if (error) { setErr(error.message); return; }
+      setGame(data); setSeriesA(newSA); setSeriesB(newSB);
+    } catch {
+      setErr("⚠️ WiFi dropped — set didn't end. Tap End Set again.");
+    }
+  });
+
+  // Restores the exact pre-tap state (outs, order, half, inning, batting
+  // team) and reverses the logged stat if there was one. One level deep.
+  const undoLastAtBat = singleShot(async () => {
+    if (!lastAtBatSnap) return;
+    const s = lastAtBatSnap;
+    setInning(s.inning);
+    setInningHalf(s.inningHalf);
+    setOutsThisHalf(s.outsThisHalf);
+    setBattingTeam(s.battingTeam);
+    setBatterIdxA(s.batterIdxA);
+    setBatterIdxB(s.batterIdxB);
+    setAtBatResults(s.atBatResults);
+    if (s.statReversal) {
+      const { player, statKey } = s.statReversal;
+      const key = `${player.player_id}:${statKey}`;
+      setStatTotals((prev) => ({ ...prev, [key]: Math.max(0, (prev[key] || 0) - 1) }));
+      addStatEvent(player, statKey, -1);
+    }
+    setLastAtBatSnap(null);
+    saveSoftballState({
+      inning: s.inning, inningHalf: s.inningHalf, outsThisHalf: s.outsThisHalf,
+      battingTeam: s.battingTeam, batterIdxA: s.batterIdxA, batterIdxB: s.batterIdxB,
+      atBatResults: s.atBatResults,
+    });
   });
 
   const nextHalfSoftball = singleShot(async () => {
@@ -803,6 +862,8 @@ export default function LiveGamePage() {
         const { error } = await supabase.rpc("finalize_game", { gid: game.id });
         if (error) { setErr(error.message); return; }
         router.push("/");
+      } catch {
+        setErr("⚠️ WiFi dropped — game did NOT finalize. Tap Finalize again.");
       } finally { setFinalizing(false); }
       return;
     }
@@ -820,6 +881,8 @@ export default function LiveGamePage() {
       const { error } = await supabase.rpc("finalize_game", { gid: game.id });
       if (error) { setErr(error.message); return; }
       router.push("/");
+    } catch {
+      setErr("⚠️ WiFi dropped — game did NOT finalize. Tap Finalize again.");
     } finally { setFinalizing(false); }
   }
 
@@ -1135,6 +1198,13 @@ export default function LiveGamePage() {
               </button>
             ))}
           </div>
+
+          {lastAtBatSnap && (
+            <button onClick={undoLastAtBat}
+              className={`${BTN} w-full rounded-xl border border-white/15 bg-white/5 py-3 text-sm font-black text-white/70 active:scale-[0.98]`}>
+              ↩ Undo Last At-Bat
+            </button>
+          )}
 
           {atBatResults.filter((r) => r.inning === inning && r.half === inningHalf).length > 0 && (
             <div className="rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2">

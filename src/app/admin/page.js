@@ -306,6 +306,14 @@ export default function AdminPage() {
 
       if (error) throw error;
 
+      // Keep stat leaderboards in sync — without this, traded players show
+      // their old team on the Leaders pages until manually fixed in SQL.
+      await supabase
+        .from("player_totals")
+        .update({ team_name: tradeToTeam })
+        .eq("player_id", String(player.id))
+        .eq("team_name", tradeFromTeam);
+
       setMsg(`✅ Traded ${fullName}: ${tradeFromTeam} → ${tradeToTeam} (${updated.league_id}).`);
       setConfirmText("");
 

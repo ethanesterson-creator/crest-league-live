@@ -317,7 +317,7 @@ export default function PostGamesPage() {
         score_b: 0,
 
         // Phase 2: staff game tagging (requires column on live_games; if missing you'll see an error)
-        is_staff_game: !!staff,
+        is_staff_game: false,
       };
 
       const { data, error } = await supabase.from("live_games").insert([row]).select("id").single();
