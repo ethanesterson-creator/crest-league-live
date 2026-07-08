@@ -328,6 +328,7 @@ export default function PostDraftEditorPage() {
       .select("id, first_name, last_name, team_name, league_id")
       .eq("league_id", lk)
       .in("team_name", allTeams)
+      eq("departed", false)
       .limit(5000);
 
     if (error) {

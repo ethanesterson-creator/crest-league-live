@@ -344,6 +344,32 @@ export default function LiveGamePage() {
     return () => { window.removeEventListener("online", on); window.removeEventListener("offline", off); };
   }, []);
 
+  // Keep the phone screen awake during a live game. Re-acquires the lock
+  // when the counselor switches apps and comes back (locks auto-release
+  // on tab switch, so without the visibility handler it would only work
+  // until the first interruption).
+  useEffect(() => {
+    let lock = null;
+    let released = false;
+    async function acquire() {
+      try {
+        if ("wakeLock" in navigator) {
+          lock = await navigator.wakeLock.request("screen");
+        }
+      } catch {}
+    }
+    function onVisible() {
+      if (document.visibilityState === "visible" && !released) acquire();
+    }
+    acquire();
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      released = true;
+      document.removeEventListener("visibilitychange", onVisible);
+      try { lock?.release(); } catch {}
+    };
+  }, []);
+
   const rules = getSportRules(game?.sport);
 
   useEffect(() => {
@@ -439,8 +465,8 @@ export default function LiveGamePage() {
     }
 
     const pq = mt === "crest_cup"
-      ? supabase.from("players").select("id, first_name, last_name, team_name, league_id").in("team_name", allTeams).limit(5000)
-      : supabase.from("players").select("id, first_name, last_name, team_name, league_id").eq("league_id", lk).in("team_name", allTeams).limit(5000);
+      ? supabase.from("players").select("id, first_name, last_name, team_name, league_id").in("team_name", allTeams).eq("departed", false).limit(5000)
+      : supabase.from("players").select("id, first_name, last_name, team_name, league_id").eq("league_id", lk).in("team_name", allTeams).eq("departed", false).limit(5000);
 
     const { data: players } = await pq;
     const oA = { v: 0 }, oB = { v: 0 };
