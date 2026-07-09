@@ -314,6 +314,15 @@ export default function AdminPage() {
         .eq("player_id", String(player.id))
         .eq("team_name", tradeFromTeam);
 
+      // Also retag their historical stat events. If old events keep the old
+      // team name, rebuild_leaderboards hits a duplicate-key collision and
+      // every rebuild fails until it's fixed manually in SQL.
+      await supabase
+        .from("live_events")
+        .update({ team_name: tradeToTeam })
+        .eq("player_id", String(player.id))
+        .eq("team_name", tradeFromTeam);
+
       setMsg(`✅ Traded ${fullName}: ${tradeFromTeam} → ${tradeToTeam} (${updated.league_id}).`);
       setConfirmText("");
 
