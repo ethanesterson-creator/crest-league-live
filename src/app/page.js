@@ -75,6 +75,7 @@ function matchupLabel(a1, a2) {
 export default function HomePage() {
   const [status, setStatus] = useState("Checking…");
   const [err, setErr] = useState("");
+  const [creating, setCreating] = useState(false);
   const [games, setGames] = useState([]);
 
   const [leagues, setLeagues] = useState([]);
@@ -357,6 +358,9 @@ export default function HomePage() {
   }, [leagueKey, teamA, teamA2, teamB, teamB2, matchupType]);
 
   async function createGame() {
+    if (creating) return;
+    setCreating(true);
+    try {
     setErr("");
 
     if (!canCreate) {
@@ -448,6 +452,9 @@ export default function HomePage() {
 
     await loadGames();
     window.location.href = `/live/${data.id}`;
+    } finally {
+      setCreating(false);
+    }
   }
 
   async function deleteGame(id) {
@@ -790,11 +797,11 @@ export default function HomePage() {
 
           <button
             onClick={createGame}
-            disabled={!canCreate}
+            disabled={!canCreate || creating}
             className={`mt-4 w-full rounded-2xl px-4 py-3 text-lg font-extrabold shadow
-              ${canCreate ? "bg-emerald-500 text-slate-950 hover:bg-emerald-400" : "bg-slate-800 text-slate-400"}`}
+              ${canCreate && !creating ? "bg-emerald-500 text-slate-950 hover:bg-emerald-400" : "bg-slate-800 text-slate-400"}`}
           >
-            Create Game
+            {creating ? "Creating…" : "Create Game"}
           </button>
 
           {err ? <div className="mt-3 rounded-xl border border-red-900 bg-red-950/50 p-3 text-sm text-red-200">{err}</div> : null}
