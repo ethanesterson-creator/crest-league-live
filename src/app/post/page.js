@@ -3,28 +3,14 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { supabase } from "@/lib/supabase";
-
+import { useAppMode } from "@/lib/useAppMode";
 const SPORTS = ["Hoop", "Soccer", "Softball", "Kickball", "Volleyball", "Football", "Speedball", "Euro", "Hockey", "Newcomb"];
 const FALLBACK_LEVELS = ["A", "B", "C", "D", "E", "F"];
 const MODES = ["5v5", "6v6", "7v7", "8v8", "9v9", "10v10", "11v11"];
 
 // Fixed reasons (kept in sync with non_game_point_reasons view in Supabase)
-const NON_GAME_REASONS = [
-  "Spirit",
-  "Cheering / Loudest Section",
-  "Sportsmanship",
-  "Friday Night Songs",
-  "Community / Bunk Pride",
-  "Neb Events",
-  "Highlight Game",
-  "Staff Game",
-  "Bowl Game Bonus",
-  "Evening Activity",
-  "Sweep",
-  "Pickleball",
-  "Bombardment",
-  "Frisbee",
-  "Other",
+const CW_NON_GAME_REASONS = [
+  "Tugs", "Cleanliness", "Lateness", "Other",
 ];
 
 function norm(s) {
@@ -311,17 +297,17 @@ export default function PostGamesPage() {
         level: finalLevel,
         mode,
 
-        matchup_type: matchupType,
+       matchup_type: isCW ? "single" : matchupType,
         team_a1: norm(teamA),
         team_b1: norm(teamB),
-        team_a2: matchupType === "two_team" ? norm(teamA2) : null,
-        team_b2: matchupType === "two_team" ? norm(teamB2) : null,
+        team_a2: (!isCW && matchupType === "two_team") ? norm(teamA2) : null,
+        team_b2: (!isCW && matchupType === "two_team") ? norm(teamB2) : null,
 
         score_a: 0,
         score_b: 0,
 
-        // Phase 2: staff game tagging (requires column on live_games; if missing you'll see an error)
         is_staff_game: false,
+        season,
       };
 
       const { data, error } = await supabase.from("live_games").insert([row]).select("id").single();
@@ -363,6 +349,7 @@ export default function PostGamesPage() {
         notes: String(ngNotes || "").trim() || null,
         status: asDraft ? "draft" : "final",
         deleted: false,
+        season,
       };
 
       const { error } = await supabase.from("non_game_points").insert([row]);
@@ -706,7 +693,7 @@ export default function PostGamesPage() {
                   value={ngReason}
                   onChange={(e) => setNgReason(e.target.value)}
                 >
-                  {NON_GAME_REASONS.map((r) => (
+                  {(isCW ? CW_NON_GAME_REASONS : NON_GAME_REASONS).map((r) => (
                     <option key={r} value={r}>
                       {r}
                     </option>

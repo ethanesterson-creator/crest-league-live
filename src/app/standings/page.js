@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
-
+import { useAppMode } from "@/lib/useAppMode";
 const STAFF_SPORT_KEY = "staff";    // staff standings should live under standings.sport='staff'
 
 function norm(s) {
@@ -26,8 +26,8 @@ function sortStandings(arr) {
 }
 
 export default function StandingsPage() {
-  const [err, setErr] = useState("");
-  const [loading, setLoading] = useState(true);
+  const { season } = useAppMode();
+  const [err, setErr] = useState("");  const [loading, setLoading] = useState(true);
 
   // Tabs: overall | staff | non_game
   const [tab, setTab] = useState("overall");
@@ -66,6 +66,7 @@ export default function StandingsPage() {
     const { data, error } = await supabase
       .from("standings")
       .select("league_id, sport, team_name, wins, losses, league_points, updated_at")
+      .eq("season", season)
       .eq("sport", STAFF_SPORT_KEY);
 
     if (error) throw error;
@@ -76,6 +77,7 @@ export default function StandingsPage() {
     const { data, error } = await supabase
       .from("non_game_points")
       .select("team_name, points, status, deleted")
+      .eq("season", season)
       .eq("deleted", false)
       .eq("status", "final")
       .limit(5000);
@@ -124,7 +126,7 @@ export default function StandingsPage() {
       }
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [season]);
 
   // When toggles change, refresh overall tab automatically (only if on that tab)
   useEffect(() => {

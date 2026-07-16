@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabase";
-import { getSportRules } from "@/lib/sportRules";
+import { useAppMode } from "@/lib/useAppMode";import { getSportRules } from "@/lib/sportRules";
 
 const SPORTS = [
   "Hoop",
@@ -36,8 +36,8 @@ function prettyStatLabel(sportName, statKey) {
 }
 
 export default function LeadersPage() {
-  const [err, setErr] = useState("");
-  const [loading, setLoading] = useState(true);
+  const { season } = useAppMode();
+  const [err, setErr] = useState("");  const [loading, setLoading] = useState(true);
 
   const [leagues, setLeagues] = useState([]);
   const [leagueId, setLeagueId] = useState("seniors");
@@ -86,6 +86,7 @@ export default function LeadersPage() {
       const { data, error } = await supabase
         .from("player_totals")
         .select("league_id, sport, player_id, player_name, team_name, stat_key, value, updated_at")
+        .eq("season", season)
         .eq("league_id", norm(leagueId))
         .eq("sport", sportKey)
         .eq("stat_key", stat)
@@ -115,7 +116,7 @@ export default function LeadersPage() {
   useEffect(() => {
     loadLeaders({ quiet: true });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [leagueId, sport, statKey]);
+  }, [leagueId, sport, statKey, season]);
 
   const statLabel = useMemo(() => prettyStatLabel(sport, statKey), [sport, statKey]);
 

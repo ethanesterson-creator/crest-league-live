@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { supabase } from "@/lib/supabase";
-
+import { useAppMode } from "@/lib/useAppMode";
 function norm(s) {
   return String(s ?? "").trim().toLowerCase();
 }
@@ -28,6 +28,7 @@ function matchupLabel(a1, a2) {
 }
 
 export default function PastGamesPage() {
+  const { season } = useAppMode();
   const [games, setGames] = useState([]);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState("");
@@ -46,6 +47,7 @@ export default function PastGamesPage() {
         .select(
           "id, created_at, league_key, sport, level, mode, matchup_type, team_a1, team_a2, team_b1, team_b2, score_a, score_b, is_bowl_game, bowl_name, is_staff_game"
         )
+        .eq("season", season)
         .eq("status", "final")
         .order("created_at", { ascending: false })
         .limit(500);
@@ -61,7 +63,7 @@ export default function PastGamesPage() {
 
   useEffect(() => {
     loadGames();
-  }, []);
+  }, [season]);
 
   const leagues = useMemo(() => {
     const set = new Set(games.map((g) => norm(g.league_key)).filter(Boolean));

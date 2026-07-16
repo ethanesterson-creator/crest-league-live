@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { supabase } from "@/lib/supabase";
+import { useAppMode } from "@/lib/useAppMode";
 import { getSportRules } from "@/lib/sportRules";
 
 const SPORTS = [
@@ -73,6 +74,7 @@ function matchupLabel(a1, a2) {
 }
 
 export default function HomePage() {
+  const { season, isCW, blueName, whiteName } = useAppMode();
   const [status, setStatus] = useState("Checking…");
   const [err, setErr] = useState("");
   const [creating, setCreating] = useState(false);
@@ -284,16 +286,24 @@ export default function HomePage() {
   }
 
   async function loadTeamsFromPlayers() {
+    // Color War: the only teams are Blue and White, camp-wide.
+    if (isCW) {
+      const unique = ["blue", "white"];
+      setTeams(unique);
+      setTeamA((prev) => (prev && unique.includes(norm(prev)) ? prev : "blue"));
+      setTeamB((prev) => (prev && unique.includes(norm(prev)) ? prev : "white"));
+      return;
+    }
     const lk = norm(leagueKey);
     const query = matchupType === "crest_cup"
       ? supabase.from("players").select("team_name, league_id").limit(5000)
       : supabase.from("players").select("team_name, league_id").eq("league_id", lk).limit(5000);
     const { data, error } = await query;
-
+ 
     if (error) return;
-
+ 
     const unique = Array.from(new Set((data || []).map((r) => norm(r.team_name)).filter(Boolean))).sort();
-
+ 
     setTeams(unique);
 
     setTeamA((prev) => (prev && unique.includes(norm(prev)) ? prev : unique[0] || ""));
@@ -309,6 +319,7 @@ export default function HomePage() {
     const { data, error } = await supabase
       .from("live_games")
       .select("*")
+      .eq("season", season)
       .neq("status", "draft")
       .is("played_on", null) // ✅ only LIVE games
       .order("created_at", { ascending: false })
@@ -331,7 +342,7 @@ export default function HomePage() {
   useEffect(() => {
     loadTeamsFromPlayers();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [leagueKey, matchupType]);
+  }, [leagueKey, matchupType, isCW]);
 
   // Validation
   const canCreate = useMemo(() => {
@@ -414,11 +425,12 @@ export default function HomePage() {
       level: finalLevel,
       mode,
 
-      matchup_type: matchupType,
+      matchup_type: isCW ? "single" : matchupType,
       team_a1: norm(teamA),
       team_b1: norm(teamB),
-      team_a2: matchupType === "two_team" ? norm(teamA2) : null,
-      team_b2: matchupType === "two_team" ? norm(teamB2) : null,
+      team_a2: (!isCW && matchupType === "two_team") ? norm(teamA2) : null,
+      team_b2: (!isCW && matchupType === "two_team") ? norm(teamB2) : null,
+      season,
 
       score_a: 0,
       score_b: 0,
