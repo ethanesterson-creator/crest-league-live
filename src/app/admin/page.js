@@ -27,6 +27,16 @@ export default function AdminPage() {
   const [overrideGameId, setOverrideGameId] = useState(null);
   const [overridePoints, setOverridePoints] = useState("");
 
+  // ---- Color War mode switch ----
+  const [cwSettings, setCwSettings] = useState(null);       // full app_settings row
+  const [modeSwitchText, setModeSwitchText] = useState(""); // typed confirmation
+  const [switchingMode, setSwitchingMode] = useState(false);
+  const [cwBlueNameInput, setCwBlueNameInput] = useState("");
+  const [cwWhiteNameInput, setCwWhiteNameInput] = useState("");
+ 
+ useEffect(() => {
+    if (authed) loadCwSettings();
+  }, [authed]);
   // ----------------------------
   // PER-LEAGUE STANDINGS (group leader view)
   // ----------------------------
@@ -633,6 +643,54 @@ export default function AdminPage() {
     a.click();
     a.remove();
     URL.revokeObjectURL(url);
+  }
+
+  async function loadCwSettings() {
+    const { data } = await supabase.from("app_settings").select("*").eq("id", 1).maybeSingle();
+    if (data) {
+      setCwSettings(data);
+      setCwBlueNameInput(data.cw_blue_name || "Blue");
+      setCwWhiteNameInput(data.cw_white_name || "White");
+    }
+  }
+ 
+  async function saveCwNames() {
+    setErr(""); setMsg("");
+    const { error } = await supabase.from("app_settings")
+      .update({ cw_blue_name: cwBlueNameInput.trim() || "Blue", cw_white_name: cwWhiteNameInput.trim() || "White", updated_at: new Date().toISOString() })
+      .eq("id", 1);
+    if (error) { setErr(error.message); return; }
+    setMsg("Color War team names saved.");
+    await loadCwSettings();
+  }
+ 
+  async function switchMode(targetMode) {
+    // targetMode: 'league' | 'color_war'
+    setErr(""); setMsg("");
+    if (modeSwitchText.trim().toUpperCase() !== "SWITCH") {
+      setErr('Type SWITCH in the box to confirm the mode change.');
+      return;
+    }
+    setSwitchingMode(true);
+    try {
+      const { error } = await supabase.from("app_settings")
+        .update({ mode: targetMode, updated_at: new Date().toISOString() })
+        .eq("id", 1);
+      if (error) { setErr(error.message); setSwitchingMode(false); return; }
+ 
+      // Auto-rebuild the season we're entering so the board is never stale.
+      const seasonArg = targetMode === "color_war" ? "cw" : "league";
+      const { error: rbErr } = await supabase.rpc("rebuild_leaderboards", { p_season: seasonArg });
+      if (rbErr) { setErr(`Mode switched, but rebuild failed: ${rbErr.message}. Re-run rebuild manually.`); }
+ 
+      setModeSwitchText("");
+      setMsg(targetMode === "color_war"
+        ? "🔵⚪ Switched to COLOR WAR. The whole app now shows Blue vs White."
+        : "Switched back to LEAGUE. All league data restored exactly as before.");
+      await loadCwSettings();
+    } finally {
+      setSwitchingMode(false);
+    }
   }
 
   async function exportPlayerStatsCSV() {
