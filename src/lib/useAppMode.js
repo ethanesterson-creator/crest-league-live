@@ -3,37 +3,61 @@
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
 
-// Reads the current app mode from app_settings. Returns:
-//   mode:      'league' | 'color_war'
-//   season:    'league' | 'cw'   (the season string used on data rows)
-//   isCW:      boolean convenience
-//   blueName / whiteName: Color War team display names
-//   blueLogo / whiteLogo: storage paths (may be null)
-//   loading:   true until first fetch resolves
-//   refresh:   re-fetch settings on demand
+// Reads the current app mode from app_settings.
 //
-// Every page that shows competition data calls this and filters its queries
-// by `season`. In league mode nothing changes vs today.
+// Refresh-stability: the last confirmed settings are cached in localStorage so
+// a page reload starts from the CORRECT mode instead of flashing league (the
+// old default) while the async read is in flight. Without this, refreshing
+// during Color War could momentarily render league and load league data.
+
+const CACHE_KEY = "crest_app_settings_v1";
+
+const DEFAULTS = {
+  mode: "league",
+  cw_blue_name: "Blue",
+  cw_white_name: "White",
+  cw_blue_logo: null,
+  cw_white_logo: null,
+};
+
+function readCache() {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = window.localStorage.getItem(CACHE_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
+
+function writeCache(s) {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(CACHE_KEY, JSON.stringify(s));
+  } catch {}
+}
+
 export function useAppMode() {
-  const [settings, setSettings] = useState({
-    mode: "league",
-    cw_blue_name: "Blue",
-    cw_white_name: "White",
-    cw_blue_logo: null,
-    cw_white_logo: null,
-  });
+  // Seed from cache when available so refreshes are stable; only true first-
+  // ever visit starts from league defaults.
+  const [settings, setSettings] = useState(() => readCache() || DEFAULTS);
   const [loading, setLoading] = useState(true);
 
   async function load() {
     try {
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from("app_settings")
         .select("*")
         .eq("id", 1)
         .maybeSingle();
-      if (data) setSettings(data);
+      // Only overwrite state on a real successful read. A transient network
+      // failure must NOT knock us back to league — we keep the cached mode.
+      if (!error && data) {
+        setSettings(data);
+        writeCache(data);
+      }
     } catch {
-      // default to league on any failure — safest fallback
+      // keep whatever we already have (cache or last good) — never force league
     } finally {
       setLoading(false);
     }
@@ -41,10 +65,9 @@ export function useAppMode() {
 
   useEffect(() => {
     load();
-    // Light polling so a mode flip on one device propagates to the display
-    // board and any open pages within ~15s without a manual refresh.
     const t = setInterval(load, 15000);
     return () => clearInterval(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const isCW = settings.mode === "color_war";
