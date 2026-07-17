@@ -26,7 +26,7 @@ function sortStandings(arr) {
 }
 
 export default function StandingsPage() {
-  const { season } = useAppMode();
+  const { season, mode, loading: modeLoading } = useAppMode();
   const [err, setErr] = useState("");  const [loading, setLoading] = useState(true);
 
   // Tabs: overall | staff | non_game
@@ -144,6 +144,9 @@ export default function StandingsPage() {
 
   return (
     <div className="pb-10">
+      <div style={{background:'red',color:'white',padding:'12px',fontWeight:'bold',fontSize:'18px'}}>
+        DEBUG: mode={String(mode)} · season={String(season)} · modeLoading={String(modeLoading)}
+      </div>
       <div className="mt-6 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <div className="text-2xl font-black">Standings</div>
