@@ -25,6 +25,7 @@ function matchupLabel(a1, a2) {
 }
 
 export default function PostGamesPage() {
+  const { season, isCW } = useAppMode();
   const [err, setErr] = useState("");
   const [msg, setMsg] = useState("");
 

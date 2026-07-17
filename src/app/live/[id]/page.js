@@ -464,14 +464,31 @@ export default function LiveGamePage() {
       teamsA.length = 0; teamsB.length = 0; teamsA.push(a1); teamsB.push(b1);
     }
 
-    const pq = mt === "crest_cup"
-      ? supabase.from("players").select("id, first_name, last_name, team_name, league_id").in("team_name", allTeams).eq("departed", false).limit(5000)
-      : supabase.from("players").select("id, first_name, last_name, team_name, league_id").eq("league_id", lk).in("team_name", allTeams).eq("departed", false).limit(5000);
+    const isCwGame = String(g.season || "league") === "cw";
 
-    const { data: players } = await pq;
+    let players;
+    if (isCwGame) {
+      // Color War: teams are blue/white camp-wide. Match players by cw_team,
+      // filtered to this game's age league so a Senior game only pulls seniors.
+      const { data } = await supabase
+        .from("players")
+        .select("id, first_name, last_name, cw_team, league_id, team_name")
+        .eq("league_id", lk)
+        .in("cw_team", ["blue", "white"])
+        .eq("departed", false)
+        .limit(5000);
+      players = data;
+    } else {
+      const pq = mt === "crest_cup"
+        ? supabase.from("players").select("id, first_name, last_name, team_name, league_id").in("team_name", allTeams).eq("departed", false).limit(5000)
+        : supabase.from("players").select("id, first_name, last_name, team_name, league_id").eq("league_id", lk).in("team_name", allTeams).eq("departed", false).limit(5000);
+      const { data } = await pq;
+      players = data;
+    }
+
     const oA = { v: 0 }, oB = { v: 0 };
     const rows = (players || []).map((p) => {
-      const tn = norm(p.team_name);
+      const tn = isCwGame ? norm(p.cw_team) : norm(p.team_name);
       const side = teamsA.includes(tn) ? "A" : "B";
       const so = side === "A" ? oA.v++ : oB.v++;
       return { game_id: g.id, player_id: String(p.id), player_name: `${p.first_name ?? ""} ${p.last_name ?? ""}`.trim(), team_side: side, team_name: tn, is_playing: false, sort_order: so };

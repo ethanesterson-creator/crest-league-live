@@ -323,13 +323,29 @@ export default function PostDraftEditorPage() {
       return;
     }
 
-    const { data: players, error } = await supabase
-      .from("players")
-      .select("id, first_name, last_name, team_name, league_id")
-      .eq("league_id", lk)
-      .in("team_name", allTeams)
-      eq("departed", false)
-      .limit(5000);
+    const isCwGame = String(game?.season || "league") === "cw";
+
+    let players, error;
+    if (isCwGame) {
+      // Color War: match players by cw_team (blue/white), within this age league.
+      const res = await supabase
+        .from("players")
+        .select("id, first_name, last_name, cw_team, team_name, league_id")
+        .eq("league_id", lk)
+        .in("cw_team", ["blue", "white"])
+        .eq("departed", false)
+        .limit(5000);
+      players = res.data; error = res.error;
+    } else {
+      const res = await supabase
+        .from("players")
+        .select("id, first_name, last_name, team_name, league_id")
+        .eq("league_id", lk)
+        .in("team_name", allTeams)
+        .eq("departed", false)
+        .limit(5000);
+      players = res.data; error = res.error;
+    }
 
     if (error) {
       setErr(error.message);
@@ -342,7 +358,7 @@ export default function PostDraftEditorPage() {
 
     const rows = (players || []).map((p) => {
       const fullName = `${p.first_name ?? ""} ${p.last_name ?? ""}`.trim();
-      const tn = norm(p.team_name);
+      const tn = isCwGame ? norm(p.cw_team) : norm(p.team_name);
       const side = teamsA.includes(tn) ? "A" : "B";
       const so = side === "A" ? orderA.v++ : orderB.v++;
 
