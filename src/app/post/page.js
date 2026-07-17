@@ -9,8 +9,19 @@ const FALLBACK_LEVELS = ["A", "B", "C", "D", "E", "F"];
 const MODES = ["5v5", "6v6", "7v7", "8v8", "9v9", "10v10", "11v11"];
 
 // Fixed reasons (kept in sync with non_game_point_reasons view in Supabase)
+const NON_GAME_REASONS = [
+  "Pickleball",
+  "Frisbee",
+  "Bombardment",
+  "Spirit",
+  "Other",
+];
+
 const CW_NON_GAME_REASONS = [
-  "Tugs", "Cleanliness", "Lateness", "Other",
+  "Tugs",
+  "Cleanliness",
+  "Lateness",
+  "Other",
 ];
 
 function norm(s) {
