@@ -36,7 +36,7 @@ function matchupLabel(a1, a2) {
 }
 
 export default function PostGamesPage() {
-  const { season, isCW } = useAppMode();
+  const { season, isCW, blueName, whiteName } = useAppMode();
   const [err, setErr] = useState("");
   const [msg, setMsg] = useState("");
 
@@ -136,6 +136,13 @@ export default function PostGamesPage() {
   }
 
   async function loadTeams(lk, isCrestCup = false) {
+    // Color War: teams are always Blue and White.
+    if (isCW) {
+      setTeams(["blue", "white"]);
+      setTeamA((prev) => (prev === "blue" || prev === "white" ? prev : "blue"));
+      setTeamB((prev) => (prev === "blue" || prev === "white" ? prev : "white"));
+      return;
+    }
     const query = isCrestCup
       ? supabase.from("players").select("team_name").limit(5000)
       : supabase.from("players").select("team_name").eq("league_id", lk).limit(5000);
@@ -205,7 +212,7 @@ export default function PostGamesPage() {
   // league changes -> reload teams
   useEffect(() => {
     loadTeams(norm(leagueKey), matchupType === "crest_cup");
-  }, [leagueKey, matchupType]);
+  }, [leagueKey, matchupType, isCW]);
 
   // league/sport changes -> reload level options, reset override
   useEffect(() => {
@@ -564,6 +571,13 @@ export default function PostGamesPage() {
 
               <div />
 
+              {isCW ? (
+                <div className="sm:col-span-2 rounded-2xl border border-blue-400/30 bg-blue-500/5 p-4 text-center">
+                  <div className="text-sm font-black tracking-widest text-blue-200">{blueName} (BLUE) vs {whiteName} (WHITE)</div>
+                  <div className="mt-1 text-xs text-white/40">Teams are set automatically for Color War.</div>
+                </div>
+              ) : (
+              <>
               <label className="text-sm">
                 <div className="mb-1 text-slate-300">Team A1</div>
                 <select
@@ -593,8 +607,10 @@ export default function PostGamesPage() {
                   ))}
                 </select>
               </label>
+              </>
+              )}
 
-              {matchupType === "two_team" ? (
+              {!isCW && matchupType === "two_team" ? (
                 <>
                   <label className="text-sm">
                     <div className="mb-1 text-slate-300">Team A2</div>
