@@ -573,7 +573,8 @@ export default function HomePage() {
               </label>
             ) : null}
 
-            {/* Matchup type */}
+            {/* Matchup type — hidden in Color War (always Blue vs White, 1v1) */}
+            {!isCW ? (
             <label className="text-sm">
               <div className="mb-1 text-slate-300">Matchup</div>
               <select
@@ -587,8 +588,9 @@ export default function HomePage() {
                 <option value="crest_cup">Crest Cup (All Leagues)</option>
               </select>
             </label>
+            ) : null}
 
-            {matchupType !== "full_team" && matchupType !== "crest_cup" ? (
+            {isCW || (matchupType !== "full_team" && matchupType !== "crest_cup") ? (
             <label className="text-sm">
             <div className="mb-1 text-slate-300">Level</div>
            <select
@@ -631,7 +633,8 @@ export default function HomePage() {
               <div className="text-xs text-slate-400 flex items-end pb-2">Crest Cup — full camp-wide roster, no fixed mode.</div>
             )}
 
-            {/* ✅ Bowl controls */}
+            {/* Bowl controls — hidden in Color War */}
+            {!isCW ? (
             <div className="sm:col-span-2 rounded-2xl border border-white/10 bg-black/20 p-4">
               <label className="flex items-center gap-3 text-sm font-bold">
                 <input
@@ -679,8 +682,15 @@ export default function HomePage() {
                 </div>
               ) : null}
             </div>
+            ) : null}
 
-            {/* Team picks */}
+            {/* Team picks — in Color War these are locked to Blue vs White */}
+            {isCW ? (
+              <div className="sm:col-span-2 rounded-2xl border border-blue-400/30 bg-blue-500/5 p-4 text-center">
+                <div className="text-sm font-black tracking-widest text-blue-200">{blueName} (BLUE) vs {whiteName} (WHITE)</div>
+                <div className="mt-1 text-xs text-white/40">Teams are set automatically for Color War.</div>
+              </div>
+            ) : (
             <label className="text-sm">
               <div className="mb-1 text-slate-300">Team A1</div>
               <select
@@ -696,6 +706,7 @@ export default function HomePage() {
                 ))}
               </select>
             </label>
+            )}
 
             {matchupType === "two_team" ? (
               <>
@@ -717,6 +728,7 @@ export default function HomePage() {
               </>
             ) : null}
 
+            {!isCW ? (
             <label className="text-sm">
               <div className="mb-1 text-slate-300">Team B1</div>
               <select
@@ -732,8 +744,9 @@ export default function HomePage() {
                 ))}
               </select>
             </label>
+            ) : null}
 
-            {matchupType === "two_team" ? (
+            {!isCW && matchupType === "two_team" ? (
               <>
                 <label className="text-sm">
                   <div className="mb-1 text-slate-300">Team B2</div>

@@ -2,7 +2,8 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabase";
-import { useAppMode } from "@/lib/useAppMode";import { getSportRules } from "@/lib/sportRules";
+import { useAppMode } from "@/lib/useAppMode";
+import { getSportRules } from "@/lib/sportRules";
 
 const SPORTS = [
   "Hoop",
