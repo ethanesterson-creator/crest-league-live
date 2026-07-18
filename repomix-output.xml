@@ -54,6 +54,7 @@ src/
     admin/
       page.js
     display/
+      ColorWarBoard.jsx
       page.js
     highlights/
       page.js
@@ -589,71 +590,6 @@ export default function manifest() {
 }
 </file>
 
-<file path="src/lib/useAppMode.js">
-"use client";
-
-import { useEffect, useState } from "react";
-import { supabase } from "@/lib/supabase";
-
-// Reads the current app mode from app_settings. Returns:
-//   mode:      'league' | 'color_war'
-//   season:    'league' | 'cw'   (the season string used on data rows)
-//   isCW:      boolean convenience
-//   blueName / whiteName: Color War team display names
-//   blueLogo / whiteLogo: storage paths (may be null)
-//   loading:   true until first fetch resolves
-//   refresh:   re-fetch settings on demand
-//
-// Every page that shows competition data calls this and filters its queries
-// by `season`. In league mode nothing changes vs today.
-export function useAppMode() {
-  const [settings, setSettings] = useState({
-    mode: "league",
-    cw_blue_name: "Blue",
-    cw_white_name: "White",
-    cw_blue_logo: null,
-    cw_white_logo: null,
-  });
-  const [loading, setLoading] = useState(true);
-
-  async function load() {
-    try {
-      const { data } = await supabase
-        .from("app_settings")
-        .select("*")
-        .eq("id", 1)
-        .maybeSingle();
-      if (data) setSettings(data);
-    } catch {
-      // default to league on any failure — safest fallback
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  useEffect(() => {
-    load();
-    // Light polling so a mode flip on one device propagates to the display
-    // board and any open pages within ~15s without a manual refresh.
-    const t = setInterval(load, 15000);
-    return () => clearInterval(t);
-  }, []);
-
-  const isCW = settings.mode === "color_war";
-  return {
-    mode: settings.mode,
-    season: isCW ? "cw" : "league",
-    isCW,
-    blueName: settings.cw_blue_name || "Blue",
-    whiteName: settings.cw_white_name || "White",
-    blueLogo: settings.cw_blue_logo || null,
-    whiteLogo: settings.cw_white_logo || null,
-    loading,
-    refresh: load,
-  };
-}
-</file>
-
 <file path="src/app/highlights/page.js">
 "use client";
 
@@ -825,6 +761,386 @@ export default function HighlightsAdminPage() {
         )}
       </div>
     </main>
+  );
+}
+</file>
+
+<file path="src/lib/useAppMode.js">
+"use client";
+
+import { useEffect, useState } from "react";
+import { supabase } from "@/lib/supabase";
+
+// Reads the current app mode from app_settings.
+//
+// Refresh-stability: the last confirmed settings are cached in localStorage so
+// a page reload starts from the CORRECT mode instead of flashing league (the
+// old default) while the async read is in flight. Without this, refreshing
+// during Color War could momentarily render league and load league data.
+
+const CACHE_KEY = "crest_app_settings_v1";
+
+const DEFAULTS = {
+  mode: "league",
+  cw_blue_name: "Blue",
+  cw_white_name: "White",
+  cw_blue_logo: null,
+  cw_white_logo: null,
+};
+
+function readCache() {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = window.localStorage.getItem(CACHE_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
+
+function writeCache(s) {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(CACHE_KEY, JSON.stringify(s));
+  } catch {}
+}
+
+export function useAppMode() {
+  // Seed from cache when available so refreshes are stable; only true first-
+  // ever visit starts from league defaults.
+  const [settings, setSettings] = useState(() => readCache() || DEFAULTS);
+  const [loading, setLoading] = useState(true);
+
+  async function load() {
+    try {
+      const { data, error } = await supabase
+        .from("app_settings")
+        .select("*")
+        .eq("id", 1)
+        .maybeSingle();
+      // Only overwrite state on a real successful read. A transient network
+      // failure must NOT knock us back to league — we keep the cached mode.
+      if (!error && data) {
+        setSettings(data);
+        writeCache(data);
+      }
+    } catch {
+      // keep whatever we already have (cache or last good) — never force league
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    load();
+    const t = setInterval(load, 15000);
+    return () => clearInterval(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const isCW = settings.mode === "color_war";
+  return {
+    mode: settings.mode,
+    season: isCW ? "cw" : "league",
+    isCW,
+    blueName: settings.cw_blue_name || "Blue",
+    whiteName: settings.cw_white_name || "White",
+    blueLogo: settings.cw_blue_logo || null,
+    whiteLogo: settings.cw_white_logo || null,
+    loading,
+    refresh: load,
+  };
+}
+</file>
+
+<file path="src/app/display/ColorWarBoard.jsx">
+// ============================================================================
+// COLOR WAR DISPLAY BOARD  —  src/app/display/ColorWarBoard.jsx  (NEW FILE)
+// Self-contained. Rendered by display/page.js when isCW is true. Reads only
+// season='cw' data. Blue vs White themed, big team names, logos, rotating
+// scenes (scoreboard, stat leaders per league, live games).
+// ============================================================================
+"use client";
+
+import { useEffect, useMemo, useRef, useState } from "react";
+import { supabase } from "@/lib/supabase";
+
+function norm(s) { return String(s ?? "").trim().toLowerCase(); }
+
+const CW_SCENES = ["scoreboard", "leaders_seniors", "leaders_juniors", "leaders_sophomores", "live"];
+
+export default function ColorWarBoard({ blueName, whiteName, blueLogo, whiteLogo }) {
+  const [scene, setScene] = useState("scoreboard");
+  const [blueTotal, setBlueTotal] = useState(0);
+  const [whiteTotal, setWhiteTotal] = useState(0);
+  const [byLeague, setByLeague] = useState({ seniors: { blue: 0, white: 0 }, juniors: { blue: 0, white: 0 }, sophomores: { blue: 0, white: 0 } });
+  const [leaders, setLeaders] = useState({ seniors: [], juniors: [], sophomores: [] });
+  const [liveGames, setLiveGames] = useState([]);
+  const [now, setNow] = useState(Date.now());
+
+  function logoUrl(path) {
+    if (!path) return null;
+    try {
+      const { data } = supabase.storage.from("highlights").getPublicUrl(path);
+      return data?.publicUrl || null;
+    } catch { return null; }
+  }
+
+  async function loadAll() {
+    // Standings for CW: rows keyed (league, blue/white). Sum per color.
+    const { data: st } = await supabase
+      .from("standings")
+      .select("league_id, team_name, league_points")
+      .eq("sport", "overall")
+      .eq("season", "cw");
+
+    const per = { seniors: { blue: 0, white: 0 }, juniors: { blue: 0, white: 0 }, sophomores: { blue: 0, white: 0 } };
+    let b = 0, w = 0;
+    for (const row of st || []) {
+      const lg = norm(row.league_id);
+      const color = norm(row.team_name);
+      const pts = Number(row.league_points || 0);
+      if (per[lg] && (color === "blue" || color === "white")) per[lg][color] += pts;
+      if (color === "blue") b += pts;
+      if (color === "white") w += pts;
+    }
+
+    // Non-game CW points (tugs, spirit, etc.) add to the camp-wide totals.
+    const { data: ng } = await supabase
+      .from("non_game_points")
+      .select("team_name, points")
+      .eq("season", "cw")
+      .eq("deleted", false)
+      .eq("status", "final")
+      .limit(5000);
+    for (const row of ng || []) {
+      const color = norm(row.team_name);
+      const pts = Number(row.points || 0);
+      if (color === "blue") b += pts;
+      if (color === "white") w += pts;
+    }
+
+    setBlueTotal(b); setWhiteTotal(w); setByLeague(per);
+
+    // Stat leaders per league (season cw), top by value.
+    const leaguesOut = { seniors: [], juniors: [], sophomores: [] };
+    for (const lg of ["seniors", "juniors", "sophomores"]) {
+      const { data } = await supabase
+        .from("player_totals")
+        .select("player_id, player_name, team_name, sport, stat_key, value")
+        .eq("season", "cw")
+        .eq("league_id", lg)
+        .order("value", { ascending: false })
+        .limit(60);
+      // pick top performers across sports, dedribute to one line each
+      const seen = new Set();
+      const rows = [];
+      for (const r of data || []) {
+        if (Number(r.value) <= 0) continue;
+        const key = `${r.player_id}:${r.sport}:${r.stat_key}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        rows.push(r);
+        if (rows.length >= 9) break;
+      }
+      leaguesOut[lg] = rows;
+    }
+    // Hide departed players from the board (stats kept in DB).
+    const allIds = Array.from(new Set(Object.values(leaguesOut).flat().map((r) => String(r.player_id))));
+    if (allIds.length) {
+      const { data: deps } = await supabase.from("players").select("id").in("id", allIds).eq("departed", true);
+      const departedSet = new Set((deps || []).map((d) => String(d.id)));
+      if (departedSet.size) {
+        for (const lg of ["seniors", "juniors", "sophomores"]) {
+          leaguesOut[lg] = leaguesOut[lg].filter((r) => !departedSet.has(String(r.player_id)));
+        }
+      }
+    }
+    setLeaders(leaguesOut);
+
+    // Live CW games
+    const { data: live } = await supabase
+      .from("live_games")
+      .select("*")
+      .eq("season", "cw")
+      .eq("status", "active")
+      .is("played_on", null)
+      .order("updated_at", { ascending: false });
+    setLiveGames(live || []);
+  }
+
+  useEffect(() => {
+    loadAll();
+    const r = setInterval(loadAll, 15000);
+    return () => clearInterval(r);
+  }, []);
+
+  useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, []);
+
+  // Scene rotation every 18s. Skip empty leaders scenes so it never dwells on
+  // a blank board.
+  useEffect(() => {
+    const t = setInterval(() => {
+      setScene((prev) => {
+        let idx = CW_SCENES.indexOf(prev);
+        for (let i = 0; i < CW_SCENES.length; i++) {
+          idx = (idx + 1) % CW_SCENES.length;
+          const s = CW_SCENES[idx];
+          if (s === "leaders_seniors" && !leaders.seniors.length) continue;
+          if (s === "leaders_juniors" && !leaders.juniors.length) continue;
+          if (s === "leaders_sophomores" && !leaders.sophomores.length) continue;
+          if (s === "live" && !liveGames.length) continue;
+          return s;
+        }
+        return "scoreboard";
+      });
+    }, 18000);
+    return () => clearInterval(t);
+  }, [leaders, liveGames]);
+
+  const blueLead = blueTotal >= whiteTotal;
+  const blueUrl = logoUrl(blueLogo);
+  const whiteUrl = logoUrl(whiteLogo);
+
+  function TeamCrest({ url, fallbackLetter, ring }) {
+    return url ? (
+      <img src={url} alt="" className={`h-56 w-56 rounded-full object-cover ring-4 ${ring}`} />
+    ) : (
+      <div className={`flex h-56 w-56 items-center justify-center rounded-full ring-4 ${ring} bg-white/5 text-9xl font-black`}>
+        {fallbackLetter}
+      </div>
+    );
+  }
+
+  function statLine(sport, stat_key, value) {
+    const s = norm(sport), k = String(stat_key || "").toUpperCase();
+    return `${value} ${k} · ${s.toUpperCase()}`;
+  }
+
+  return (
+    <div className="relative flex h-screen w-full flex-col overflow-hidden bg-gradient-to-br from-blue-950 via-slate-900 to-slate-950 text-white">
+      {/* Animated split background */}
+      <div className="pointer-events-none absolute inset-0">
+        <div className="absolute inset-y-0 left-0 w-1/2 bg-gradient-to-r from-blue-600/25 to-transparent" />
+        <div className="absolute inset-y-0 right-0 w-1/2 bg-gradient-to-l from-white/10 to-transparent" />
+      </div>
+
+      {/* Header */}
+      <div className="relative z-10 flex items-center justify-between px-16 py-6">
+        <div className="text-5xl font-black tracking-[0.3em] text-blue-300">COLOR WAR</div>
+        <div className="text-2xl font-bold tracking-widest text-white/40">CAMP BAUERCREST</div>
+      </div>
+
+      {/* ---- SCOREBOARD ---- */}
+      {scene === "scoreboard" && (
+        <div className="relative z-10 flex flex-1 flex-col items-center justify-center px-8">
+          <div className="grid w-full grid-cols-[1fr_auto_1fr] items-center gap-6">
+            {/* Blue */}
+            <div className="flex min-w-0 flex-col items-center gap-4 px-4">
+              <TeamCrest url={blueUrl} fallbackLetter="B" ring="ring-blue-400" />
+              <div className="text-center text-6xl font-black uppercase leading-[0.95] tracking-wide text-blue-200 break-words"
+                   style={{ textShadow: "0 0 30px rgba(59,130,246,0.6)" }}>
+                {blueName}
+              </div>
+              <div className="text-[9rem] leading-none font-black tabular-nums text-white" style={{ textShadow: "0 0 60px rgba(59,130,246,0.7)" }}>
+                {blueTotal}
+              </div>
+            </div>
+
+            {/* VS + leader flag */}
+            <div className="flex flex-col items-center gap-3">
+              <div className="text-6xl font-black text-white/30">VS</div>
+              <div className={`rounded-full px-4 py-1 text-sm font-black tracking-widest ${blueLead ? "bg-blue-500/30 text-blue-200" : "bg-white/20 text-white"}`}>
+                {blueTotal === whiteTotal ? "TIED" : blueLead ? `${blueName} +${blueTotal - whiteTotal}` : `${whiteName} +${whiteTotal - blueTotal}`}
+              </div>
+            </div>
+
+            {/* White */}
+            <div className="flex min-w-0 flex-col items-center gap-4 px-4">
+              <TeamCrest url={whiteUrl} fallbackLetter="W" ring="ring-white/70" />
+              <div className="text-center text-6xl font-black uppercase leading-[0.95] tracking-wide text-white break-words"
+                   style={{ textShadow: "0 0 30px rgba(255,255,255,0.5)" }}>
+                {whiteName}
+              </div>
+              <div className="text-[9rem] leading-none font-black tabular-nums text-white" style={{ textShadow: "0 0 60px rgba(255,255,255,0.5)" }}>
+                {whiteTotal}
+              </div>
+            </div>
+          </div>
+
+          {/* Per-league breakdown */}
+          <div className="mt-12 grid w-full grid-cols-3 gap-8">
+            {["seniors", "juniors", "sophomores"].map((lg) => {
+              const bl = byLeague[lg]?.blue || 0, wh = byLeague[lg]?.white || 0;
+              return (
+                <div key={lg} className="rounded-2xl border border-white/10 bg-white/[0.03] p-6">
+                  <div className="mb-3 text-center text-xl font-black uppercase tracking-widest text-white/50">{lg}</div>
+                  <div className="flex items-center justify-between">
+                    <div className="text-4xl font-black text-blue-300">{bl}</div>
+                    <div className="text-sm font-bold text-white/30">BLUE · WHITE</div>
+                    <div className="text-4xl font-black text-white">{wh}</div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* ---- STAT LEADERS ---- */}
+      {scene.startsWith("leaders_") && (() => {
+        const lg = scene.replace("leaders_", "");
+        const rows = leaders[lg] || [];
+        return (
+          <div className="relative z-10 flex flex-1 flex-col px-16 pt-6">
+            <div className="mb-8 text-center text-6xl font-black uppercase tracking-[0.3em] text-blue-300">
+              {lg} Stat Leaders
+            </div>
+            <div className="grid flex-1 grid-cols-3 content-center gap-6">
+              {rows.map((p, i) => {
+                const color = norm(p.team_name);
+                return (
+                  <div key={i} className={`rounded-2xl border p-4 ${color === "blue" ? "border-blue-400/40 bg-blue-500/10" : "border-white/30 bg-white/5"}`}>
+                    <div className="truncate text-4xl font-black text-white">{p.player_name}</div>
+                    <div className={`mt-1 text-sm font-black uppercase tracking-wider ${color === "blue" ? "text-blue-300" : "text-white/70"}`}>
+                      {color === "blue" ? blueName : whiteName}
+                    </div>
+                    <div className="mt-2 text-lg font-bold text-white/80">{statLine(p.sport, p.stat_key, p.value)}</div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* ---- LIVE GAMES ---- */}
+      {scene === "live" && (
+        <div className="relative z-10 flex flex-1 flex-col px-16 pt-6">
+          <div className="mb-8 text-center text-6xl font-black uppercase tracking-[0.3em] text-blue-300">Live Now</div>
+          <div className="grid flex-1 grid-cols-2 content-center gap-8">
+            {liveGames.map((g) => {
+              const aBlue = norm(g.team_a1) === "blue";
+              return (
+                <div key={g.id} className="rounded-2xl border border-white/10 bg-white/[0.04] p-5">
+                  <div className="text-xs font-black uppercase tracking-widest text-white/40">
+                    {g.league_key} · {g.sport} · {g.level}
+                  </div>
+                  <div className="mt-3 flex items-center justify-between">
+                    <div className={`text-2xl font-black ${aBlue ? "text-blue-300" : "text-white"}`}>{aBlue ? blueName : whiteName}</div>
+                    <div className="text-4xl font-black tabular-nums">{g.score_a} - {g.score_b}</div>
+                    <div className={`text-2xl font-black ${!aBlue ? "text-blue-300" : "text-white"}`}>{!aBlue ? blueName : whiteName}</div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+    </div>
   );
 }
 </file>
@@ -1832,168 +2148,6 @@ export default function PastGamesPage() {
 }
 </file>
 
-<file path="src/lib/sportRules.js">
-// src/lib/sportRules.js
-
-function key(s) {
-  return String(s ?? "").trim().toLowerCase();
-}
-
-export const SPORT_RULES = {
-  hoop: {
-    label: "Hoop",
-    clock: {
-      enabled: true,
-      modes: [
-        {
-          id: "quarters",
-          label: "Quarters",
-          presets: [300, 360, 420, 480, 600, 720, 900, 1200, 1800],
-        },
-        {
-          id: "halves",
-          label: "Halves",
-          presets: [600, 720, 900, 1200, 1500, 1800],
-        },
-      ],
-      defaultMode: "quarters",
-    },
-    scoreButtons: [1, 2, 3],
-    stats: [
-      { key: "pts", label: "PTS", deltas: [1, 2, 3] },
-      { key: "foul", label: "F", deltas: [1] },
-    ],
-  },
-
-  soccer: {
-    label: "Soccer",
-    clock: {
-      enabled: true,
-      modes: [{ id: "countdown", label: "Countdown", presets: [600, 900, 1200, 1500, 1800] }],
-      defaultMode: "countdown",
-    },
-    scoreButtons: [1],
-    stats: [
-      { key: "g", label: "G", deltas: [1] },
-      { key: "a", label: "A", deltas: [1] },
-    ],
-  },
-
-  softball: {
-    label: "Softball",
-    clock: { enabled: false },
-    scoreButtons: [1],
-    stats: [
-      { key: "h", label: "H", deltas: [1] },
-      { key: "hr", label: "HR", deltas: [1] },
-    ],
-  },
-
-  volleyball: {
-    label: "Volleyball",
-    clock: { enabled: false },
-    scoreButtons: [1],
-    stats: [],
-  },
-
-  football: {
-    label: "Football",
-    clock: {
-      enabled: true,
-      modes: [
-        { id: "quarters", label: "Quarters", presets: [300, 360, 420, 480, 600, 720] },
-        { id: "halves", label: "Halves", presets: [600, 720, 900, 1200, 1500, 1800] },
-      ],
-      defaultMode: "quarters",
-    },
-    scoreButtons: [1, 2, 6],
-    stats: [
-      { key: "td", label: "TD", deltas: [1] },
-    ],
-  },
-
-  speedball: {
-    label: "Speedball",
-    clock: {
-      enabled: true,
-      modes: [
-        {
-          id: "periods",
-          label: "8 Periods",
-          presets: [240, 300, 360, 420, 480, 540, 600],
-        },
-      ],
-      defaultMode: "periods",
-    },
-    scoreButtons: [1],
-    stats: [
-      { key: "g", label: "G", deltas: [1] },
-      { key: "a", label: "A", deltas: [1] },
-    ],
-  },
-
-  euro: {
-    label: "Euro",
-    clock: {
-      enabled: true,
-      modes: [
-        { id: "quarters", label: "Quarters", presets: [300, 360, 420, 480, 600, 720, 900] },
-        { id: "halves", label: "Halves", presets: [600, 720, 900, 1200, 1500, 1800] },
-      ],
-      defaultMode: "quarters",
-    },
-    scoreButtons: [1],
-    stats: [
-      { key: "g", label: "G", deltas: [1] },
-      { key: "a", label: "A", deltas: [1] },
-    ],
-  },
-
-  hockey: {
-    label: "Hockey",
-    clock: {
-      enabled: true,
-      modes: [
-        { id: "periods", label: "3 Periods", presets: [300, 360, 420, 480, 600, 720, 900, 1200] },
-      ],
-      defaultMode: "periods",
-    },
-    scoreButtons: [1],
-    stats: [
-      { key: "g", label: "G", deltas: [1] },
-      { key: "a", label: "A", deltas: [1] },
-    ],
-  },
-
-  kickball: {
-    label: "Kickball",
-    clock: { enabled: false },
-    scoreButtons: [1],
-    stats: [],
-  },
-
-  newcomb: {
-    label: "Newcomb",
-    clock: { enabled: false },
-    scoreButtons: [1],
-    stats: [],
-  },
-};
-
-export function getSportRules(sport) {
-  const k = key(sport);
-
-  const aliases = {
-    basketball: "hoop",
-    bb: "hoop",
-    hoops: "hoop",
-  };
-
-  const resolved = aliases[k] ?? k;
-  return SPORT_RULES[resolved] ?? { label: resolved, clock: { enabled: false }, scoreButtons: [1], stats: [] };
-}
-</file>
-
 <file path="src/app/post/[id]/page.js">
 "use client";
 
@@ -2683,193 +2837,371 @@ export default function PostDraftEditorPage() {
 }
 </file>
 
+<file path="src/lib/sportRules.js">
+// src/lib/sportRules.js
+
+function key(s) {
+  return String(s ?? "").trim().toLowerCase();
+}
+
+export const SPORT_RULES = {
+  hoop: {
+    label: "Hoop",
+    clock: {
+      enabled: true,
+      modes: [
+        {
+          id: "quarters",
+          label: "Quarters",
+          presets: [300, 360, 420, 480, 600, 720, 900, 1200, 1800],
+        },
+        {
+          id: "halves",
+          label: "Halves",
+          presets: [600, 720, 900, 1200, 1500, 1800],
+        },
+      ],
+      defaultMode: "quarters",
+    },
+    scoreButtons: [1, 2, 3],
+    stats: [
+      { key: "pts", label: "PTS", deltas: [1, 2, 3] },
+      { key: "foul", label: "F", deltas: [1] },
+    ],
+  },
+
+  soccer: {
+    label: "Soccer",
+    clock: {
+      enabled: true,
+      modes: [{ id: "countdown", label: "Countdown", presets: [600, 900, 1200, 1500, 1800] }],
+      defaultMode: "countdown",
+    },
+    scoreButtons: [1],
+    stats: [
+      { key: "g", label: "G", deltas: [1] },
+      { key: "a", label: "A", deltas: [1] },
+    ],
+  },
+
+  softball: {
+    label: "Softball",
+    clock: { enabled: false },
+    scoreButtons: [1],
+    stats: [
+      { key: "h", label: "H", deltas: [1] },
+      { key: "hr", label: "HR", deltas: [1] },
+    ],
+  },
+
+  volleyball: {
+    label: "Volleyball",
+    clock: { enabled: false },
+    scoreButtons: [1],
+    stats: [],
+  },
+
+  football: {
+    label: "Football",
+    clock: {
+      enabled: true,
+      modes: [
+        { id: "quarters", label: "Quarters", presets: [300, 360, 420, 480, 600, 720] },
+        { id: "halves", label: "Halves", presets: [600, 720, 900, 1200, 1500, 1800] },
+      ],
+      defaultMode: "quarters",
+    },
+    scoreButtons: [1, 2, 6],
+    stats: [
+      { key: "td", label: "TD", deltas: [1] },
+    ],
+  },
+
+  speedball: {
+    label: "Speedball",
+    clock: {
+      enabled: true,
+      modes: [
+        {
+          id: "periods",
+          label: "8 Periods",
+          presets: [240, 300, 360, 420, 480, 540, 600],
+        },
+      ],
+      defaultMode: "periods",
+    },
+    scoreButtons: [1],
+    stats: [
+      { key: "g", label: "G", deltas: [1] },
+      { key: "a", label: "A", deltas: [1] },
+    ],
+  },
+
+  euro: {
+    label: "Euro",
+    clock: {
+      enabled: true,
+      modes: [
+        { id: "quarters", label: "Quarters", presets: [300, 360, 420, 480, 600, 720, 900] },
+        { id: "halves", label: "Halves", presets: [600, 720, 900, 1200, 1500, 1800] },
+      ],
+      defaultMode: "quarters",
+    },
+    scoreButtons: [1],
+    stats: [
+      { key: "g", label: "G", deltas: [1] },
+      { key: "a", label: "A", deltas: [1] },
+    ],
+  },
+
+  hockey: {
+    label: "Hockey",
+    clock: {
+      enabled: true,
+      modes: [
+        { id: "periods", label: "3 Periods", presets: [300, 360, 420, 480, 600, 720, 900, 1200] },
+      ],
+      defaultMode: "periods",
+    },
+    scoreButtons: [1],
+    stats: [
+      { key: "g", label: "G", deltas: [1] },
+      { key: "a", label: "A", deltas: [1] },
+    ],
+  },
+
+  kickball: {
+    label: "Kickball",
+    clock: { enabled: false },
+    scoreButtons: [1],
+    stats: [],
+  },
+
+  newcomb: {
+    label: "Newcomb",
+    clock: { enabled: false },
+    scoreButtons: [1],
+    stats: [],
+  },
+};
+
+export function getSportRules(sport) {
+  const k = key(sport);
+
+  const aliases = {
+    basketball: "hoop",
+    bb: "hoop",
+    hoops: "hoop",
+  };
+
+  const resolved = aliases[k] ?? k;
+  return SPORT_RULES[resolved] ?? { label: resolved, clock: { enabled: false }, scoreButtons: [1], stats: [] };
+}
+</file>
+
 <file path="src/app/standings/page.js">
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import { useAppMode } from "@/lib/useAppMode";
-const STAFF_SPORT_KEY = "staff";    // staff standings should live under standings.sport='staff'
+import { getSportRules } from "@/lib/sportRules";
+
+const SPORTS = [
+  "Hoop",
+  "Soccer",
+  "Softball",
+  "Kickball",
+  "Volleyball",
+  "Football",
+  "Speedball",
+  "Euro",
+  "Hockey",
+  "Newcomb",
+];
 
 function norm(s) {
-  return String(s || "").trim().toLowerCase();
+  return String(s ?? "").trim().toLowerCase();
 }
 
-function sortStandings(arr) {
-  const rows = [...(arr || [])];
-  rows.sort((a, b) => {
-    const ap = Number(a.league_points || a.points || 0);
-    const bp = Number(b.league_points || b.points || 0);
-    if (bp !== ap) return bp - ap;
-
-    const aw = Number(a.wins || 0);
-    const bw = Number(b.wins || 0);
-    if (bw !== aw) return bw - aw;
-
-    return String(a.team_name || "").localeCompare(String(b.team_name || ""));
-  });
-  return rows;
+function prettyLeague(id) {
+  const x = String(id || "");
+  if (x === "sophomores") return "Sophomores";
+  if (x === "juniors") return "Juniors";
+  if (x === "seniors") return "Seniors";
+  return x;
 }
 
-export default function StandingsPage() {
+function prettyStatLabel(sportName, statKey) {
+  const rules = getSportRules(sportName);
+  const def = (rules?.stats ?? []).find((x) => norm(x.key) === norm(statKey));
+  return def?.label ?? String(statKey ?? "").toUpperCase();
+}
+
+export default function LeadersPage() {
   const { season } = useAppMode();
   const [err, setErr] = useState("");  const [loading, setLoading] = useState(true);
 
-  // Tabs: overall | staff | non_game
-  const [tab, setTab] = useState("overall");
+  const [leagues, setLeagues] = useState([]);
+  const [leagueId, setLeagueId] = useState("seniors");
 
-  // Overall points rows from SQL function get_overall_points(include_staff, include_non_game)
-  const [overallRows, setOverallRows] = useState([]);
-  const [includeStaff, setIncludeStaff] = useState(true);
-  const [includeNonGame, setIncludeNonGame] = useState(true);
+  const [sport, setSport] = useState("Hoop");
 
-  // Staff standings rows
-  const [staffRows, setStaffRows] = useState([]);
+  const rules = useMemo(() => getSportRules(sport), [sport]);
+  const statOptions = useMemo(() => rules?.stats ?? [], [rules]);
 
-  // Non-game points totals by team
-  const [nonGameRows, setNonGameRows] = useState([]);
+  const [statKey, setStatKey] = useState("pts");
+  const [rows, setRows] = useState([]);
 
-  async function loadOverallCamp() {
-    // Uses the SQL function we added earlier
-    const { data, error } = await supabase.rpc("get_overall_points", {
-      include_staff: includeStaff,
-      include_non_game: includeNonGame,
-      p_season: season,
-    });
+  // when sport changes, set default stat to first available
+  useEffect(() => {
+    const first = statOptions?.[0]?.key;
+    if (first) setStatKey(first);
+  }, [sport]); // intentionally only on sport change
 
-    if (error) throw error;
-
-    // data: [{team_name, points}]
-    const cleaned = (data || []).map((r) => ({
-      team_name: r.team_name,
-      points: Number(r.points || 0),
-    }));
-
-    cleaned.sort((a, b) => Number(b.points) - Number(a.points) || String(a.team_name).localeCompare(String(b.team_name)));
-    setOverallRows(cleaned);
-  }
-
-  async function loadStaffStandings() {
+  async function loadLeagues() {
     const { data, error } = await supabase
-      .from("standings")
-      .select("league_id, sport, team_name, wins, losses, league_points, updated_at")
-      .eq("season", season)
-      .eq("sport", STAFF_SPORT_KEY);
+      .from("leagues")
+      .select("id, name")
+      .order("id", { ascending: true });
 
-    if (error) throw error;
-    setStaffRows(sortStandings(data || []));
-  }
-
-  async function loadNonGamePoints() {
-    const { data, error } = await supabase
-      .from("non_game_points")
-      .select("team_name, points, status, deleted")
-      .eq("season", season)
-      .eq("deleted", false)
-      .eq("status", "final")
-      .limit(5000);
-
-    if (error) throw error;
-
-    const map = new Map();
-    for (const r of data || []) {
-      const key = String(r.team_name || "").toLowerCase();
-      const cur = map.get(key) || { team_name: r.team_name, points: 0 };
-      cur.points += Number(r.points || 0);
-      map.set(key, cur);
+    if (error) {
+      // fallback
+      setLeagues([
+        { id: "sophomores", name: "Sophomores" },
+        { id: "juniors", name: "Juniors" },
+        { id: "seniors", name: "Seniors" },
+      ]);
+      return;
     }
 
-    const arr = Array.from(map.values());
-    arr.sort((a, b) => Number(b.points) - Number(a.points) || String(a.team_name).localeCompare(String(b.team_name)));
-    setNonGameRows(arr);
+    setLeagues(data || []);
   }
 
-  async function refreshActiveTab() {
+  async function loadLeaders({ quiet = false } = {}) {
+    if (!quiet) setLoading(true);
     setErr("");
-    setLoading(true);
+
     try {
-      if (tab === "overall") {
-        await loadOverallCamp();
-      } else if (tab === "non_game") {
-        await loadNonGamePoints();
+      const sportKey = norm(sport);
+      const stat = norm(statKey);
+
+      const { data, error } = await supabase
+        .from("player_totals")
+        .select("league_id, sport, player_id, player_name, team_name, stat_key, value, updated_at")
+        .eq("season", season)
+        .eq("league_id", norm(leagueId))
+        .eq("sport", sportKey)
+        .eq("stat_key", stat)
+        .order("value", { ascending: false })
+        .limit(50);
+
+      if (error) throw error;
+
+      // Hide departed players (kicked/left camp) from the board without
+      // deleting their stats. Their player_totals rows stay in the DB.
+      let visible = data || [];
+      const ids = Array.from(new Set(visible.map((r) => String(r.player_id))));
+      if (ids.length) {
+        const { data: deps } = await supabase
+          .from("players")
+          .select("id")
+          .in("id", ids)
+          .eq("departed", true);
+        const departedSet = new Set((deps || []).map((d) => String(d.id)));
+        if (departedSet.size) visible = visible.filter((r) => !departedSet.has(String(r.player_id)));
       }
+      setRows(visible);
     } catch (e) {
       setErr(e?.message ?? String(e));
+      setRows([]);
     } finally {
-      setLoading(false);
+      if (!quiet) setLoading(false);
     }
   }
 
   useEffect(() => {
     (async () => {
-      setErr("");
-      setLoading(true);
-      try {
-        await loadOverallCamp();
-      } catch (e) {
-        setErr(e?.message ?? String(e));
-      } finally {
-        setLoading(false);
-      }
+      await loadLeagues();
+      await loadLeaders();
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [season]);
+  }, []);
 
-  // When toggles change, refresh overall tab automatically (only if on that tab)
+  // reload when filters change
   useEffect(() => {
-    if (tab !== "overall") return;
-    (async () => {
-      setErr("");
-      try {
-        await loadOverallCamp();
-      } catch (e) {
-        setErr(e?.message ?? String(e));
-      }
-    })();
+    loadLeaders({ quiet: true });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [includeStaff, includeNonGame, tab]);
+  }, [leagueId, sport, statKey, season]);
+
+  const statLabel = useMemo(() => prettyStatLabel(sport, statKey), [sport, statKey]);
 
   return (
     <div className="pb-10">
-      <div className="mt-6 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+      <div className="mt-6 flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
         <div>
-          <div className="text-2xl font-black">Standings</div>
+          <div className="text-2xl font-black">Stat Leaders</div>
           <div className="text-sm text-white/70">
-            Camp-wide standings combining every age group into one table per team.
+            Updates automatically after you finalize a game.
           </div>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2">
-          {/* Tabs */}
-          <div className="flex items-center gap-2">
-            <button
-              onClick={async () => {
-                setTab("overall");
-                setTimeout(() => refreshActiveTab(), 0);
-              }}
-              className={`rounded-xl border px-3 py-2 text-sm font-black ${
-                tab === "overall" ? "border-emerald-400/30 bg-emerald-500/10" : "border-white/15 bg-white/5 hover:bg-white/10"
-              }`}
+        <div className="flex flex-wrap items-end gap-3">
+          <div>
+            <div className="mb-1 text-xs font-bold text-white/60">League</div>
+            <select
+              className="rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm font-bold text-white"
+              value={leagueId}
+              onChange={(e) => setLeagueId(e.target.value)}
             >
-              Overall
-            </button>
-            
-            <button
-              onClick={async () => {
-                setTab("non_game");
-                setTimeout(() => refreshActiveTab(), 0);
-              }}
-              className={`rounded-xl border px-3 py-2 text-sm font-black ${
-                tab === "non_game" ? "border-emerald-400/30 bg-emerald-500/10" : "border-white/15 bg-white/5 hover:bg-white/10"
-              }`}
+              {(leagues?.length
+                ? leagues
+                : [
+                    { id: "sophomores", name: "Sophomores" },
+                    { id: "juniors", name: "Juniors" },
+                    { id: "seniors", name: "Seniors" },
+                  ]
+              ).map((l) => (
+                <option key={l.id} value={l.id}>
+                  {l.name ?? prettyLeague(l.id)}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <div className="mb-1 text-xs font-bold text-white/60">Sport</div>
+            <select
+              className="rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm font-bold text-white"
+              value={sport}
+              onChange={(e) => setSport(e.target.value)}
             >
-              Non-Game
-            </button>
+              {SPORTS.map((s) => (
+                <option key={s} value={s}>
+                  {s}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <div className="mb-1 text-xs font-bold text-white/60">Stat</div>
+            <select
+              className="rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm font-bold text-white"
+              value={statKey}
+              onChange={(e) => setStatKey(e.target.value)}
+            >
+              {statOptions.map((st) => (
+                <option key={st.key} value={st.key}>
+                  {st.label}
+                </option>
+              ))}
+            </select>
           </div>
 
           <button
             className="rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm font-bold hover:bg-white/10"
-            onClick={refreshActiveTab}
+            onClick={() => loadLeaders()}
           >
             Refresh
           </button>
@@ -2877,110 +3209,58 @@ export default function StandingsPage() {
       </div>
 
       {err ? (
-        <div className="mt-4 rounded-xl border border-red-700 bg-red-950/40 p-3 text-sm text-red-200">{err}</div>
+        <div className="mt-4 rounded-xl border border-red-700 bg-red-950/40 p-3 text-sm text-red-200">
+          {err}
+        </div>
       ) : null}
 
-      {loading ? (
-        <div className="mt-6 text-white/70">Loading…</div>
-      ) : (
-        <>
-          {/* OVERALL TAB */}
-          {tab === "overall" ? (
-            <div className="mt-6 rounded-2xl border border-white/10 bg-white/5 p-5">
-              <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-                <div>
-                  <div className="text-lg font-black">Overall Camp Standings</div>
-                  <div className="text-sm text-white/70">
-                    Toggle whether to include Staff Games and Non-Game Points.
-                  </div>
-                </div>
+      <div className="mt-6 rounded-2xl border border-white/10 bg-white/5 p-5">
+        <div className="flex items-baseline justify-between gap-3">
+          <div className="text-lg font-black">
+            {prettyLeague(leagueId)} • {sport} • {statLabel}
+          </div>
+          <div className="text-xs text-white/60">Top 50</div>
+        </div>
 
-                <div className="flex flex-wrap items-center gap-3">
-                  <label className="flex items-center gap-2 text-sm font-bold">
-                    <input
-                      type="checkbox"
-                      checked={includeNonGame}
-                      onChange={(e) => setIncludeNonGame(e.target.checked)}
-                    />
-                    Include Non-Game
-                  </label>
-
-                  <label className="flex items-center gap-2 text-sm font-bold">
-                    <input
-                      type="checkbox"
-                      checked={includeStaff}
-                      onChange={(e) => setIncludeStaff(e.target.checked)}
-                    />
-                    Include Staff
-                  </label>
-                </div>
-              </div>
-
-              <div className="mt-4 overflow-x-auto">
-                <table className="w-full text-left text-sm">
-                  <thead className="text-white/70">
-                    <tr>
-                      <th className="py-2">Team</th>
-                      <th className="py-2">Points</th>
+        {loading ? (
+          <div className="mt-4 text-white/70">Loading…</div>
+        ) : (
+          <div className="mt-4 overflow-x-auto">
+            <table className="w-full text-left text-sm">
+              <thead className="text-white/70">
+                <tr>
+                  <th className="py-2">#</th>
+                  <th className="py-2">Player</th>
+                  <th className="py-2">Team</th>
+                  <th className="py-2 text-right">{statLabel}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {rows.length ? (
+                  rows.map((r, idx) => (
+                    <tr key={`${r.player_id}-${r.stat_key}`} className="border-t border-white/10">
+                      <td className="py-3 font-black">{idx + 1}</td>
+                      <td className="py-3 font-extrabold">{r.player_name}</td>
+                      <td className="py-3 text-white/80">{r.team_name}</td>
+                      <td className="py-3 text-right font-black tabular-nums">{r.value}</td>
                     </tr>
-                  </thead>
-                  <tbody>
-                    {overallRows.length ? (
-                      overallRows.map((r) => (
-                        <tr key={`overall-${r.team_name}`} className="border-t border-white/10">
-                          <td className="py-3 font-extrabold">{r.team_name}</td>
-                          <td className="py-3 font-black">{r.points}</td>
-                        </tr>
-                      ))
-                    ) : (
-                      <tr>
-                        <td className="py-4 text-white/60" colSpan={2}>
-                          No overall points yet.
-                        </td>
-                      </tr>
-                    )}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          ) : null}
+                  ))
+                ) : (
+                  <tr>
+                    <td className="py-4 text-white/60" colSpan={4}>
+                      No stats yet for this filter. Finalize a game to populate stat leaders.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
 
-          {/* NON-GAME TAB */}
-          {tab === "non_game" ? (
-            <div className="mt-6 rounded-2xl border border-white/10 bg-white/5 p-5">
-              <div className="text-lg font-black">Non-Game Points</div>
-              <div className="text-sm text-white/70">Spirit, cheering, songs, community, etc.</div>
-
-              <div className="mt-4 overflow-x-auto">
-                <table className="w-full text-left text-sm">
-                  <thead className="text-white/70">
-                    <tr>
-                      <th className="py-2">Team</th>
-                      <th className="py-2">Points</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {nonGameRows.length ? (
-                      nonGameRows.map((r) => (
-                        <tr key={`ng-${r.team_name}`} className="border-t border-white/10">
-                          <td className="py-3 font-extrabold">{r.team_name}</td>
-                          <td className="py-3 font-black">{r.points}</td>
-                        </tr>
-                      ))
-                    ) : (
-                      <tr>
-                        <td className="py-4 text-white/60" colSpan={2}>
-                          No non-game points yet. Add them from Add Results → Non-Game Points.
-                        </td>
-                      </tr>
-                    )}
-                  </tbody>
-                </table>
-              </div>
+            <div className="mt-3 text-xs text-white/50">
+              Tip: Stat leaders update when a game is finalized (they pull from <b>player_totals</b>).
             </div>
-          ) : null}
-        </>
-      )}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
@@ -6133,6 +6413,8 @@ export default function PostGamesPage() {
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "@/lib/supabase";
+import { useAppMode } from "@/lib/useAppMode";
+import ColorWarBoard from "./ColorWarBoard";
 
 const SCENES = [
   "camp",
@@ -6221,6 +6503,7 @@ function computeRivalries(rows) {
 }
 
 export default function DisplayPage() {
+  const { isCW, blueName, whiteName, blueLogo, whiteLogo, loading: modeLoading } = useAppMode();
   const [scene, setScene] = useState("camp");
 
   const [campStandings, setCampStandings] = useState([]);
@@ -6305,11 +6588,21 @@ export default function DisplayPage() {
         .from("player_totals")
         .select("*")
         .eq("league_id", lid)
+        .eq("season", "league")
         .order("value", { ascending: false })
         .limit(500);
 
+      // Hide departed players (kept in DB, just not shown on the board).
+      let pool = leaderPool || [];
+      const ids = Array.from(new Set(pool.map((r) => String(r.player_id))));
+      if (ids.length) {
+        const { data: deps } = await supabase.from("players").select("id").in("id", ids).eq("departed", true);
+        const departedSet = new Set((deps || []).map((d) => String(d.id)));
+        if (departedSet.size) pool = pool.filter((r) => !departedSet.has(String(r.player_id)));
+      }
+
       const bestPerCategory = new Map();
-      for (const row of leaderPool || []) {
+      for (const row of pool) {
         const key = `${String(row.sport || "").toLowerCase()}:${String(row.stat_key || "").toLowerCase()}`;
         const existing = bestPerCategory.get(key);
         if (!existing || Number(row.value || 0) > Number(existing.value || 0)) {
@@ -6829,6 +7122,10 @@ export default function DisplayPage() {
   }
 
   /* ===== MAIN RETURN ===== */
+    if (isCW) {
+      return <ColorWarBoard blueName={blueName} whiteName={whiteName} blueLogo={blueLogo} whiteLogo={whiteLogo} />;
+    }
+
     return (
     <main
       ref={wrapRef}
