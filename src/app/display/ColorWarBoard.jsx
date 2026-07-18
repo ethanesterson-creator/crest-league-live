@@ -180,16 +180,16 @@ export default function ColorWarBoard({ blueName, whiteName, blueLogo, whiteLogo
 
       {/* ---- SCOREBOARD ---- */}
       {scene === "scoreboard" && (
-        <div className="relative z-10 flex flex-1 flex-col items-center justify-center px-16">
-          <div className="grid w-full grid-cols-[1fr_auto_1fr] items-center gap-12">
+        <div className="relative z-10 flex flex-1 flex-col items-center justify-center px-8">
+          <div className="grid w-full grid-cols-[1fr_auto_1fr] items-center gap-6">
             {/* Blue */}
-            <div className="flex flex-col items-center gap-4">
+            <div className="flex min-w-0 flex-col items-center gap-4 px-4">
               <TeamCrest url={blueUrl} fallbackLetter="B" ring="ring-blue-400" />
-              <div className="text-center text-7xl font-black uppercase leading-tight tracking-wider text-blue-200"
+              <div className="text-center text-6xl font-black uppercase leading-[0.95] tracking-wide text-blue-200 break-words"
                    style={{ textShadow: "0 0 30px rgba(59,130,246,0.6)" }}>
                 {blueName}
               </div>
-              <div className="text-[11rem] leading-none font-black tabular-nums text-white" style={{ textShadow: "0 0 60px rgba(59,130,246,0.7)" }}>
+              <div className="text-[9rem] leading-none font-black tabular-nums text-white" style={{ textShadow: "0 0 60px rgba(59,130,246,0.7)" }}>
                 {blueTotal}
               </div>
             </div>
@@ -203,13 +203,13 @@ export default function ColorWarBoard({ blueName, whiteName, blueLogo, whiteLogo
             </div>
 
             {/* White */}
-            <div className="flex flex-col items-center gap-4">
+            <div className="flex min-w-0 flex-col items-center gap-4 px-4">
               <TeamCrest url={whiteUrl} fallbackLetter="W" ring="ring-white/70" />
-              <div className="text-center text-7xl font-black uppercase leading-tight tracking-wider text-white"
+              <div className="text-center text-6xl font-black uppercase leading-[0.95] tracking-wide text-white break-words"
                    style={{ textShadow: "0 0 30px rgba(255,255,255,0.5)" }}>
                 {whiteName}
               </div>
-              <div className="text-[11rem] leading-none font-black tabular-nums text-white" style={{ textShadow: "0 0 60px rgba(255,255,255,0.5)" }}>
+              <div className="text-[9rem] leading-none font-black tabular-nums text-white" style={{ textShadow: "0 0 60px rgba(255,255,255,0.5)" }}>
                 {whiteTotal}
               </div>
             </div>
