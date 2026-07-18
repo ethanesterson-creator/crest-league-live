@@ -29,6 +29,8 @@ export default function AdminPage() {
 
   // ---- Color War mode switch ----
   const [cwSettings, setCwSettings] = useState(null);       // full app_settings row
+  const [sessionSwitchText, setSessionSwitchText] = useState("");
+  const [switchingSession, setSwitchingSession] = useState(false);
   const [modeSwitchText, setModeSwitchText] = useState(""); // typed confirmation
   const [switchingMode, setSwitchingMode] = useState(false);
   const [cwBlueNameInput, setCwBlueNameInput] = useState("");
@@ -693,6 +695,32 @@ export default function AdminPage() {
     }
   }
 
+  async function startNewSession() {
+    setErr(""); setMsg("");
+    if (sessionSwitchText.trim().toUpperCase() !== "START SESSION 2") {
+      setErr('Type START SESSION 2 exactly to confirm.');
+      return;
+    }
+    setSwitchingSession(true);
+    try {
+      // Flip to s2 AND force league mode (color war comes later within s2).
+      const { error } = await supabase.from("app_settings")
+        .update({ current_session: "s2", mode: "league", updated_at: new Date().toISOString() })
+        .eq("id", 1);
+      if (error) { setErr(error.message); setSwitchingSession(false); return; }
+
+      // Rebuild the now-current slice (s2 league) so standings start clean.
+      const { error: rbErr } = await supabase.rpc("rebuild_leaderboards", { p_season: "league", p_session: "s2" });
+      if (rbErr) setErr(`Session switched, but rebuild failed: ${rbErr.message}. Re-run manually.`);
+
+      setSessionSwitchText("");
+      setMsg("✅ Session 2 is now live. Session 1 is frozen and preserved. The whole app now shows Session 2.");
+      await loadCwSettings();
+    } finally {
+      setSwitchingSession(false);
+    }
+  }
+
   async function exportPlayerStatsCSV() {
     resetMessages();
     setExporting(true);
@@ -1315,6 +1343,42 @@ export default function AdminPage() {
           <div className="mt-6 text-xs text-white/50">
             After deleting staff/non-game entries, the Staff tab + Non-Game tab + Overall toggles should reflect changes immediately.
           </div>
+
+          {/* ================= SESSION CONTROL ================= */}
+          <div className={`mt-8 rounded-2xl border p-5 ${cwSettings?.current_session === "s2" ? "border-purple-400/50 bg-purple-500/10" : "border-amber-400/30 bg-amber-500/5"}`}>
+            <div className="text-lg font-black">Session Control</div>
+            <div className="mt-1 text-sm text-white/60">
+              Current session:{" "}
+              <span className="font-black text-purple-300">
+                {cwSettings?.current_session === "s2" ? "SESSION 2" : "SESSION 1"}
+              </span>
+            </div>
+
+            {cwSettings?.current_session !== "s2" ? (
+              <div className="mt-4 rounded-xl border border-white/10 bg-black/20 p-4">
+                <div className="text-sm font-bold text-white/80">
+                  Start Session 2 — freezes all of Session 1 (kept forever, just hidden) and starts a fresh season with the new rosters. Standings, leaders, and games all reset to empty for Session 2. This also switches the app back to League mode.
+                </div>
+                <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-end">
+                  <label className="text-sm">
+                    <div className="mb-1 text-xs font-bold text-white/60">Type START SESSION 2 to confirm</div>
+                    <input value={sessionSwitchText} onChange={(e) => setSessionSwitchText(e.target.value)}
+                      placeholder="START SESSION 2"
+                      className="w-full rounded-xl border border-amber-400/40 bg-slate-950 px-3 py-2 font-black tracking-wide text-white outline-none focus:border-amber-400/70 sm:w-64" />
+                  </label>
+                  <button disabled={switchingSession} onClick={startNewSession}
+                    className="rounded-xl border border-purple-400/40 bg-purple-500/15 px-5 py-2.5 text-sm font-black text-purple-100 hover:bg-purple-500/25 disabled:opacity-50">
+                    {switchingSession ? "Starting…" : "→ Start Session 2"}
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="mt-4 rounded-xl border border-purple-400/20 bg-black/20 p-4 text-sm text-white/70">
+                Session 2 is live. Session 1 is frozen and preserved in the database. There is no switch back — Session 1 remains viewable via the archive (read-only).
+              </div>
+            )}
+          </div>
+          {/* ================= END SESSION CONTROL ================= */}
 
           {/* ================= COLOR WAR CONTROL ================= */}
           <div className={`mt-8 rounded-2xl border p-5 ${cwSettings?.mode === "color_war" ? "border-blue-400/50 bg-blue-500/10" : "border-white/10 bg-white/5"}`}>

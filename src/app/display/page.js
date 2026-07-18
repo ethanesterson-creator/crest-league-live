@@ -92,7 +92,7 @@ function computeRivalries(rows) {
 }
 
 export default function DisplayPage() {
-  const { isCW, blueName, whiteName, blueLogo, whiteLogo, loading: modeLoading } = useAppMode();
+  const { isCW, session, blueName, whiteName, blueLogo, whiteLogo, loading: modeLoading } = useAppMode();
   const [scene, setScene] = useState("camp");
 
   const [campStandings, setCampStandings] = useState([]);
@@ -119,7 +119,9 @@ export default function DisplayPage() {
    const { data: allStandings } = await supabase
   .from("standings")
   .select("team_name, league_points")
-  .eq("sport", "overall");
+  .eq("sport", "overall")
+  .eq("season", "league")
+  .eq("session", session);
 
  // Sum league_points per team_name across all leagues
  const totalsMap = {};
@@ -135,6 +137,8 @@ export default function DisplayPage() {
   .select("team_name, points")
   .eq("deleted", false)
   .eq("status", "final")
+  .eq("season", "league")
+  .eq("session", session)
   .limit(5000);
 
  (ngStandingsData || []).forEach((row) => {
@@ -153,6 +157,8 @@ export default function DisplayPage() {
       .from("live_games")
       .select("*")
       .eq("status", "active")
+      .eq("season", "league")
+      .eq("session", session)
       .is("played_on", null)
       .order("updated_at", { ascending: false });
 
@@ -164,6 +170,8 @@ export default function DisplayPage() {
       .select("*")
       .eq("status", "final")
       .eq("deleted", false)
+      .eq("season", "league")
+      .eq("session", session)
       .order("updated_at", { ascending: false })
       .limit(12);
 
@@ -178,6 +186,7 @@ export default function DisplayPage() {
         .select("*")
         .eq("league_id", lid)
         .eq("season", "league")
+        .eq("session", session)
         .order("value", { ascending: false })
         .limit(500);
 
@@ -712,7 +721,7 @@ export default function DisplayPage() {
 
   /* ===== MAIN RETURN ===== */
     if (isCW) {
-      return <ColorWarBoard blueName={blueName} whiteName={whiteName} blueLogo={blueLogo} whiteLogo={whiteLogo} />;
+      return <ColorWarBoard session={session} blueName={blueName} whiteName={whiteName} blueLogo={blueLogo} whiteLogo={whiteLogo} />;
     }
 
     return (

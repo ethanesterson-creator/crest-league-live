@@ -37,7 +37,7 @@ function prettyStatLabel(sportName, statKey) {
 }
 
 export default function LeadersPage() {
-  const { season } = useAppMode();
+  const { season, session } = useAppMode();
   const [err, setErr] = useState("");  const [loading, setLoading] = useState(true);
 
   const [leagues, setLeagues] = useState([]);
@@ -88,6 +88,7 @@ export default function LeadersPage() {
         .from("player_totals")
         .select("league_id, sport, player_id, player_name, team_name, stat_key, value, updated_at")
         .eq("season", season)
+        .eq("session", session)
         .eq("league_id", norm(leagueId))
         .eq("sport", sportKey)
         .eq("stat_key", stat)
@@ -117,7 +118,7 @@ export default function LeadersPage() {
   useEffect(() => {
     loadLeaders({ quiet: true });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [leagueId, sport, statKey, season]);
+  }, [leagueId, sport, statKey, season, session]);
 
   const statLabel = useMemo(() => prettyStatLabel(sport, statKey), [sport, statKey]);
 

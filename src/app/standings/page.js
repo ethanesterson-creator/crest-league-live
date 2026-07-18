@@ -26,7 +26,7 @@ function sortStandings(arr) {
 }
 
 export default function StandingsPage() {
-  const { season } = useAppMode();
+  const { season, session } = useAppMode();
   const [err, setErr] = useState("");  const [loading, setLoading] = useState(true);
 
   // Tabs: overall | staff | non_game
@@ -49,6 +49,7 @@ export default function StandingsPage() {
       include_staff: includeStaff,
       include_non_game: includeNonGame,
       p_season: season,
+      p_session: session,
     });
 
     if (error) throw error;
@@ -68,6 +69,7 @@ export default function StandingsPage() {
       .from("standings")
       .select("league_id, sport, team_name, wins, losses, league_points, updated_at")
       .eq("season", season)
+      .eq("session", session)
       .eq("sport", STAFF_SPORT_KEY);
 
     if (error) throw error;
@@ -79,6 +81,7 @@ export default function StandingsPage() {
       .from("non_game_points")
       .select("team_name, points, status, deleted")
       .eq("season", season)
+      .eq("session", session)
       .eq("deleted", false)
       .eq("status", "final")
       .limit(5000);
@@ -127,7 +130,7 @@ export default function StandingsPage() {
       }
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [season]);
+  }, [season, session]);
 
   // When toggles change, refresh overall tab automatically (only if on that tab)
   useEffect(() => {

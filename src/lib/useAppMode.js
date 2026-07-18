@@ -14,6 +14,7 @@ const CACHE_KEY = "crest_app_settings_v1";
 
 const DEFAULTS = {
   mode: "league",
+  current_session: "s1",
   cw_blue_name: "Blue",
   cw_white_name: "White",
   cw_blue_logo: null,
@@ -74,6 +75,7 @@ export function useAppMode() {
   return {
     mode: settings.mode,
     season: isCW ? "cw" : "league",
+    session: settings.current_session || "s1",
     isCW,
     blueName: settings.cw_blue_name || "Blue",
     whiteName: settings.cw_white_name || "White",

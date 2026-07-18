@@ -36,7 +36,7 @@ function matchupLabel(a1, a2) {
 }
 
 export default function PostGamesPage() {
-  const { season, isCW, blueName, whiteName } = useAppMode();
+  const { season, session, isCW, blueName, whiteName } = useAppMode();
   const [err, setErr] = useState("");
   const [msg, setMsg] = useState("");
 
@@ -327,6 +327,7 @@ export default function PostGamesPage() {
 
         is_staff_game: false,
         season,
+        session,
       };
 
       const { data, error } = await supabase.from("live_games").insert([row]).select("id").single();
@@ -369,6 +370,7 @@ export default function PostGamesPage() {
         status: asDraft ? "draft" : "final",
         deleted: false,
         season,
+        session,
       };
 
       const { error } = await supabase.from("non_game_points").insert([row]);

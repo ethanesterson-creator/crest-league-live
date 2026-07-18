@@ -74,7 +74,7 @@ function matchupLabel(a1, a2) {
 }
 
 export default function HomePage() {
-  const { season, isCW, blueName, whiteName } = useAppMode();
+  const { season, session, isCW, blueName, whiteName } = useAppMode();
   const [status, setStatus] = useState("Checking…");
   const [err, setErr] = useState("");
   const [creating, setCreating] = useState(false);
@@ -320,6 +320,7 @@ export default function HomePage() {
       .from("live_games")
       .select("*")
       .eq("season", season)
+      .eq("session", session)
       .neq("status", "draft")
       .is("played_on", null) // ✅ only LIVE games
       .order("created_at", { ascending: false })
@@ -431,6 +432,7 @@ export default function HomePage() {
       team_a2: (!isCW && matchupType === "two_team") ? norm(teamA2) : null,
       team_b2: (!isCW && matchupType === "two_team") ? norm(teamB2) : null,
       season,
+      session,
 
       score_a: 0,
       score_b: 0,

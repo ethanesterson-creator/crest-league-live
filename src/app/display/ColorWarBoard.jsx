@@ -13,7 +13,7 @@ function norm(s) { return String(s ?? "").trim().toLowerCase(); }
 
 const CW_SCENES = ["scoreboard", "leaders_seniors", "leaders_juniors", "leaders_sophomores", "live"];
 
-export default function ColorWarBoard({ blueName, whiteName, blueLogo, whiteLogo }) {
+export default function ColorWarBoard({ session = "s1", blueName, whiteName, blueLogo, whiteLogo }) {
   const [scene, setScene] = useState("scoreboard");
   const [blueTotal, setBlueTotal] = useState(0);
   const [whiteTotal, setWhiteTotal] = useState(0);
@@ -36,7 +36,8 @@ export default function ColorWarBoard({ blueName, whiteName, blueLogo, whiteLogo
       .from("standings")
       .select("league_id, team_name, league_points")
       .eq("sport", "overall")
-      .eq("season", "cw");
+      .eq("season", "cw")
+      .eq("session", session);
 
     const per = { seniors: { blue: 0, white: 0 }, juniors: { blue: 0, white: 0 }, sophomores: { blue: 0, white: 0 } };
     let b = 0, w = 0;
@@ -54,6 +55,7 @@ export default function ColorWarBoard({ blueName, whiteName, blueLogo, whiteLogo
       .from("non_game_points")
       .select("team_name, points")
       .eq("season", "cw")
+      .eq("session", session)
       .eq("deleted", false)
       .eq("status", "final")
       .limit(5000);
@@ -73,6 +75,7 @@ export default function ColorWarBoard({ blueName, whiteName, blueLogo, whiteLogo
         .from("player_totals")
         .select("player_id, player_name, team_name, sport, stat_key, value")
         .eq("season", "cw")
+        .eq("session", session)
         .eq("league_id", lg)
         .order("value", { ascending: false })
         .limit(60);
@@ -107,6 +110,7 @@ export default function ColorWarBoard({ blueName, whiteName, blueLogo, whiteLogo
       .from("live_games")
       .select("*")
       .eq("season", "cw")
+      .eq("session", session)
       .eq("status", "active")
       .is("played_on", null)
       .order("updated_at", { ascending: false });
