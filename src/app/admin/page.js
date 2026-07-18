@@ -30,6 +30,12 @@ export default function AdminPage() {
   // ---- Color War mode switch ----
   const [cwSettings, setCwSettings] = useState(null);       // full app_settings row
   const [sessionSwitchText, setSessionSwitchText] = useState("");
+  // S1 archive viewer (read-only view of frozen Session 1)
+  const [archiveOpen, setArchiveOpen] = useState(false);
+  const [archiveLeague, setArchiveLeague] = useState("seniors");
+  const [archiveStandings, setArchiveStandings] = useState([]);
+  const [archiveLeaders, setArchiveLeaders] = useState([]);
+  const [archiveLoading, setArchiveLoading] = useState(false);
   const [switchingSession, setSwitchingSession] = useState(false);
   const [modeSwitchText, setModeSwitchText] = useState(""); // typed confirmation
   const [switchingMode, setSwitchingMode] = useState(false);
@@ -645,6 +651,56 @@ export default function AdminPage() {
     a.click();
     a.remove();
     URL.revokeObjectURL(url);
+  }
+
+  async function loadArchive(lid) {
+    setArchiveLoading(true);
+    try {
+      // Frozen Session 1 standings for this league (season league, session s1).
+      const { data: st } = await supabase
+        .from("standings")
+        .select("league_id, team_name, wins, losses, league_points")
+        .eq("sport", "overall")
+        .eq("season", "league")
+        .eq("session", "s1")
+        .eq("league_id", lid);
+
+      // Add S1 non-game points on top.
+      const { data: ng } = await supabase
+        .from("non_game_points")
+        .select("team_name, points")
+        .eq("season", "league")
+        .eq("session", "s1")
+        .eq("league_id", lid)
+        .eq("deleted", false)
+        .eq("status", "final")
+        .limit(5000);
+      const ngMap = {};
+      for (const r of ng || []) {
+        const k = String(r.team_name || "").toLowerCase();
+        ngMap[k] = (ngMap[k] || 0) + Number(r.points || 0);
+      }
+      const merged = (st || []).map((r) => ({
+        ...r,
+        total: Number(r.league_points || 0) + (ngMap[String(r.team_name || "").toLowerCase()] || 0),
+      })).sort((a, b) => b.total - a.total || Number(b.wins||0) - Number(a.wins||0));
+      setArchiveStandings(merged);
+
+      // Frozen S1 stat leaders (top values across sports) for this league.
+      const { data: lead } = await supabase
+        .from("player_totals")
+        .select("player_name, team_name, sport, stat_key, value")
+        .eq("season", "league")
+        .eq("session", "s1")
+        .eq("league_id", lid)
+        .order("value", { ascending: false })
+        .limit(40);
+      setArchiveLeaders((lead || []).filter((r) => Number(r.value) > 0).slice(0, 20));
+    } catch (e) {
+      setErr(e?.message ?? String(e));
+    } finally {
+      setArchiveLoading(false);
+    }
   }
 
   async function loadCwSettings() {
@@ -1379,6 +1435,75 @@ export default function AdminPage() {
             )}
           </div>
           {/* ================= END SESSION CONTROL ================= */}
+
+          {/* ================= SESSION 1 ARCHIVE (read-only) ================= */}
+          <div className="mt-8 rounded-2xl border border-white/10 bg-white/[0.03] p-5">
+            <div className="flex items-center justify-between">
+              <div>
+                <div className="text-lg font-black">Session 1 Archive</div>
+                <div className="mt-1 text-sm text-white/60">Read-only view of frozen Session 1 standings + stat leaders. Does not affect the current session.</div>
+              </div>
+              <button
+                onClick={() => { const n = !archiveOpen; setArchiveOpen(n); if (n) loadArchive(archiveLeague); }}
+                className="rounded-xl border border-white/15 bg-white/10 px-4 py-2 text-sm font-black hover:bg-white/15">
+                {archiveOpen ? "Hide" : "View Session 1"}
+              </button>
+            </div>
+
+            {archiveOpen ? (
+              <div className="mt-5">
+                <div className="flex items-center gap-2">
+                  {["seniors", "juniors", "sophomores"].map((lg) => (
+                    <button key={lg}
+                      onClick={() => { setArchiveLeague(lg); loadArchive(lg); }}
+                      className={`rounded-xl border px-3 py-2 text-sm font-black ${archiveLeague === lg ? "border-emerald-400/30 bg-emerald-500/10" : "border-white/15 bg-white/5 hover:bg-white/10"}`}>
+                      {lg.charAt(0).toUpperCase() + lg.slice(1)}
+                    </button>
+                  ))}
+                </div>
+
+                {archiveLoading ? (
+                  <div className="mt-4 text-sm text-white/60">Loading…</div>
+                ) : (
+                  <div className="mt-4 grid gap-5 lg:grid-cols-2">
+                    <div className="rounded-2xl border border-white/10 bg-black/20 p-4">
+                      <div className="mb-2 text-sm font-black uppercase tracking-widest text-white/50">Final Standings</div>
+                      <table className="w-full text-left text-sm">
+                        <thead className="text-white/50"><tr><th className="py-1">#</th><th>Team</th><th>W</th><th>L</th><th>Pts</th></tr></thead>
+                        <tbody>
+                          {archiveStandings.map((r, i) => (
+                            <tr key={r.team_name} className="border-t border-white/10">
+                              <td className="py-2 text-white/40">{i + 1}</td>
+                              <td className="py-2 font-black">{r.team_name}</td>
+                              <td className="py-2">{r.wins}</td>
+                              <td className="py-2">{r.losses}</td>
+                              <td className="py-2 font-black">{r.total}</td>
+                            </tr>
+                          ))}
+                          {!archiveStandings.length ? <tr><td colSpan={5} className="py-3 text-white/50">No data.</td></tr> : null}
+                        </tbody>
+                      </table>
+                    </div>
+
+                    <div className="rounded-2xl border border-white/10 bg-black/20 p-4">
+                      <div className="mb-2 text-sm font-black uppercase tracking-widest text-white/50">Top Stat Leaders</div>
+                      <div className="grid gap-1">
+                        {archiveLeaders.map((r, i) => (
+                          <div key={i} className="flex items-center justify-between border-t border-white/10 py-1.5 text-sm">
+                            <div className="truncate font-bold">{r.player_name}</div>
+                            <div className="ml-3 shrink-0 text-white/60">{r.value} {String(r.stat_key).toUpperCase()} · {String(r.sport).toUpperCase()}</div>
+                          </div>
+                        ))}
+                        {!archiveLeaders.length ? <div className="py-3 text-white/50">No data.</div> : null}
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            ) : null}
+          </div>
+          {/* ================= END SESSION 1 ARCHIVE ================= */}
+
 
           {/* ================= COLOR WAR CONTROL ================= */}
           <div className={`mt-8 rounded-2xl border p-5 ${cwSettings?.mode === "color_war" ? "border-blue-400/50 bg-blue-500/10" : "border-white/10 bg-white/5"}`}>
