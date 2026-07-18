@@ -914,6 +914,17 @@ export default function LiveGamePage() {
     const sa = Number(game.score_a || 0), sb = Number(game.score_b || 0);
     if (sa === 0 && sb === 0) { setErr("Score is 0-0. Add points before finalizing."); return; }
     if (sa === sb) { setErr("Score is tied. Bauercrest has no ties — adjust before finalizing."); return; }
+
+    // Card-data guard: individual-stat sports should have player stats logged
+    // before finalizing. Volleyball/Newcomb are team-outcome only, so skip them.
+    const statSports = ["hoop","soccer","euro","hockey","speedball","softball","football","kickball"];
+    if (statSports.includes(norm(game.sport))) {
+      const anyStats = Object.values(statTotals || {}).some((v) => Number(v) > 0);
+      if (!anyStats) {
+        const proceed = confirm("This game has NO player stats logged.\n\nFor player cards we want every goal/point/hit recorded. Log stats first, or finalize anyway?");
+        if (!proceed) { setFinalizing(false); return; }
+      }
+    }
     setFinalizing(true);
     try {
       if (rules?.clock?.enabled) {

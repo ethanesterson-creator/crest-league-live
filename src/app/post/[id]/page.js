@@ -403,6 +403,22 @@ export default function PostDraftEditorPage() {
       return;
     }
 
+    // Card-data guard: warn if an individual-stat sport has no stats logged.
+    const statSports = ["hoop","soccer","euro","hockey","speedball","softball","football","kickball"];
+    if (statSports.includes(norm(game?.sport))) {
+      let anyStats = false;
+      for (const pid of Object.keys(statTotals || {})) {
+        for (const k of Object.keys(statTotals[pid] || {})) {
+          if (Number(statTotals[pid][k]) > 0) { anyStats = true; break; }
+        }
+        if (anyStats) break;
+      }
+      if (!anyStats) {
+        const proceed = confirm("This game has NO player stats logged.\n\nFor player cards we want every goal/point/hit recorded. Add stats first, or finalize anyway?");
+        if (!proceed) return;
+      }
+    }
+
     const ok = confirm("Finalize this post-game draft?\n\nThis updates standings + stat leaders.");
     if (!ok) return;
 

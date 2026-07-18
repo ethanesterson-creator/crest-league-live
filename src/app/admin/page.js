@@ -777,6 +777,130 @@ export default function AdminPage() {
     }
   }
 
+  const [exportingCards, setExportingCards] = useState(false);
+
+  // Player-card data export. One row per player (across BOTH sessions), with
+  // identity, combined stat totals, best single-game performances, and win
+  // record. This is the master data file for the imaging team.
+  async function exportPlayerCards() {
+    setErr(""); setMsg("Building player card data…"); setExportingCards(true);
+    try {
+      // 1) Every player who ever came (any session). Include departed — cards
+      //    are for everyone who attended.
+      const { data: players } = await supabase
+        .from("players")
+        .select("id, first_name, last_name, league_id, team_name, s1_team, bunk, active_session, departed")
+        .order("id", { ascending: true });
+
+      // 2) All stat totals across both sessions.
+      const { data: totals } = await supabase
+        .from("player_totals")
+        .select("player_id, session, sport, stat_key, value")
+        .limit(20000);
+
+      // 3) Win records: count finalized games each player's team won, per session.
+      //    We compute from standings-independent game log via game_roster.
+      const { data: rosters } = await supabase
+        .from("game_roster")
+        .select("game_id, player_id, team_side")
+        .limit(50000);
+      const { data: games } = await supabase
+        .from("live_games")
+        .select("id, score_a, score_b, session, status")
+        .eq("status", "final")
+        .limit(5000);
+      const gameById = {};
+      for (const g of games || []) gameById[g.id] = g;
+
+      // 4) Best single games: per player, the game where they logged the most
+      //    of a single stat (e.g. 5 goals in one game).
+      const { data: events } = await supabase
+        .from("live_events")
+        .select("game_id, player_id, sport, stat_key, delta")
+        .eq("event_type", "stat")
+        .limit(100000);
+
+      // ---- aggregate ----
+      // combined totals per player: {pid: {"sport stat": value}}
+      const totMap = {};
+      for (const t of totals || []) {
+        const pid = String(t.player_id);
+        const key = `${String(t.sport).toUpperCase()} ${String(t.stat_key).toUpperCase()}`;
+        totMap[pid] = totMap[pid] || {};
+        totMap[pid][key] = (totMap[pid][key] || 0) + Number(t.value || 0);
+      }
+
+      // wins per player
+      const winMap = {};
+      for (const r of rosters || []) {
+        const g = gameById[r.game_id];
+        if (!g) continue;
+        const won = (r.team_side === "A" && Number(g.score_a) > Number(g.score_b)) ||
+                    (r.team_side === "B" && Number(g.score_b) > Number(g.score_a));
+        if (won) winMap[String(r.player_id)] = (winMap[String(r.player_id)] || 0) + 1;
+      }
+
+      // best single game per player: {pid: "5 G · SOCCER"}
+      const perGameStat = {}; // pid -> {game_id -> {statkey -> sum, sport}}
+      for (const e of events || []) {
+        const pid = String(e.player_id);
+        perGameStat[pid] = perGameStat[pid] || {};
+        const gk = e.game_id;
+        perGameStat[pid][gk] = perGameStat[pid][gk] || { sport: e.sport, stats: {} };
+        const sk = String(e.stat_key).toUpperCase();
+        perGameStat[pid][gk].stats[sk] = (perGameStat[pid][gk].stats[sk] || 0) + Number(e.delta || 0);
+      }
+      const bestGameMap = {};
+      for (const pid of Object.keys(perGameStat)) {
+        let best = null;
+        for (const gk of Object.keys(perGameStat[pid])) {
+          const g = perGameStat[pid][gk];
+          for (const sk of Object.keys(g.stats)) {
+            const v = g.stats[sk];
+            if (!best || v > best.value) best = { value: v, stat: sk, sport: String(g.sport).toUpperCase() };
+          }
+        }
+        if (best) bestGameMap[pid] = `${best.value} ${best.stat} · ${best.sport} (single game)`;
+      }
+
+      // ---- build rows ----
+      const rows = [];
+      for (const p of players || []) {
+        const pid = String(p.id);
+        const totals = totMap[pid] || {};
+        // sort stat totals descending, make a readable line
+        const totalsLine = Object.entries(totals)
+          .filter(([k, v]) => v > 0)
+          .sort((a, b) => b[1] - a[1])
+          .map(([k, v]) => `${v} ${k}`)
+          .join(", ");
+        rows.push({
+          player_id: pid,
+          first_name: p.first_name,
+          last_name: p.last_name,
+          league: p.league_id,
+          team: p.team_name,
+          bunk: p.bunk,
+          sessions: p.active_session === "s2" ? (p.s1_team ? "Both" : "Session 2") : "Session 1",
+          total_wins: winMap[pid] || 0,
+          best_single_game: bestGameMap[pid] || "",
+          all_stat_totals: totalsLine,
+        });
+      }
+
+      const header = ["player_id","first_name","last_name","league","team","bunk","sessions","total_wins","best_single_game","all_stat_totals"];
+      const lines = [header.join(",")];
+      for (const r of rows) lines.push(header.map((h) => csvEscape(r[h])).join(","));
+      downloadTextFile(`crest_player_cards_${new Date().toISOString().slice(0,10)}.csv`, lines.join("\n"));
+
+      setMsg(`✅ Player card data exported — ${rows.length} players.`);
+    } catch (e) {
+      setErr(e?.message ?? String(e)); setMsg("");
+    } finally {
+      setExportingCards(false);
+    }
+  }
+
   async function exportPlayerStatsCSV() {
     resetMessages();
     setExporting(true);
@@ -1128,6 +1252,20 @@ export default function AdminPage() {
             >
               {exporting ? "Exporting…" : "Download Player Stats CSV"}
             </button>
+
+            <div className="mt-6 border-t border-white/10 pt-5">
+              <div className="text-lg font-black">🃏 Player Card Data (for imaging team)</div>
+              <div className="mt-1 text-sm text-white/70">
+                The master keepsake file. One row per camper across <b>both sessions</b> — name, league, team, bunk, total wins, best single-game performance, and every stat total. This is what the imaging team turns into cards.
+              </div>
+              <button
+                disabled={exportingCards}
+                onClick={exportPlayerCards}
+                className="mt-4 w-full rounded-2xl border border-amber-400/30 bg-amber-500/10 px-4 py-3 text-sm font-black text-amber-100 hover:bg-amber-500/15 disabled:opacity-60"
+              >
+                {exportingCards ? "Building…" : "Download Player Card Data"}
+              </button>
+            </div>
           </div>
 
           <div className="mt-6 grid gap-6 md:grid-cols-2">
