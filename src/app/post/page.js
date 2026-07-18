@@ -271,7 +271,7 @@ export default function PostGamesPage() {
     return "";
   }
 
-  async function createDraft({ staff = false } = {}) {
+  async function createDraft() {
     setErr("");
     setMsg("");
 
@@ -333,7 +333,7 @@ export default function PostGamesPage() {
       const { data, error } = await supabase.from("live_games").insert([row]).select("id").single();
       if (error) throw error;
 
-      setMsg(staff ? "✅ Staff game draft created." : "✅ Draft created.");
+      setMsg("✅ Draft created.");
       await loadDrafts();
       window.location.href = `/post/${data.id}`;
     } catch (e) {
@@ -397,7 +397,7 @@ export default function PostGamesPage() {
           <div>
             <div className="text-2xl font-black tracking-tight">Add Results</div>
             <div className="mt-1 text-sm text-white/70">
-              Enter results after the fact: <b>Post Games</b>, <b>Staff Games</b>, and <b>Non-Game Points</b>.
+              Enter results after the fact: <b>Post Games</b> and <b>Non-Game Points</b>.
             </div>
           </div>
 
@@ -434,18 +434,6 @@ export default function PostGamesPage() {
             </button>
 
             <button
-              onClick={() => setEntryType("staff")}
-              className={`rounded-xl border px-4 py-3 text-left ${
-                entryType === "staff"
-                  ? "border-emerald-400/30 bg-emerald-500/10"
-                  : "border-white/10 bg-black/20 hover:bg-black/30"
-              }`}
-            >
-              <div className="font-black">Staff Game</div>
-              <div className="text-xs text-white/60">Same as post game, but tagged as staff</div>
-            </button>
-
-            <button
               onClick={() => setEntryType("non_game")}
               className={`rounded-xl border px-4 py-3 text-left ${
                 entryType === "non_game"
@@ -460,10 +448,10 @@ export default function PostGamesPage() {
         </div>
 
         {/* GAMES FORM (post + staff) */}
-        {entryType === "post" || entryType === "staff" ? (
+        {entryType === "post" ? (
           <div className="mt-6 rounded-2xl border border-white/10 bg-white/5 p-5">
             <div className="text-lg font-black">
-              {entryType === "staff" ? "Create Staff Game Draft" : "Create Past Game Draft"}
+              Create Past Game Draft
             </div>
 
             <div className="mt-4 grid gap-4 md:grid-cols-2">
@@ -648,10 +636,10 @@ export default function PostGamesPage() {
             </div>
 
             <button
-              onClick={() => createDraft({ staff: entryType === "staff" })}
+              onClick={() => createDraft()}
               className="mt-5 w-full rounded-xl bg-emerald-500 px-4 py-3 text-sm font-extrabold text-slate-950 hover:bg-emerald-400"
             >
-              {entryType === "staff" ? "Create Staff Draft" : "Create Draft"}
+              Create Draft
             </button>
 
             <div className="mt-3 text-xs text-white/60">
@@ -805,11 +793,7 @@ export default function PostGamesPage() {
                   >
                     <div className="flex items-center justify-between gap-3">
                       <div className="text-xs text-white/60">{g.played_on ?? "—"}</div>
-                      {g.is_staff_game ? (
-                        <span className="rounded-full border border-purple-400/30 bg-purple-500/10 px-2 py-1 text-[11px] font-black text-purple-100">
-                          STAFF
-                        </span>
-                      ) : null}
+                      
                     </div>
 
                     <div className="mt-1 text-xl font-black">

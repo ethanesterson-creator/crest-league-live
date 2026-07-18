@@ -34,11 +34,10 @@ export default function StandingsPage() {
 
   // Overall points rows from SQL function get_overall_points(include_staff, include_non_game)
   const [overallRows, setOverallRows] = useState([]);
-  const [includeStaff, setIncludeStaff] = useState(true);
+  const includeStaff = false; // staff games removed
   const [includeNonGame, setIncludeNonGame] = useState(true);
 
   // Staff standings rows
-  const [staffRows, setStaffRows] = useState([]);
 
   // Non-game points totals by team
   const [nonGameRows, setNonGameRows] = useState([]);
@@ -64,17 +63,6 @@ export default function StandingsPage() {
     setOverallRows(cleaned);
   }
 
-  async function loadStaffStandings() {
-    const { data, error } = await supabase
-      .from("standings")
-      .select("league_id, sport, team_name, wins, losses, league_points, updated_at")
-      .eq("season", season)
-      .eq("session", session)
-      .eq("sport", STAFF_SPORT_KEY);
-
-    if (error) throw error;
-    setStaffRows(sortStandings(data || []));
-  }
 
   async function loadNonGamePoints() {
     const { data, error } = await supabase
@@ -144,7 +132,7 @@ export default function StandingsPage() {
       }
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [includeStaff, includeNonGame, tab]);
+  }, [includeNonGame, tab]);
 
   return (
     <div className="pb-10">
@@ -208,7 +196,7 @@ export default function StandingsPage() {
                 <div>
                   <div className="text-lg font-black">Overall Camp Standings</div>
                   <div className="text-sm text-white/70">
-                    Toggle whether to include Staff Games and Non-Game Points.
+                    Toggle whether to include Non-Game Points.
                   </div>
                 </div>
 
@@ -222,14 +210,6 @@ export default function StandingsPage() {
                     Include Non-Game
                   </label>
 
-                  <label className="flex items-center gap-2 text-sm font-bold">
-                    <input
-                      type="checkbox"
-                      checked={includeStaff}
-                      onChange={(e) => setIncludeStaff(e.target.checked)}
-                    />
-                    Include Staff
-                  </label>
                 </div>
               </div>
 
