@@ -231,6 +231,8 @@ export default function DisplayPage() {
       .select("team_a, team_a2, team_b, team_b2, score_a, score_b, deleted")
       .eq("status", "final")
       .eq("deleted", false)
+      .eq("season", "league")
+      .eq("session", session)
       .limit(2000);
 
     setRivalries(computeRivalries(allFinalGames || []));
@@ -243,6 +245,8 @@ export default function DisplayPage() {
         .from("live_games")
         .select("id, sport, league_key")
         .eq("status", "final")
+        .eq("season", "league")
+        .eq("session", session)
         .gte("updated_at", cutoff);
 
       const recentIds = (recentGames || []).map((g) => g.id);
