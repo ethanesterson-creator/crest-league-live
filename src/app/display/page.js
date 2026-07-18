@@ -2,6 +2,8 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "@/lib/supabase";
+import { useAppMode } from "@/lib/useAppMode";
+import ColorWarBoard from "./ColorWarBoard";
 
 const SCENES = [
   "camp",
@@ -90,6 +92,7 @@ function computeRivalries(rows) {
 }
 
 export default function DisplayPage() {
+  const { isCW, blueName, whiteName, blueLogo, whiteLogo, loading: modeLoading } = useAppMode();
   const [scene, setScene] = useState("camp");
 
   const [campStandings, setCampStandings] = useState([]);
@@ -174,11 +177,21 @@ export default function DisplayPage() {
         .from("player_totals")
         .select("*")
         .eq("league_id", lid)
+        .eq("season", "league")
         .order("value", { ascending: false })
         .limit(500);
 
+      // Hide departed players (kept in DB, just not shown on the board).
+      let pool = leaderPool || [];
+      const ids = Array.from(new Set(pool.map((r) => String(r.player_id))));
+      if (ids.length) {
+        const { data: deps } = await supabase.from("players").select("id").in("id", ids).eq("departed", true);
+        const departedSet = new Set((deps || []).map((d) => String(d.id)));
+        if (departedSet.size) pool = pool.filter((r) => !departedSet.has(String(r.player_id)));
+      }
+
       const bestPerCategory = new Map();
-      for (const row of leaderPool || []) {
+      for (const row of pool) {
         const key = `${String(row.sport || "").toLowerCase()}:${String(row.stat_key || "").toLowerCase()}`;
         const existing = bestPerCategory.get(key);
         if (!existing || Number(row.value || 0) > Number(existing.value || 0)) {
@@ -698,6 +711,10 @@ export default function DisplayPage() {
   }
 
   /* ===== MAIN RETURN ===== */
+    if (isCW) {
+      return <ColorWarBoard blueName={blueName} whiteName={whiteName} blueLogo={blueLogo} whiteLogo={whiteLogo} />;
+    }
+
     return (
     <main
       ref={wrapRef}
