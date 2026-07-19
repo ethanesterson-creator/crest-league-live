@@ -220,6 +220,7 @@ export default function AdminPage() {
         .from("players")
         .select("team_name")
         .eq("league_id", leagueId)
+        .eq("departed", false)
         .order("team_name", { ascending: true });
 
       if (error) throw error;

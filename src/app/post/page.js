@@ -144,8 +144,8 @@ export default function PostGamesPage() {
       return;
     }
     const query = isCrestCup
-      ? supabase.from("players").select("team_name").limit(5000)
-      : supabase.from("players").select("team_name").eq("league_id", lk).limit(5000);
+      ? supabase.from("players").select("team_name").eq("departed", false).limit(5000)
+      : supabase.from("players").select("team_name").eq("league_id", lk).eq("departed", false).limit(5000);
     const { data, error } = await query;
 
     if (error) {

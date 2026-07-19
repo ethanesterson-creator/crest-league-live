@@ -296,8 +296,8 @@ export default function HomePage() {
     }
     const lk = norm(leagueKey);
     const query = matchupType === "crest_cup"
-      ? supabase.from("players").select("team_name, league_id").limit(5000)
-      : supabase.from("players").select("team_name, league_id").eq("league_id", lk).limit(5000);
+      ? supabase.from("players").select("team_name, league_id").eq("departed", false).limit(5000)
+      : supabase.from("players").select("team_name, league_id").eq("league_id", lk).eq("departed", false).limit(5000);
     const { data, error } = await query;
  
     if (error) return;
