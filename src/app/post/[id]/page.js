@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
+import { notifyGameFinalized } from "@/lib/notifyGame";
 
 function norm(s) {
   return String(s ?? "").trim().toLowerCase();
@@ -438,6 +439,7 @@ export default function PostDraftEditorPage() {
         return;
       }
 
+      notifyGameFinalized(game, { score_a: sa, score_b: sb });
       setMsg("✅ Finalized. Standings + leaders updated.");
       router.push("/post");
       router.refresh();

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import { supabase } from "@/lib/supabase";
 import { useAppMode } from "@/lib/useAppMode";
 import { getSportRules } from "@/lib/sportRules";
@@ -226,7 +227,11 @@ export default function LeadersPage() {
                   rows.map((r, idx) => (
                     <tr key={`${r.player_id}-${r.stat_key}`} className="border-t border-white/10">
                       <td className="py-3 font-black">{idx + 1}</td>
-                      <td className="py-3 font-extrabold">{r.player_name}</td>
+                      <td className="py-3 font-extrabold">
+                        <Link href={`/player/${r.player_id}`} className="hover:text-blue-300 hover:underline">
+                          {r.player_name}
+                        </Link>
+                      </td>
                       <td className="py-3 text-white/80">{r.team_name}</td>
                       <td className="py-3 text-right font-black tabular-nums">{r.value}</td>
                     </tr>

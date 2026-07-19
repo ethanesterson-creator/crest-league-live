@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
+import { notifyGameFinalized } from "@/lib/notifyGame";
 import { getSportRules } from "@/lib/sportRules";
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -904,6 +905,7 @@ export default function LiveGamePage() {
         if (!g2) return;
         const { error } = await supabase.rpc("finalize_game", { gid: game.id });
         if (error) { setErr(error.message); return; }
+        notifyGameFinalized(game, { score_a: seriesA, score_b: seriesB });
         router.push("/");
       } catch {
         setErr("⚠️ WiFi dropped — game did NOT finalize. Tap Finalize again.");
@@ -934,6 +936,7 @@ export default function LiveGamePage() {
       }
       const { error } = await supabase.rpc("finalize_game", { gid: game.id });
       if (error) { setErr(error.message); return; }
+      notifyGameFinalized(game);
       router.push("/");
     } catch {
       setErr("⚠️ WiFi dropped — game did NOT finalize. Tap Finalize again.");
