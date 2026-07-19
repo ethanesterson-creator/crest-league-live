@@ -114,11 +114,14 @@ export default function AdminPage() {
   async function loadAdminStandingsForLeague(lid) {
     setAdminStandingsLoading(true);
     try {
+      const curSession = cwSettings?.current_session || "s2";
       const { data, error } = await supabase
         .from("standings")
         .select("league_id, sport, team_name, wins, losses, league_points, updated_at")
         .eq("sport", "overall")
-        .eq("league_id", lid);
+        .eq("league_id", lid)
+        .eq("season", "league")
+        .eq("session", curSession);
 
       if (error) throw error;
 
@@ -126,6 +129,8 @@ export default function AdminPage() {
         .from("non_game_points")
         .select("team_name, points")
         .eq("league_id", lid)
+        .eq("season", "league")
+        .eq("session", cwSettings?.current_session || "s2")
         .eq("deleted", false)
         .eq("status", "final")
         .limit(5000);
