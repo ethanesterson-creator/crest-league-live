@@ -30,6 +30,7 @@ export default function AdminPage() {
   // ---- Color War mode switch ----
   const [cwSettings, setCwSettings] = useState(null);       // full app_settings row
   const [sessionSwitchText, setSessionSwitchText] = useState("");
+  const [showFinalGames, setShowFinalGames] = useState(false);
   // S1 archive viewer (read-only view of frozen Session 1)
   const [archiveOpen, setArchiveOpen] = useState(false);
   const [archiveLeague, setArchiveLeague] = useState("seniors");
@@ -1394,15 +1395,25 @@ export default function AdminPage() {
                 <div className="mt-1 text-sm text-white/70">Admin-only delete. Rebuilds standings + leaders.</div>
               </div>
 
-              <button
-                onClick={loadFinalGames}
-                disabled={busy || loadingFinal}
-                className="rounded-xl border border-white/15 bg-white/5 px-4 py-2 text-sm font-black hover:bg-white/10 disabled:opacity-60"
-              >
-                {loadingFinal ? "Loading…" : "Refresh"}
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setShowFinalGames((v) => !v)}
+                  className="rounded-xl border border-white/15 bg-white/5 px-4 py-2 text-sm font-black hover:bg-white/10"
+                >
+                  {showFinalGames ? "Hide" : `Show (${finalGames.length})`}
+                </button>
+                <button
+                  onClick={loadFinalGames}
+                  disabled={busy || loadingFinal}
+                  className="rounded-xl border border-white/15 bg-white/5 px-4 py-2 text-sm font-black hover:bg-white/10 disabled:opacity-60"
+                >
+                  {loadingFinal ? "Loading…" : "Refresh"}
+                </button>
+              </div>
             </div>
 
+            {showFinalGames ? (
+            <>
             <div className="mt-3 text-xs text-white/60">
               Required confirmation word to delete: <b>DELETE</b>
             </div>
@@ -1484,6 +1495,8 @@ export default function AdminPage() {
                 ))}
               </div>
             )}
+            </>
+            ) : null}
           </div>
 
           {/* Non-game points */}

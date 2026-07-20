@@ -180,6 +180,7 @@ export default function PostGamesPage() {
     const { data, error } = await supabase
       .from("players")
       .select("team_name")
+      .eq("departed", false)
       .limit(5000);
 
     if (error) {

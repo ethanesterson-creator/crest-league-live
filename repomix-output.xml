@@ -69,6 +69,9 @@ src/
       [id]/
         page.js
       page.js
+    player/
+      [id]/
+        page.js
     post/
       [id]/
         page.js
@@ -81,6 +84,7 @@ src/
     manifest.js
     page.js
   lib/
+    notifyGame.js
     sportRules.js
     supabase.js
     useAppMode.js
@@ -308,6 +312,197 @@ You can check out [the Next.js GitHub repository](https://github.com/vercel/next
 The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
 
 Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+</file>
+
+<file path="src/app/player/[id]/page.js">
+"use client";
+
+import { useEffect, useState } from "react";
+import { useParams } from "next/navigation";
+import Link from "next/link";
+import { supabase } from "@/lib/supabase";
+
+function norm(s) { return String(s ?? "").trim().toLowerCase(); }
+function fmtLeague(id) {
+  const s = norm(id);
+  if (s === "seniors") return "Seniors";
+  if (s === "juniors") return "Juniors";
+  if (s === "sophomores") return "Sophomores";
+  return id || "—";
+}
+
+export default function PlayerProfilePage() {
+  const params = useParams();
+  const id = params?.id;
+
+  const [player, setPlayer] = useState(null);
+  const [totals, setTotals] = useState([]);      // combined stat totals
+  const [bySession, setBySession] = useState({ s1: [], s2: [] });
+  const [wins, setWins] = useState(0);
+  const [games, setGames] = useState(0);
+  const [bestGame, setBestGame] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [err, setErr] = useState("");
+
+  useEffect(() => {
+    if (!id) return;
+    (async () => {
+      setLoading(true); setErr("");
+      try {
+        const { data: p } = await supabase
+          .from("players").select("*").eq("id", id).maybeSingle();
+        setPlayer(p);
+
+        // All stat totals across sessions
+        const { data: t } = await supabase
+          .from("player_totals")
+          .select("session, sport, stat_key, value")
+          .eq("player_id", id);
+        const rows = (t || []).filter((r) => Number(r.value) > 0);
+
+        // Combined (sum across sessions by sport+stat)
+        const combined = {};
+        for (const r of rows) {
+          const k = `${r.sport}|${r.stat_key}`;
+          combined[k] = combined[k] || { sport: r.sport, stat_key: r.stat_key, value: 0 };
+          combined[k].value += Number(r.value || 0);
+        }
+        setTotals(Object.values(combined).sort((a, b) => b.value - a.value));
+        setBySession({
+          s1: rows.filter((r) => r.session === "s1"),
+          s2: rows.filter((r) => r.session === "s2"),
+        });
+
+        // Wins + games via roster
+        const { data: rosters } = await supabase
+          .from("game_roster").select("game_id, team_side").eq("player_id", id).limit(2000);
+        const gids = (rosters || []).map((r) => r.game_id);
+        if (gids.length) {
+          const { data: gm } = await supabase
+            .from("live_games").select("id, score_a, score_b").eq("status", "final").in("id", gids);
+          const byId = {}; for (const g of gm || []) byId[g.id] = g;
+          let w = 0, played = 0;
+          for (const r of rosters || []) {
+            const g = byId[r.game_id]; if (!g) continue;
+            played++;
+            const won = (r.team_side === "A" && Number(g.score_a) > Number(g.score_b)) ||
+                        (r.team_side === "B" && Number(g.score_b) > Number(g.score_a));
+            if (won) w++;
+          }
+          setWins(w); setGames(played);
+        }
+
+        // Best single game
+        const { data: evts } = await supabase
+          .from("live_events").select("game_id, sport, stat_key, delta")
+          .eq("event_type", "stat").eq("player_id", id).limit(5000);
+        const perGame = {};
+        for (const e of evts || []) {
+          perGame[e.game_id] = perGame[e.game_id] || { sport: e.sport, stats: {} };
+          const k = String(e.stat_key).toUpperCase();
+          perGame[e.game_id].stats[k] = (perGame[e.game_id].stats[k] || 0) + Number(e.delta || 0);
+        }
+        let best = null;
+        for (const gk of Object.keys(perGame)) {
+          const g = perGame[gk];
+          for (const sk of Object.keys(g.stats)) {
+            if (!best || g.stats[sk] > best.value) best = { value: g.stats[sk], stat: sk, sport: g.sport };
+          }
+        }
+        setBestGame(best);
+      } catch (e) {
+        setErr(e?.message ?? String(e));
+      } finally {
+        setLoading(false);
+      }
+    })();
+  }, [id]);
+
+  if (loading) return <div className="mt-10 text-white/70">Loading…</div>;
+  if (!player) return (
+    <div className="mt-10">
+      <div className="text-lg font-black">Player not found.</div>
+      <Link href="/leaders" className="mt-2 inline-block text-sm text-blue-300 underline">Back to Leaders</Link>
+    </div>
+  );
+
+  const fullName = `${player.first_name ?? ""} ${player.last_name ?? ""}`.trim();
+  const bothSessions = player.active_session === "s2" && player.s1_team;
+
+  return (
+    <div className="pb-16">
+      {/* Hero */}
+      <div className="mt-6 overflow-hidden rounded-3xl border border-white/10 bg-gradient-to-br from-blue-950/60 via-slate-900 to-slate-950">
+        <div className="flex flex-col items-center gap-4 p-8 sm:flex-row sm:items-end sm:gap-6">
+          <div className="flex h-32 w-32 items-center justify-center rounded-2xl bg-white/5 text-5xl font-black ring-2 ring-white/10">
+            {(player.first_name?.[0] || "") + (player.last_name?.[0] || "")}
+          </div>
+          <div className="text-center sm:text-left">
+            <div className="text-4xl font-black">{fullName}</div>
+            <div className="mt-1 text-sm font-bold uppercase tracking-widest text-white/50">
+              {fmtLeague(player.league_id)} · {player.team_name} {player.bunk ? `· Bunk ${player.bunk}` : ""}
+            </div>
+            <div className="mt-2 text-xs font-bold text-blue-300">
+              {bothSessions ? "Both Sessions" : player.active_session === "s2" ? "Session 2" : "Session 1"}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {err ? <div className="mt-4 rounded-xl border border-red-700 bg-red-950/40 p-3 text-sm text-red-200">{err}</div> : null}
+
+      {/* Top-line stats */}
+      <div className="mt-5 grid grid-cols-3 gap-3">
+        <div className="rounded-2xl border border-white/10 bg-white/5 p-4 text-center">
+          <div className="text-3xl font-black">{wins}</div>
+          <div className="text-xs font-bold uppercase tracking-widest text-white/50">Wins</div>
+        </div>
+        <div className="rounded-2xl border border-white/10 bg-white/5 p-4 text-center">
+          <div className="text-3xl font-black">{games}</div>
+          <div className="text-xs font-bold uppercase tracking-widest text-white/50">Games</div>
+        </div>
+        <div className="rounded-2xl border border-white/10 bg-white/5 p-4 text-center">
+          <div className="text-3xl font-black">{games ? Math.round((wins / games) * 100) : 0}%</div>
+          <div className="text-xs font-bold uppercase tracking-widest text-white/50">Win Rate</div>
+        </div>
+      </div>
+
+      {/* Best game */}
+      {bestGame ? (
+        <div className="mt-5 rounded-2xl border border-amber-400/30 bg-amber-500/10 p-5">
+          <div className="text-xs font-black uppercase tracking-widest text-amber-200/70">Best Single Game</div>
+          <div className="mt-1 text-2xl font-black text-amber-100">
+            {bestGame.value} {bestGame.stat} · {String(bestGame.sport).toUpperCase()}
+          </div>
+        </div>
+      ) : null}
+
+      {/* Stat totals */}
+      <div className="mt-5 rounded-2xl border border-white/10 bg-white/5 p-5">
+        <div className="text-lg font-black">Career Stat Totals</div>
+        <div className="mt-1 text-xs text-white/50">Combined across all sessions.</div>
+        {totals.length ? (
+          <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-3">
+            {totals.map((t, i) => (
+              <div key={i} className="rounded-xl border border-white/10 bg-black/20 p-3 text-center">
+                <div className="text-2xl font-black">{t.value}</div>
+                <div className="text-xs font-bold uppercase tracking-wide text-white/50">
+                  {String(t.stat_key).toUpperCase()} · {String(t.sport).toUpperCase()}
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="mt-3 text-sm text-white/50">No stats recorded yet.</div>
+        )}
+      </div>
+
+      <div className="mt-6">
+        <Link href="/leaders" className="text-sm text-blue-300 underline">← Back to Leaders</Link>
+      </div>
+    </div>
+  );
+}
 </file>
 
 <file path="src/app/globals.css">
@@ -587,6 +782,39 @@ export default function manifest() {
       },
     ],
   };
+}
+</file>
+
+<file path="src/lib/notifyGame.js">
+// Sends a push notification via ntfy.sh when a game is finalized, so the admin
+// gets a phone alert confirming the game exists (no scavenging for missing
+// post-games later). Uses the same ntfy setup as the sign-out app.
+//
+// Set your topic here — this is the ntfy topic you subscribe to on your phone.
+const NTFY_TOPIC = "crest-league-games"; // change to your actual topic
+
+export async function notifyGameFinalized(game, extra = {}) {
+  try {
+    if (!game) return;
+    const norm = (s) => String(s ?? "").trim();
+    const sideA = [game.team_a1 || game.team_a, game.team_a2].filter(Boolean).join(" + ");
+    const sideB = [game.team_b1 || game.team_b, game.team_b2].filter(Boolean).join(" + ");
+    const score = `${extra.score_a ?? game.score_a ?? 0}-${extra.score_b ?? game.score_b ?? 0}`;
+    const league = norm(game.league_key || game.league_id);
+    const sport = norm(game.sport);
+    const level = norm(game.level);
+
+    const title = `✅ Game finalized: ${league} ${sport} ${level}`;
+    const body = `${sideA} vs ${sideB}  —  ${score}`;
+
+    await fetch(`https://ntfy.sh/${NTFY_TOPIC}`, {
+      method: "POST",
+      headers: { "Title": title, "Tags": "trophy", "Priority": "default" },
+      body,
+    });
+  } catch {
+    // Never let a notification failure affect the finalize flow.
+  }
 }
 </file>
 
@@ -1613,261 +1841,6 @@ export default function ColorWarBoard({ session = "s1", blueName, whiteName, blu
 }
 </file>
 
-<file path="src/app/leaders/page.js">
-"use client";
-
-import { useEffect, useMemo, useState } from "react";
-import { supabase } from "@/lib/supabase";
-import { useAppMode } from "@/lib/useAppMode";
-import { getSportRules } from "@/lib/sportRules";
-
-const SPORTS = [
-  "Hoop",
-  "Soccer",
-  "Softball",
-  "Kickball",
-  "Volleyball",
-  "Football",
-  "Speedball",
-  "Euro",
-  "Hockey",
-  "Newcomb",
-];
-
-function norm(s) {
-  return String(s ?? "").trim().toLowerCase();
-}
-
-function prettyLeague(id) {
-  const x = String(id || "");
-  if (x === "sophomores") return "Sophomores";
-  if (x === "juniors") return "Juniors";
-  if (x === "seniors") return "Seniors";
-  return x;
-}
-
-function prettyStatLabel(sportName, statKey) {
-  const rules = getSportRules(sportName);
-  const def = (rules?.stats ?? []).find((x) => norm(x.key) === norm(statKey));
-  return def?.label ?? String(statKey ?? "").toUpperCase();
-}
-
-export default function LeadersPage() {
-  const { season, session } = useAppMode();
-  const [err, setErr] = useState("");  const [loading, setLoading] = useState(true);
-
-  const [leagues, setLeagues] = useState([]);
-  const [leagueId, setLeagueId] = useState("seniors");
-
-  const [sport, setSport] = useState("Hoop");
-
-  const rules = useMemo(() => getSportRules(sport), [sport]);
-  const statOptions = useMemo(() => rules?.stats ?? [], [rules]);
-
-  const [statKey, setStatKey] = useState("pts");
-  const [rows, setRows] = useState([]);
-
-  // when sport changes, set default stat to first available
-  useEffect(() => {
-    const first = statOptions?.[0]?.key;
-    if (first) setStatKey(first);
-  }, [sport]); // intentionally only on sport change
-
-  async function loadLeagues() {
-    const { data, error } = await supabase
-      .from("leagues")
-      .select("id, name")
-      .order("id", { ascending: true });
-
-    if (error) {
-      // fallback
-      setLeagues([
-        { id: "sophomores", name: "Sophomores" },
-        { id: "juniors", name: "Juniors" },
-        { id: "seniors", name: "Seniors" },
-      ]);
-      return;
-    }
-
-    setLeagues(data || []);
-  }
-
-  async function loadLeaders({ quiet = false } = {}) {
-    if (!quiet) setLoading(true);
-    setErr("");
-
-    try {
-      const sportKey = norm(sport);
-      const stat = norm(statKey);
-
-      const { data, error } = await supabase
-        .from("player_totals")
-        .select("league_id, sport, player_id, player_name, team_name, stat_key, value, updated_at")
-        .eq("season", season)
-        .eq("session", session)
-        .eq("league_id", norm(leagueId))
-        .eq("sport", sportKey)
-        .eq("stat_key", stat)
-        .order("value", { ascending: false })
-        .limit(50);
-
-      if (error) throw error;
-
-      setRows(data || []);
-    } catch (e) {
-      setErr(e?.message ?? String(e));
-      setRows([]);
-    } finally {
-      if (!quiet) setLoading(false);
-    }
-  }
-
-  useEffect(() => {
-    (async () => {
-      await loadLeagues();
-      await loadLeaders();
-    })();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  // reload when filters change
-  useEffect(() => {
-    loadLeaders({ quiet: true });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [leagueId, sport, statKey, season, session]);
-
-  const statLabel = useMemo(() => prettyStatLabel(sport, statKey), [sport, statKey]);
-
-  return (
-    <div className="pb-10">
-      <div className="mt-6 flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
-        <div>
-          <div className="text-2xl font-black">Stat Leaders</div>
-          <div className="text-sm text-white/70">
-            Updates automatically after you finalize a game.
-          </div>
-        </div>
-
-        <div className="flex flex-wrap items-end gap-3">
-          <div>
-            <div className="mb-1 text-xs font-bold text-white/60">League</div>
-            <select
-              className="rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm font-bold text-white"
-              value={leagueId}
-              onChange={(e) => setLeagueId(e.target.value)}
-            >
-              {(leagues?.length
-                ? leagues
-                : [
-                    { id: "sophomores", name: "Sophomores" },
-                    { id: "juniors", name: "Juniors" },
-                    { id: "seniors", name: "Seniors" },
-                  ]
-              ).map((l) => (
-                <option key={l.id} value={l.id}>
-                  {l.name ?? prettyLeague(l.id)}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <div>
-            <div className="mb-1 text-xs font-bold text-white/60">Sport</div>
-            <select
-              className="rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm font-bold text-white"
-              value={sport}
-              onChange={(e) => setSport(e.target.value)}
-            >
-              {SPORTS.map((s) => (
-                <option key={s} value={s}>
-                  {s}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <div>
-            <div className="mb-1 text-xs font-bold text-white/60">Stat</div>
-            <select
-              className="rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm font-bold text-white"
-              value={statKey}
-              onChange={(e) => setStatKey(e.target.value)}
-            >
-              {statOptions.map((st) => (
-                <option key={st.key} value={st.key}>
-                  {st.label}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <button
-            className="rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm font-bold hover:bg-white/10"
-            onClick={() => loadLeaders()}
-          >
-            Refresh
-          </button>
-        </div>
-      </div>
-
-      {err ? (
-        <div className="mt-4 rounded-xl border border-red-700 bg-red-950/40 p-3 text-sm text-red-200">
-          {err}
-        </div>
-      ) : null}
-
-      <div className="mt-6 rounded-2xl border border-white/10 bg-white/5 p-5">
-        <div className="flex items-baseline justify-between gap-3">
-          <div className="text-lg font-black">
-            {prettyLeague(leagueId)} • {sport} • {statLabel}
-          </div>
-          <div className="text-xs text-white/60">Top 50</div>
-        </div>
-
-        {loading ? (
-          <div className="mt-4 text-white/70">Loading…</div>
-        ) : (
-          <div className="mt-4 overflow-x-auto">
-            <table className="w-full text-left text-sm">
-              <thead className="text-white/70">
-                <tr>
-                  <th className="py-2">#</th>
-                  <th className="py-2">Player</th>
-                  <th className="py-2">Team</th>
-                  <th className="py-2 text-right">{statLabel}</th>
-                </tr>
-              </thead>
-              <tbody>
-                {rows.length ? (
-                  rows.map((r, idx) => (
-                    <tr key={`${r.player_id}-${r.stat_key}`} className="border-t border-white/10">
-                      <td className="py-3 font-black">{idx + 1}</td>
-                      <td className="py-3 font-extrabold">{r.player_name}</td>
-                      <td className="py-3 text-white/80">{r.team_name}</td>
-                      <td className="py-3 text-right font-black tabular-nums">{r.value}</td>
-                    </tr>
-                  ))
-                ) : (
-                  <tr>
-                    <td className="py-4 text-white/60" colSpan={4}>
-                      No stats yet for this filter. Finalize a game to populate stat leaders.
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-
-            <div className="mt-3 text-xs text-white/50">
-              Tip: Stat leaders update when a game is finalized (they pull from <b>player_totals</b>).
-            </div>
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-</file>
-
 <file path="src/app/past-games/page.js">
 "use client";
 
@@ -2156,6 +2129,266 @@ export default function PastGamesPage() {
 }
 </file>
 
+<file path="src/app/leaders/page.js">
+"use client";
+
+import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
+import { supabase } from "@/lib/supabase";
+import { useAppMode } from "@/lib/useAppMode";
+import { getSportRules } from "@/lib/sportRules";
+
+const SPORTS = [
+  "Hoop",
+  "Soccer",
+  "Softball",
+  "Kickball",
+  "Volleyball",
+  "Football",
+  "Speedball",
+  "Euro",
+  "Hockey",
+  "Newcomb",
+];
+
+function norm(s) {
+  return String(s ?? "").trim().toLowerCase();
+}
+
+function prettyLeague(id) {
+  const x = String(id || "");
+  if (x === "sophomores") return "Sophomores";
+  if (x === "juniors") return "Juniors";
+  if (x === "seniors") return "Seniors";
+  return x;
+}
+
+function prettyStatLabel(sportName, statKey) {
+  const rules = getSportRules(sportName);
+  const def = (rules?.stats ?? []).find((x) => norm(x.key) === norm(statKey));
+  return def?.label ?? String(statKey ?? "").toUpperCase();
+}
+
+export default function LeadersPage() {
+  const { season, session } = useAppMode();
+  const [err, setErr] = useState("");  const [loading, setLoading] = useState(true);
+
+  const [leagues, setLeagues] = useState([]);
+  const [leagueId, setLeagueId] = useState("seniors");
+
+  const [sport, setSport] = useState("Hoop");
+
+  const rules = useMemo(() => getSportRules(sport), [sport]);
+  const statOptions = useMemo(() => rules?.stats ?? [], [rules]);
+
+  const [statKey, setStatKey] = useState("pts");
+  const [rows, setRows] = useState([]);
+
+  // when sport changes, set default stat to first available
+  useEffect(() => {
+    const first = statOptions?.[0]?.key;
+    if (first) setStatKey(first);
+  }, [sport]); // intentionally only on sport change
+
+  async function loadLeagues() {
+    const { data, error } = await supabase
+      .from("leagues")
+      .select("id, name")
+      .order("id", { ascending: true });
+
+    if (error) {
+      // fallback
+      setLeagues([
+        { id: "sophomores", name: "Sophomores" },
+        { id: "juniors", name: "Juniors" },
+        { id: "seniors", name: "Seniors" },
+      ]);
+      return;
+    }
+
+    setLeagues(data || []);
+  }
+
+  async function loadLeaders({ quiet = false } = {}) {
+    if (!quiet) setLoading(true);
+    setErr("");
+
+    try {
+      const sportKey = norm(sport);
+      const stat = norm(statKey);
+
+      const { data, error } = await supabase
+        .from("player_totals")
+        .select("league_id, sport, player_id, player_name, team_name, stat_key, value, updated_at")
+        .eq("season", season)
+        .eq("session", session)
+        .eq("league_id", norm(leagueId))
+        .eq("sport", sportKey)
+        .eq("stat_key", stat)
+        .order("value", { ascending: false })
+        .limit(50);
+
+      if (error) throw error;
+
+      setRows(data || []);
+    } catch (e) {
+      setErr(e?.message ?? String(e));
+      setRows([]);
+    } finally {
+      if (!quiet) setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    (async () => {
+      await loadLeagues();
+      await loadLeaders();
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // reload when filters change
+  useEffect(() => {
+    loadLeaders({ quiet: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [leagueId, sport, statKey, season, session]);
+
+  const statLabel = useMemo(() => prettyStatLabel(sport, statKey), [sport, statKey]);
+
+  return (
+    <div className="pb-10">
+      <div className="mt-6 flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
+        <div>
+          <div className="text-2xl font-black">Stat Leaders</div>
+          <div className="text-sm text-white/70">
+            Updates automatically after you finalize a game.
+          </div>
+        </div>
+
+        <div className="flex flex-wrap items-end gap-3">
+          <div>
+            <div className="mb-1 text-xs font-bold text-white/60">League</div>
+            <select
+              className="rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm font-bold text-white"
+              value={leagueId}
+              onChange={(e) => setLeagueId(e.target.value)}
+            >
+              {(leagues?.length
+                ? leagues
+                : [
+                    { id: "sophomores", name: "Sophomores" },
+                    { id: "juniors", name: "Juniors" },
+                    { id: "seniors", name: "Seniors" },
+                  ]
+              ).map((l) => (
+                <option key={l.id} value={l.id}>
+                  {l.name ?? prettyLeague(l.id)}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <div className="mb-1 text-xs font-bold text-white/60">Sport</div>
+            <select
+              className="rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm font-bold text-white"
+              value={sport}
+              onChange={(e) => setSport(e.target.value)}
+            >
+              {SPORTS.map((s) => (
+                <option key={s} value={s}>
+                  {s}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <div className="mb-1 text-xs font-bold text-white/60">Stat</div>
+            <select
+              className="rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm font-bold text-white"
+              value={statKey}
+              onChange={(e) => setStatKey(e.target.value)}
+            >
+              {statOptions.map((st) => (
+                <option key={st.key} value={st.key}>
+                  {st.label}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <button
+            className="rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm font-bold hover:bg-white/10"
+            onClick={() => loadLeaders()}
+          >
+            Refresh
+          </button>
+        </div>
+      </div>
+
+      {err ? (
+        <div className="mt-4 rounded-xl border border-red-700 bg-red-950/40 p-3 text-sm text-red-200">
+          {err}
+        </div>
+      ) : null}
+
+      <div className="mt-6 rounded-2xl border border-white/10 bg-white/5 p-5">
+        <div className="flex items-baseline justify-between gap-3">
+          <div className="text-lg font-black">
+            {prettyLeague(leagueId)} • {sport} • {statLabel}
+          </div>
+          <div className="text-xs text-white/60">Top 50</div>
+        </div>
+
+        {loading ? (
+          <div className="mt-4 text-white/70">Loading…</div>
+        ) : (
+          <div className="mt-4 overflow-x-auto">
+            <table className="w-full text-left text-sm">
+              <thead className="text-white/70">
+                <tr>
+                  <th className="py-2">#</th>
+                  <th className="py-2">Player</th>
+                  <th className="py-2">Team</th>
+                  <th className="py-2 text-right">{statLabel}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {rows.length ? (
+                  rows.map((r, idx) => (
+                    <tr key={`${r.player_id}-${r.stat_key}`} className="border-t border-white/10">
+                      <td className="py-3 font-black">{idx + 1}</td>
+                      <td className="py-3 font-extrabold">
+                        <Link href={`/player/${r.player_id}`} className="hover:text-blue-300 hover:underline">
+                          {r.player_name}
+                        </Link>
+                      </td>
+                      <td className="py-3 text-white/80">{r.team_name}</td>
+                      <td className="py-3 text-right font-black tabular-nums">{r.value}</td>
+                    </tr>
+                  ))
+                ) : (
+                  <tr>
+                    <td className="py-4 text-white/60" colSpan={4}>
+                      No stats yet for this filter. Finalize a game to populate stat leaders.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+
+            <div className="mt-3 text-xs text-white/50">
+              Tip: Stat leaders update when a game is finalized (they pull from <b>player_totals</b>).
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+</file>
+
 <file path="src/app/post/[id]/page.js">
 "use client";
 
@@ -2163,6 +2396,7 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
+import { notifyGameFinalized } from "@/lib/notifyGame";
 
 function norm(s) {
   return String(s ?? "").trim().toLowerCase();
@@ -2562,6 +2796,22 @@ export default function PostDraftEditorPage() {
       return;
     }
 
+    // Card-data guard: warn if an individual-stat sport has no stats logged.
+    const statSports = ["hoop","soccer","euro","hockey","speedball","softball","football","kickball"];
+    if (statSports.includes(norm(game?.sport))) {
+      let anyStats = false;
+      for (const pid of Object.keys(statTotals || {})) {
+        for (const k of Object.keys(statTotals[pid] || {})) {
+          if (Number(statTotals[pid][k]) > 0) { anyStats = true; break; }
+        }
+        if (anyStats) break;
+      }
+      if (!anyStats) {
+        const proceed = confirm("This game has NO player stats logged.\n\nFor player cards we want every goal/point/hit recorded. Add stats first, or finalize anyway?");
+        if (!proceed) return;
+      }
+    }
+
     const ok = confirm("Finalize this post-game draft?\n\nThis updates standings + stat leaders.");
     if (!ok) return;
 
@@ -2581,6 +2831,7 @@ export default function PostDraftEditorPage() {
         return;
       }
 
+      notifyGameFinalized(game, { score_a: sa, score_b: sb });
       setMsg("✅ Finalized. Standings + leaders updated.");
       router.push("/post");
       router.refresh();
@@ -3044,11 +3295,10 @@ export default function StandingsPage() {
 
   // Overall points rows from SQL function get_overall_points(include_staff, include_non_game)
   const [overallRows, setOverallRows] = useState([]);
-  const [includeStaff, setIncludeStaff] = useState(true);
+  const includeStaff = false; // staff games removed
   const [includeNonGame, setIncludeNonGame] = useState(true);
 
   // Staff standings rows
-  const [staffRows, setStaffRows] = useState([]);
 
   // Non-game points totals by team
   const [nonGameRows, setNonGameRows] = useState([]);
@@ -3074,17 +3324,6 @@ export default function StandingsPage() {
     setOverallRows(cleaned);
   }
 
-  async function loadStaffStandings() {
-    const { data, error } = await supabase
-      .from("standings")
-      .select("league_id, sport, team_name, wins, losses, league_points, updated_at")
-      .eq("season", season)
-      .eq("session", session)
-      .eq("sport", STAFF_SPORT_KEY);
-
-    if (error) throw error;
-    setStaffRows(sortStandings(data || []));
-  }
 
   async function loadNonGamePoints() {
     const { data, error } = await supabase
@@ -3154,7 +3393,7 @@ export default function StandingsPage() {
       }
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [includeStaff, includeNonGame, tab]);
+  }, [includeNonGame, tab]);
 
   return (
     <div className="pb-10">
@@ -3218,7 +3457,7 @@ export default function StandingsPage() {
                 <div>
                   <div className="text-lg font-black">Overall Camp Standings</div>
                   <div className="text-sm text-white/70">
-                    Toggle whether to include Staff Games and Non-Game Points.
+                    Toggle whether to include Non-Game Points.
                   </div>
                 </div>
 
@@ -3232,14 +3471,6 @@ export default function StandingsPage() {
                     Include Non-Game
                   </label>
 
-                  <label className="flex items-center gap-2 text-sm font-bold">
-                    <input
-                      type="checkbox"
-                      checked={includeStaff}
-                      onChange={(e) => setIncludeStaff(e.target.checked)}
-                    />
-                    Include Staff
-                  </label>
                 </div>
               </div>
 
@@ -3346,6 +3577,12 @@ export default function AdminPage() {
   // ---- Color War mode switch ----
   const [cwSettings, setCwSettings] = useState(null);       // full app_settings row
   const [sessionSwitchText, setSessionSwitchText] = useState("");
+  // S1 archive viewer (read-only view of frozen Session 1)
+  const [archiveOpen, setArchiveOpen] = useState(false);
+  const [archiveLeague, setArchiveLeague] = useState("seniors");
+  const [archiveStandings, setArchiveStandings] = useState([]);
+  const [archiveLeaders, setArchiveLeaders] = useState([]);
+  const [archiveLoading, setArchiveLoading] = useState(false);
   const [switchingSession, setSwitchingSession] = useState(false);
   const [modeSwitchText, setModeSwitchText] = useState(""); // typed confirmation
   const [switchingMode, setSwitchingMode] = useState(false);
@@ -3424,11 +3661,14 @@ export default function AdminPage() {
   async function loadAdminStandingsForLeague(lid) {
     setAdminStandingsLoading(true);
     try {
+      const curSession = cwSettings?.current_session || "s2";
       const { data, error } = await supabase
         .from("standings")
         .select("league_id, sport, team_name, wins, losses, league_points, updated_at")
         .eq("sport", "overall")
-        .eq("league_id", lid);
+        .eq("league_id", lid)
+        .eq("season", "league")
+        .eq("session", curSession);
 
       if (error) throw error;
 
@@ -3436,6 +3676,8 @@ export default function AdminPage() {
         .from("non_game_points")
         .select("team_name, points")
         .eq("league_id", lid)
+        .eq("season", "league")
+        .eq("session", cwSettings?.current_session || "s2")
         .eq("deleted", false)
         .eq("status", "final")
         .limit(5000);
@@ -3525,6 +3767,7 @@ export default function AdminPage() {
         .from("players")
         .select("team_name")
         .eq("league_id", leagueId)
+        .eq("departed", false)
         .order("team_name", { ascending: true });
 
       if (error) throw error;
@@ -3963,6 +4206,56 @@ export default function AdminPage() {
     URL.revokeObjectURL(url);
   }
 
+  async function loadArchive(lid) {
+    setArchiveLoading(true);
+    try {
+      // Frozen Session 1 standings for this league (season league, session s1).
+      const { data: st } = await supabase
+        .from("standings")
+        .select("league_id, team_name, wins, losses, league_points")
+        .eq("sport", "overall")
+        .eq("season", "league")
+        .eq("session", "s1")
+        .eq("league_id", lid);
+
+      // Add S1 non-game points on top.
+      const { data: ng } = await supabase
+        .from("non_game_points")
+        .select("team_name, points")
+        .eq("season", "league")
+        .eq("session", "s1")
+        .eq("league_id", lid)
+        .eq("deleted", false)
+        .eq("status", "final")
+        .limit(5000);
+      const ngMap = {};
+      for (const r of ng || []) {
+        const k = String(r.team_name || "").toLowerCase();
+        ngMap[k] = (ngMap[k] || 0) + Number(r.points || 0);
+      }
+      const merged = (st || []).map((r) => ({
+        ...r,
+        total: Number(r.league_points || 0) + (ngMap[String(r.team_name || "").toLowerCase()] || 0),
+      })).sort((a, b) => b.total - a.total || Number(b.wins||0) - Number(a.wins||0));
+      setArchiveStandings(merged);
+
+      // Frozen S1 stat leaders (top values across sports) for this league.
+      const { data: lead } = await supabase
+        .from("player_totals")
+        .select("player_name, team_name, sport, stat_key, value")
+        .eq("season", "league")
+        .eq("session", "s1")
+        .eq("league_id", lid)
+        .order("value", { ascending: false })
+        .limit(40);
+      setArchiveLeaders((lead || []).filter((r) => Number(r.value) > 0).slice(0, 20));
+    } catch (e) {
+      setErr(e?.message ?? String(e));
+    } finally {
+      setArchiveLoading(false);
+    }
+  }
+
   async function loadCwSettings() {
     const { data } = await supabase.from("app_settings").select("*").eq("id", 1).maybeSingle();
     if (data) {
@@ -4034,6 +4327,130 @@ export default function AdminPage() {
       await loadCwSettings();
     } finally {
       setSwitchingSession(false);
+    }
+  }
+
+  const [exportingCards, setExportingCards] = useState(false);
+
+  // Player-card data export. One row per player (across BOTH sessions), with
+  // identity, combined stat totals, best single-game performances, and win
+  // record. This is the master data file for the imaging team.
+  async function exportPlayerCards() {
+    setErr(""); setMsg("Building player card data…"); setExportingCards(true);
+    try {
+      // 1) Every player who ever came (any session). Include departed — cards
+      //    are for everyone who attended.
+      const { data: players } = await supabase
+        .from("players")
+        .select("id, first_name, last_name, league_id, team_name, s1_team, bunk, active_session, departed")
+        .order("id", { ascending: true });
+
+      // 2) All stat totals across both sessions.
+      const { data: totals } = await supabase
+        .from("player_totals")
+        .select("player_id, session, sport, stat_key, value")
+        .limit(20000);
+
+      // 3) Win records: count finalized games each player's team won, per session.
+      //    We compute from standings-independent game log via game_roster.
+      const { data: rosters } = await supabase
+        .from("game_roster")
+        .select("game_id, player_id, team_side")
+        .limit(50000);
+      const { data: games } = await supabase
+        .from("live_games")
+        .select("id, score_a, score_b, session, status")
+        .eq("status", "final")
+        .limit(5000);
+      const gameById = {};
+      for (const g of games || []) gameById[g.id] = g;
+
+      // 4) Best single games: per player, the game where they logged the most
+      //    of a single stat (e.g. 5 goals in one game).
+      const { data: events } = await supabase
+        .from("live_events")
+        .select("game_id, player_id, sport, stat_key, delta")
+        .eq("event_type", "stat")
+        .limit(100000);
+
+      // ---- aggregate ----
+      // combined totals per player: {pid: {"sport stat": value}}
+      const totMap = {};
+      for (const t of totals || []) {
+        const pid = String(t.player_id);
+        const key = `${String(t.sport).toUpperCase()} ${String(t.stat_key).toUpperCase()}`;
+        totMap[pid] = totMap[pid] || {};
+        totMap[pid][key] = (totMap[pid][key] || 0) + Number(t.value || 0);
+      }
+
+      // wins per player
+      const winMap = {};
+      for (const r of rosters || []) {
+        const g = gameById[r.game_id];
+        if (!g) continue;
+        const won = (r.team_side === "A" && Number(g.score_a) > Number(g.score_b)) ||
+                    (r.team_side === "B" && Number(g.score_b) > Number(g.score_a));
+        if (won) winMap[String(r.player_id)] = (winMap[String(r.player_id)] || 0) + 1;
+      }
+
+      // best single game per player: {pid: "5 G · SOCCER"}
+      const perGameStat = {}; // pid -> {game_id -> {statkey -> sum, sport}}
+      for (const e of events || []) {
+        const pid = String(e.player_id);
+        perGameStat[pid] = perGameStat[pid] || {};
+        const gk = e.game_id;
+        perGameStat[pid][gk] = perGameStat[pid][gk] || { sport: e.sport, stats: {} };
+        const sk = String(e.stat_key).toUpperCase();
+        perGameStat[pid][gk].stats[sk] = (perGameStat[pid][gk].stats[sk] || 0) + Number(e.delta || 0);
+      }
+      const bestGameMap = {};
+      for (const pid of Object.keys(perGameStat)) {
+        let best = null;
+        for (const gk of Object.keys(perGameStat[pid])) {
+          const g = perGameStat[pid][gk];
+          for (const sk of Object.keys(g.stats)) {
+            const v = g.stats[sk];
+            if (!best || v > best.value) best = { value: v, stat: sk, sport: String(g.sport).toUpperCase() };
+          }
+        }
+        if (best) bestGameMap[pid] = `${best.value} ${best.stat} · ${best.sport} (single game)`;
+      }
+
+      // ---- build rows ----
+      const rows = [];
+      for (const p of players || []) {
+        const pid = String(p.id);
+        const totals = totMap[pid] || {};
+        // sort stat totals descending, make a readable line
+        const totalsLine = Object.entries(totals)
+          .filter(([k, v]) => v > 0)
+          .sort((a, b) => b[1] - a[1])
+          .map(([k, v]) => `${v} ${k}`)
+          .join(", ");
+        rows.push({
+          player_id: pid,
+          first_name: p.first_name,
+          last_name: p.last_name,
+          league: p.league_id,
+          team: p.team_name,
+          bunk: p.bunk,
+          sessions: p.active_session === "s2" ? (p.s1_team ? "Both" : "Session 2") : "Session 1",
+          total_wins: winMap[pid] || 0,
+          best_single_game: bestGameMap[pid] || "",
+          all_stat_totals: totalsLine,
+        });
+      }
+
+      const header = ["player_id","first_name","last_name","league","team","bunk","sessions","total_wins","best_single_game","all_stat_totals"];
+      const lines = [header.join(",")];
+      for (const r of rows) lines.push(header.map((h) => csvEscape(r[h])).join(","));
+      downloadTextFile(`crest_player_cards_${new Date().toISOString().slice(0,10)}.csv`, lines.join("\n"));
+
+      setMsg(`✅ Player card data exported — ${rows.length} players.`);
+    } catch (e) {
+      setErr(e?.message ?? String(e)); setMsg("");
+    } finally {
+      setExportingCards(false);
     }
   }
 
@@ -4388,6 +4805,20 @@ export default function AdminPage() {
             >
               {exporting ? "Exporting…" : "Download Player Stats CSV"}
             </button>
+
+            <div className="mt-6 border-t border-white/10 pt-5">
+              <div className="text-lg font-black">🃏 Player Card Data (for imaging team)</div>
+              <div className="mt-1 text-sm text-white/70">
+                The master keepsake file. One row per camper across <b>both sessions</b> — name, league, team, bunk, total wins, best single-game performance, and every stat total. This is what the imaging team turns into cards.
+              </div>
+              <button
+                disabled={exportingCards}
+                onClick={exportPlayerCards}
+                className="mt-4 w-full rounded-2xl border border-amber-400/30 bg-amber-500/10 px-4 py-3 text-sm font-black text-amber-100 hover:bg-amber-500/15 disabled:opacity-60"
+              >
+                {exportingCards ? "Building…" : "Download Player Card Data"}
+              </button>
+            </div>
           </div>
 
           <div className="mt-6 grid gap-6 md:grid-cols-2">
@@ -4695,6 +5126,75 @@ export default function AdminPage() {
             )}
           </div>
           {/* ================= END SESSION CONTROL ================= */}
+
+          {/* ================= SESSION 1 ARCHIVE (read-only) ================= */}
+          <div className="mt-8 rounded-2xl border border-white/10 bg-white/[0.03] p-5">
+            <div className="flex items-center justify-between">
+              <div>
+                <div className="text-lg font-black">Session 1 Archive</div>
+                <div className="mt-1 text-sm text-white/60">Read-only view of frozen Session 1 standings + stat leaders. Does not affect the current session.</div>
+              </div>
+              <button
+                onClick={() => { const n = !archiveOpen; setArchiveOpen(n); if (n) loadArchive(archiveLeague); }}
+                className="rounded-xl border border-white/15 bg-white/10 px-4 py-2 text-sm font-black hover:bg-white/15">
+                {archiveOpen ? "Hide" : "View Session 1"}
+              </button>
+            </div>
+
+            {archiveOpen ? (
+              <div className="mt-5">
+                <div className="flex items-center gap-2">
+                  {["seniors", "juniors", "sophomores"].map((lg) => (
+                    <button key={lg}
+                      onClick={() => { setArchiveLeague(lg); loadArchive(lg); }}
+                      className={`rounded-xl border px-3 py-2 text-sm font-black ${archiveLeague === lg ? "border-emerald-400/30 bg-emerald-500/10" : "border-white/15 bg-white/5 hover:bg-white/10"}`}>
+                      {lg.charAt(0).toUpperCase() + lg.slice(1)}
+                    </button>
+                  ))}
+                </div>
+
+                {archiveLoading ? (
+                  <div className="mt-4 text-sm text-white/60">Loading…</div>
+                ) : (
+                  <div className="mt-4 grid gap-5 lg:grid-cols-2">
+                    <div className="rounded-2xl border border-white/10 bg-black/20 p-4">
+                      <div className="mb-2 text-sm font-black uppercase tracking-widest text-white/50">Final Standings</div>
+                      <table className="w-full text-left text-sm">
+                        <thead className="text-white/50"><tr><th className="py-1">#</th><th>Team</th><th>W</th><th>L</th><th>Pts</th></tr></thead>
+                        <tbody>
+                          {archiveStandings.map((r, i) => (
+                            <tr key={r.team_name} className="border-t border-white/10">
+                              <td className="py-2 text-white/40">{i + 1}</td>
+                              <td className="py-2 font-black">{r.team_name}</td>
+                              <td className="py-2">{r.wins}</td>
+                              <td className="py-2">{r.losses}</td>
+                              <td className="py-2 font-black">{r.total}</td>
+                            </tr>
+                          ))}
+                          {!archiveStandings.length ? <tr><td colSpan={5} className="py-3 text-white/50">No data.</td></tr> : null}
+                        </tbody>
+                      </table>
+                    </div>
+
+                    <div className="rounded-2xl border border-white/10 bg-black/20 p-4">
+                      <div className="mb-2 text-sm font-black uppercase tracking-widest text-white/50">Top Stat Leaders</div>
+                      <div className="grid gap-1">
+                        {archiveLeaders.map((r, i) => (
+                          <div key={i} className="flex items-center justify-between border-t border-white/10 py-1.5 text-sm">
+                            <div className="truncate font-bold">{r.player_name}</div>
+                            <div className="ml-3 shrink-0 text-white/60">{r.value} {String(r.stat_key).toUpperCase()} · {String(r.sport).toUpperCase()}</div>
+                          </div>
+                        ))}
+                        {!archiveLeaders.length ? <div className="py-3 text-white/50">No data.</div> : null}
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            ) : null}
+          </div>
+          {/* ================= END SESSION 1 ARCHIVE ================= */}
+
 
           {/* ================= COLOR WAR CONTROL ================= */}
           <div className={`mt-8 rounded-2xl border p-5 ${cwSettings?.mode === "color_war" ? "border-blue-400/50 bg-blue-500/10" : "border-white/10 bg-white/5"}`}>
@@ -5063,8 +5563,8 @@ export default function HomePage() {
     }
     const lk = norm(leagueKey);
     const query = matchupType === "crest_cup"
-      ? supabase.from("players").select("team_name, league_id").limit(5000)
-      : supabase.from("players").select("team_name, league_id").eq("league_id", lk).limit(5000);
+      ? supabase.from("players").select("team_name, league_id").eq("departed", false).limit(5000)
+      : supabase.from("players").select("team_name, league_id").eq("league_id", lk).eq("departed", false).limit(5000);
     const { data, error } = await query;
  
     if (error) return;
@@ -5833,8 +6333,8 @@ export default function PostGamesPage() {
       return;
     }
     const query = isCrestCup
-      ? supabase.from("players").select("team_name").limit(5000)
-      : supabase.from("players").select("team_name").eq("league_id", lk).limit(5000);
+      ? supabase.from("players").select("team_name").eq("departed", false).limit(5000)
+      : supabase.from("players").select("team_name").eq("league_id", lk).eq("departed", false).limit(5000);
     const { data, error } = await query;
 
     if (error) {
@@ -5960,7 +6460,7 @@ export default function PostGamesPage() {
     return "";
   }
 
-  async function createDraft({ staff = false } = {}) {
+  async function createDraft() {
     setErr("");
     setMsg("");
 
@@ -6022,7 +6522,7 @@ export default function PostGamesPage() {
       const { data, error } = await supabase.from("live_games").insert([row]).select("id").single();
       if (error) throw error;
 
-      setMsg(staff ? "✅ Staff game draft created." : "✅ Draft created.");
+      setMsg("✅ Draft created.");
       await loadDrafts();
       window.location.href = `/post/${data.id}`;
     } catch (e) {
@@ -6086,7 +6586,7 @@ export default function PostGamesPage() {
           <div>
             <div className="text-2xl font-black tracking-tight">Add Results</div>
             <div className="mt-1 text-sm text-white/70">
-              Enter results after the fact: <b>Post Games</b>, <b>Staff Games</b>, and <b>Non-Game Points</b>.
+              Enter results after the fact: <b>Post Games</b> and <b>Non-Game Points</b>.
             </div>
           </div>
 
@@ -6123,18 +6623,6 @@ export default function PostGamesPage() {
             </button>
 
             <button
-              onClick={() => setEntryType("staff")}
-              className={`rounded-xl border px-4 py-3 text-left ${
-                entryType === "staff"
-                  ? "border-emerald-400/30 bg-emerald-500/10"
-                  : "border-white/10 bg-black/20 hover:bg-black/30"
-              }`}
-            >
-              <div className="font-black">Staff Game</div>
-              <div className="text-xs text-white/60">Same as post game, but tagged as staff</div>
-            </button>
-
-            <button
               onClick={() => setEntryType("non_game")}
               className={`rounded-xl border px-4 py-3 text-left ${
                 entryType === "non_game"
@@ -6149,10 +6637,10 @@ export default function PostGamesPage() {
         </div>
 
         {/* GAMES FORM (post + staff) */}
-        {entryType === "post" || entryType === "staff" ? (
+        {entryType === "post" ? (
           <div className="mt-6 rounded-2xl border border-white/10 bg-white/5 p-5">
             <div className="text-lg font-black">
-              {entryType === "staff" ? "Create Staff Game Draft" : "Create Past Game Draft"}
+              Create Past Game Draft
             </div>
 
             <div className="mt-4 grid gap-4 md:grid-cols-2">
@@ -6337,10 +6825,10 @@ export default function PostGamesPage() {
             </div>
 
             <button
-              onClick={() => createDraft({ staff: entryType === "staff" })}
+              onClick={() => createDraft()}
               className="mt-5 w-full rounded-xl bg-emerald-500 px-4 py-3 text-sm font-extrabold text-slate-950 hover:bg-emerald-400"
             >
-              {entryType === "staff" ? "Create Staff Draft" : "Create Draft"}
+              Create Draft
             </button>
 
             <div className="mt-3 text-xs text-white/60">
@@ -6494,11 +6982,7 @@ export default function PostGamesPage() {
                   >
                     <div className="flex items-center justify-between gap-3">
                       <div className="text-xs text-white/60">{g.played_on ?? "—"}</div>
-                      {g.is_staff_game ? (
-                        <span className="rounded-full border border-purple-400/30 bg-purple-500/10 px-2 py-1 text-[11px] font-black text-purple-100">
-                          STAFF
-                        </span>
-                      ) : null}
+                      
                     </div>
 
                     <div className="mt-1 text-xl font-black">
@@ -6757,6 +7241,8 @@ export default function DisplayPage() {
       .select("team_a, team_a2, team_b, team_b2, score_a, score_b, deleted")
       .eq("status", "final")
       .eq("deleted", false)
+      .eq("season", "league")
+      .eq("session", session)
       .limit(2000);
 
     setRivalries(computeRivalries(allFinalGames || []));
@@ -6769,6 +7255,8 @@ export default function DisplayPage() {
         .from("live_games")
         .select("id, sport, league_key")
         .eq("status", "final")
+        .eq("season", "league")
+        .eq("session", session)
         .gte("updated_at", cutoff);
 
       const recentIds = (recentGames || []).map((g) => g.id);
@@ -7477,6 +7965,7 @@ function Ticker({ items }) {
 import { useEffect, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
+import { notifyGameFinalized } from "@/lib/notifyGame";
 import { getSportRules } from "@/lib/sportRules";
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -8378,6 +8867,7 @@ export default function LiveGamePage() {
         if (!g2) return;
         const { error } = await supabase.rpc("finalize_game", { gid: game.id });
         if (error) { setErr(error.message); return; }
+        notifyGameFinalized(game, { score_a: seriesA, score_b: seriesB });
         router.push("/");
       } catch {
         setErr("⚠️ WiFi dropped — game did NOT finalize. Tap Finalize again.");
@@ -8388,6 +8878,17 @@ export default function LiveGamePage() {
     const sa = Number(game.score_a || 0), sb = Number(game.score_b || 0);
     if (sa === 0 && sb === 0) { setErr("Score is 0-0. Add points before finalizing."); return; }
     if (sa === sb) { setErr("Score is tied. Bauercrest has no ties — adjust before finalizing."); return; }
+
+    // Card-data guard: individual-stat sports should have player stats logged
+    // before finalizing. Volleyball/Newcomb are team-outcome only, so skip them.
+    const statSports = ["hoop","soccer","euro","hockey","speedball","softball","football","kickball"];
+    if (statSports.includes(norm(game.sport))) {
+      const anyStats = Object.values(statTotals || {}).some((v) => Number(v) > 0);
+      if (!anyStats) {
+        const proceed = confirm("This game has NO player stats logged.\n\nFor player cards we want every goal/point/hit recorded. Log stats first, or finalize anyway?");
+        if (!proceed) { setFinalizing(false); return; }
+      }
+    }
     setFinalizing(true);
     try {
       if (rules?.clock?.enabled) {
@@ -8397,6 +8898,7 @@ export default function LiveGamePage() {
       }
       const { error } = await supabase.rpc("finalize_game", { gid: game.id });
       if (error) { setErr(error.message); return; }
+      notifyGameFinalized(game);
       router.push("/");
     } catch {
       setErr("⚠️ WiFi dropped — game did NOT finalize. Tap Finalize again.");

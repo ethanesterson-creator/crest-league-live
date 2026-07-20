@@ -93,8 +93,8 @@ async function fetchCaptainIds({ leagueId, teamNames }) {
   if (!teamNames?.length) return new Set();
   const isCrestCup = norm(leagueId) === "crest_cup";
   const query = isCrestCup
-    ? supabase.from("players").select("id, role, team_name").in("team_name", teamNames)
-    : supabase.from("players").select("id, role, team_name").eq("league_id", leagueId).in("team_name", teamNames);
+    ? supabase.from("players").select("id, role, team_name").in("team_name", teamNames).eq("departed", false)
+    : supabase.from("players").select("id, role, team_name").eq("league_id", leagueId).in("team_name", teamNames).eq("departed", false);
   const { data } = await query;
   const ids = new Set();
   for (const p of data || []) if (String(p.role || "").toLowerCase().includes("captain")) ids.add(String(p.id));
