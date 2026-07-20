@@ -166,10 +166,9 @@ export default function DisplayPage() {
 
     // finals
     const { data: finals } = await supabase
-      .from("games")
+      .from("live_games")
       .select("*")
       .eq("status", "final")
-      .eq("deleted", false)
       .eq("season", "league")
       .eq("session", session)
       .order("updated_at", { ascending: false })
@@ -201,6 +200,7 @@ export default function DisplayPage() {
 
       const bestPerCategory = new Map();
       for (const row of pool) {
+        if (Number(row.value || 0) <= 0) continue; // never show a 0 as a "leader"
         const key = `${String(row.sport || "").toLowerCase()}:${String(row.stat_key || "").toLowerCase()}`;
         const existing = bestPerCategory.get(key);
         if (!existing || Number(row.value || 0) > Number(existing.value || 0)) {
@@ -226,16 +226,19 @@ export default function DisplayPage() {
     });
 
     // rivalry tracker — every finalized game, head-to-head across the whole summer
-    const { data: allFinalGames } = await supabase
-      .from("games")
-      .select("team_a, team_a2, team_b, team_b2, score_a, score_b, deleted")
+    const { data: allFinalRaw } = await supabase
+      .from("live_games")
+      .select("team_a1, team_a2, team_b1, team_b2, score_a, score_b")
       .eq("status", "final")
-      .eq("deleted", false)
       .eq("season", "league")
       .eq("session", session)
       .limit(2000);
 
-    setRivalries(computeRivalries(allFinalGames || []));
+    const allFinalGames = (allFinalRaw || []).map((g) => ({
+      team_a: g.team_a1, team_a2: g.team_a2, team_b: g.team_b1, team_b2: g.team_b2,
+      score_a: g.score_a, score_b: g.score_b,
+    }));
+    setRivalries(computeRivalries(allFinalGames));
 
     // camper spotlight — top 3 individual performances from last 12 hours
     try {
@@ -596,11 +599,11 @@ export default function DisplayPage() {
             </div>
 
             <div className="mt-3 text-lg font-black text-white/60">
-              {fmtLeague(g.league_id)} • {fmtSport(g.sport)}
+              {fmtLeague(g.league_key)} • {fmtSport(g.sport)}
             </div>
 
             <div className="mt-5 text-3xl font-black text-white">
-              {g.team_a}
+              {g.team_a1}{g.team_a2 ? ` + ${g.team_a2}` : ""}
             </div>
 
             <div className="my-5 text-center text-6xl font-black text-blue-400">
@@ -608,7 +611,7 @@ export default function DisplayPage() {
             </div>
 
             <div className="text-right text-3xl font-black text-white">
-              {g.team_b}
+              {g.team_b1}{g.team_b2 ? ` + ${g.team_b2}` : ""}
             </div>
           </div>
         ))}
