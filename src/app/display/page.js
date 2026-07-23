@@ -8,7 +8,7 @@ import ColorWarBoard from "./ColorWarBoard";
 const SCENES = [
   "camp",
   "spotlight",
-  "rivalry",
+  "averages",
   "finals",
   "leaders_seniors",
   "leaders_juniors",
@@ -19,7 +19,7 @@ const SCENES = [
 const SCENE_LABELS = {
   camp: "Camp Standings",
   spotlight: "Camper Spotlight",
-  rivalry: "Rivalry Tracker",
+  averages: "Per Game Leaders",
   finals: "Recent Finals",
   leaders_seniors: "Seniors Stat Leaders",
   leaders_juniors: "Juniors Stat Leaders",
@@ -53,44 +53,6 @@ function fmtClock(d) {
   });
 }
 
-function computeRivalries(rows) {
-  const records = {};
-
-  function pairKey(x, y) {
-    return [x, y].sort().join("||");
-  }
-
-  for (const g of rows || []) {
-    if (g.deleted) continue;
-    const sa = Number(g.score_a || 0);
-    const sb = Number(g.score_b || 0);
-    if (sa === sb) continue;
-
-    const aTeams = [g.team_a, g.team_a2].filter(Boolean).map((t) => String(t).toLowerCase());
-    const bTeams = [g.team_b, g.team_b2].filter(Boolean).map((t) => String(t).toLowerCase());
-
-    const aWon = sa > sb;
-    const winners = aWon ? aTeams : bTeams;
-    const losers = aWon ? bTeams : aTeams;
-
-    for (const w of winners) {
-      for (const l of losers) {
-        if (w === l) continue;
-        const key = pairKey(w, l);
-        if (!records[key]) {
-          const [t1, t2] = key.split("||");
-          records[key] = { t1, t2, t1Wins: 0, t2Wins: 0 };
-        }
-        const r = records[key];
-        if (r.t1 === w) r.t1Wins += 1;
-        else r.t2Wins += 1;
-      }
-    }
-  }
-
-  return Object.values(records).sort((a, b) => (a.t1 + a.t2).localeCompare(b.t1 + b.t2));
-}
-
 export default function DisplayPage() {
   const { isCW, session, blueName, whiteName, blueLogo, whiteLogo, loading: modeLoading } = useAppMode();
   const [scene, setScene] = useState("camp");
@@ -109,7 +71,7 @@ export default function DisplayPage() {
   const [now, setNow] = useState(Date.now());
 
   
-  const [rivalries, setRivalries] = useState([]);
+  const [avgLeaders, setAvgLeaders] = useState([]);
 
 
   const wrapRef = useRef(null);
@@ -225,20 +187,92 @@ export default function DisplayPage() {
       sophomores: sophomoresLeaders,
     });
 
-    // rivalry tracker — every finalized game, head-to-head across the whole summer
-    const { data: allFinalRaw } = await supabase
+    // ---- PER GAME LEADERS -------------------------------------------------
+    // For each sport + stat, who averages the most per game played. The
+    // denominator is games the player was ROSTERED for in that sport, so a
+    // kid with 10 goals across 5 games shows 2.0, not 10.0.
+    const MIN_GAMES = 2; // raise this to require more games to qualify
+
+    // stat totals for the current session
+    const { data: avgTotals } = await supabase
+      .from("player_totals")
+      .select("league_id, sport, player_id, player_name, team_name, stat_key, value")
+      .eq("season", "league")
+      .eq("session", session)
+      .limit(20000);
+
+    // finalized games, so we know each game's sport
+    const { data: avgGames } = await supabase
       .from("live_games")
-      .select("team_a1, team_a2, team_b1, team_b2, score_a, score_b")
+      .select("id, sport")
       .eq("status", "final")
       .eq("season", "league")
       .eq("session", session)
-      .limit(2000);
+      .limit(5000);
 
-    const allFinalGames = (allFinalRaw || []).map((g) => ({
-      team_a: g.team_a1, team_a2: g.team_a2, team_b: g.team_b1, team_b2: g.team_b2,
-      score_a: g.score_a, score_b: g.score_b,
-    }));
-    setRivalries(computeRivalries(allFinalGames));
+    const sportByGame = {};
+    for (const g of avgGames || []) sportByGame[g.id] = String(g.sport || "").toLowerCase();
+
+    // rosters -> games played per player per sport
+    const gameIds = Object.keys(sportByGame);
+    let played = {};
+    if (gameIds.length) {
+      const { data: avgRoster } = await supabase
+        .from("game_roster")
+        .select("game_id, player_id")
+        .in("game_id", gameIds)
+        .limit(50000);
+      for (const row of avgRoster || []) {
+        const sp = sportByGame[row.game_id];
+        if (!sp) continue;
+        const pid = String(row.player_id);
+        played[pid] = played[pid] || {};
+        played[pid][sp] = (played[pid][sp] || 0) + 1;
+      }
+    }
+
+    // departed players never appear on the board
+    const avgIds = Array.from(new Set((avgTotals || []).map((t) => String(t.player_id))));
+    let avgDeparted = new Set();
+    if (avgIds.length) {
+      const { data: deps } = await supabase
+        .from("players").select("id").in("id", avgIds).eq("departed", true);
+      avgDeparted = new Set((deps || []).map((d) => String(d.id)));
+    }
+
+    // best average per sport + stat
+    const bestAvg = new Map();
+    for (const t of avgTotals || []) {
+      const pid = String(t.player_id);
+      if (avgDeparted.has(pid)) continue;
+      const value = Number(t.value || 0);
+      if (value <= 0) continue;
+      const sp = String(t.sport || "").toLowerCase();
+      const games = played[pid]?.[sp] || 0;
+      if (games < MIN_GAMES) continue;
+      const avg = value / games;
+      const key = `${sp}:${String(t.stat_key || "").toLowerCase()}`;
+      const prev = bestAvg.get(key);
+      if (!prev || avg > prev.avg) {
+        bestAvg.set(key, {
+          key,
+          avg,
+          games,
+          total: value,
+          sport: t.sport,
+          stat_key: t.stat_key,
+          player_name: t.player_name,
+          team_name: t.team_name,
+          league_id: t.league_id,
+        });
+      }
+    }
+
+    const avgRows = Array.from(bestAvg.values()).sort((a, b) => {
+      const s = String(a.sport).localeCompare(String(b.sport));
+      return s !== 0 ? s : String(a.stat_key).localeCompare(String(b.stat_key));
+    });
+    setAvgLeaders(avgRows);
 
     // camper spotlight — top 3 individual performances from last 12 hours
     try {
@@ -446,11 +480,11 @@ export default function DisplayPage() {
   }
 
   /* ===== DATA HELPERS ===== */
-      function renderRivalries() {
-    if (!rivalries.length) {
+  function renderAverages() {
+    if (!avgLeaders.length) {
       return (
         <div className="flex h-full items-center justify-center text-2xl font-black text-white/40">
-          No head-to-head results yet.
+          Not enough games played yet.
         </div>
       );
     }
@@ -460,40 +494,43 @@ export default function DisplayPage() {
         <div className="mb-8 flex items-center justify-between">
           <div>
             <div className="text-sm font-black uppercase tracking-[0.3em] text-blue-500">Camp-Wide</div>
-            <div className="text-5xl font-black text-white">Rivalry Tracker</div>
+            <div className="text-5xl font-black text-white">Per Game Leaders</div>
           </div>
           <div className="rounded-2xl border border-blue-500/40 bg-blue-500/15 px-6 py-4">
-            <div className="text-xs font-bold uppercase tracking-widest text-blue-300">ALL-TIME SERIES</div>
+            <div className="text-xs font-bold uppercase tracking-widest text-blue-300">BEST AVERAGE</div>
           </div>
         </div>
 
-        <div className="grid h-[calc(100%-160px)] grid-cols-1 gap-5 overflow-y-auto xl:grid-cols-2">
-          {rivalries.map((r) => {
-            const leaderIsT1 = r.t1Wins > r.t2Wins;
-            const leaderIsT2 = r.t2Wins > r.t1Wins;
-            return (
-              <div
-                key={`${r.t1}-${r.t2}`}
-                className="flex items-center justify-between rounded-[28px] border border-white/10 bg-white/[0.04] px-8 py-7"
-              >
-                <div className={cx("truncate text-3xl font-black", leaderIsT1 ? "text-white" : "text-white/50")}>
-                  {r.t1}
+        <div className="grid h-[calc(100%-160px)] grid-cols-2 content-start gap-5 overflow-y-auto xl:grid-cols-3">
+          {avgLeaders.map((r) => (
+            <div
+              key={r.key}
+              className="rounded-[28px] border border-white/10 bg-white/[0.04] px-7 py-6"
+            >
+              <div className="text-xs font-black uppercase tracking-[0.25em] text-blue-400">
+                {fmtSport(r.sport)} &middot; {String(r.stat_key).toUpperCase()}
+              </div>
+
+              <div className="mt-3 flex items-end gap-3">
+                <div className="text-6xl font-black tabular-nums leading-none text-white">
+                  {r.avg.toFixed(1)}
                 </div>
-                <div className="flex shrink-0 items-center gap-4">
-                  <div className={cx("text-6xl font-black tabular-nums", leaderIsT1 ? "text-blue-400" : "text-white/40")}>
-                    {r.t1Wins}
-                  </div>
-                  <div className="text-2xl font-black text-white/30">–</div>
-                  <div className={cx("text-6xl font-black tabular-nums", leaderIsT2 ? "text-blue-400" : "text-white/40")}>
-                    {r.t2Wins}
-                  </div>
-                </div>
-                <div className={cx("truncate text-right text-3xl font-black", leaderIsT2 ? "text-white" : "text-white/50")}>
-                  {r.t2}
+                <div className="pb-1 text-sm font-black uppercase tracking-widest text-white/40">
+                  per game
                 </div>
               </div>
-            );
-          })}
+
+              <div className="mt-4 truncate text-3xl font-black text-white">
+                {r.player_name}
+              </div>
+              <div className="mt-1 truncate text-lg font-bold text-white/50">
+                {r.team_name}
+              </div>
+              <div className="mt-3 text-sm font-bold uppercase tracking-widest text-white/30">
+                {r.total} in {r.games} game{r.games === 1 ? "" : "s"}
+              </div>
+            </div>
+          ))}
         </div>
       </div>
     );
@@ -893,7 +930,7 @@ export default function DisplayPage() {
             </div>
           )}
 
-          {scene === "rivalry" && renderRivalries()}
+          {scene === "averages" && renderAverages()}
           {scene === "finals" && renderFinals()}
           {scene === "spotlight" && renderSpotlight()}
           {scene === "leaders_seniors" && renderLeaders("seniors")}
