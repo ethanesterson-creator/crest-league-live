@@ -71,7 +71,8 @@ export default function DisplayPage() {
   const [now, setNow] = useState(Date.now());
 
   
-  const [avgLeaders, setAvgLeaders] = useState([]);
+  const [avgLeaders, setAvgLeaders] = useState({ seniors: [], juniors: [], sophomores: [] });
+  const [avgPage, setAvgPage] = useState(0);
 
 
   const wrapRef = useRef(null);
@@ -251,7 +252,8 @@ export default function DisplayPage() {
       const games = played[pid]?.[sp] || 0;
       if (games < MIN_GAMES) continue;
       const avg = value / games;
-      const key = `${sp}:${String(t.stat_key || "").toLowerCase()}`;
+      const lg = String(t.league_id || "").toLowerCase();
+      const key = `${lg}:${sp}:${String(t.stat_key || "").toLowerCase()}`;
       const prev = bestAvg.get(key);
       if (!prev || avg > prev.avg) {
         bestAvg.set(key, {
@@ -268,11 +270,18 @@ export default function DisplayPage() {
       }
     }
 
-    const avgRows = Array.from(bestAvg.values()).sort((a, b) => {
-      const s = String(a.sport).localeCompare(String(b.sport));
-      return s !== 0 ? s : String(a.stat_key).localeCompare(String(b.stat_key));
-    });
-    setAvgLeaders(avgRows);
+    const byLeague = { seniors: [], juniors: [], sophomores: [] };
+    for (const row of bestAvg.values()) {
+      const lg = String(row.league_id || "").toLowerCase();
+      if (byLeague[lg]) byLeague[lg].push(row);
+    }
+    for (const lg of Object.keys(byLeague)) {
+      byLeague[lg].sort((a, b) => {
+        const s = String(a.sport).localeCompare(String(b.sport));
+        return s !== 0 ? s : String(a.stat_key).localeCompare(String(b.stat_key));
+      });
+    }
+    setAvgLeaders(byLeague);
 
     // camper spotlight — top 3 individual performances from last 12 hours
     try {
@@ -423,6 +432,7 @@ export default function DisplayPage() {
     // so no shared "league" variable needs to be mutated during rotation —
     // each scene is self-contained and always shows the right league.
     const t = setInterval(() => {
+      setAvgPage((p) => p + 1);
       setScene((prevScene) => {
         const idx = SCENES.indexOf(prevScene);
         const safeIdx = idx === -1 ? 0 : idx;
@@ -481,7 +491,11 @@ export default function DisplayPage() {
 
   /* ===== DATA HELPERS ===== */
   function renderAverages() {
-    if (!avgLeaders.length) {
+    const LEAGUES = ["seniors", "juniors", "sophomores"];
+    const PER_LEAGUE = 3; // cards per league column. Fits one screen, no scrolling.
+
+    const total = LEAGUES.reduce((n, lg) => n + (avgLeaders[lg]?.length || 0), 0);
+    if (!total) {
       return (
         <div className="flex h-full items-center justify-center text-2xl font-black text-white/40">
           Not enough games played yet.
@@ -489,11 +503,25 @@ export default function DisplayPage() {
       );
     }
 
+    // Rotate through each league's categories so everything gets airtime
+    // over the course of the day without anyone having to scroll.
+    function pageFor(lg) {
+      const rows = avgLeaders[lg] || [];
+      if (rows.length <= PER_LEAGUE) return rows;
+      const pages = Math.ceil(rows.length / PER_LEAGUE);
+      const start = (avgPage % pages) * PER_LEAGUE;
+      const slice = rows.slice(start, start + PER_LEAGUE);
+      // wrap around so the last page is never half empty
+      return slice.length < PER_LEAGUE
+        ? slice.concat(rows.slice(0, PER_LEAGUE - slice.length))
+        : slice;
+    }
+
     return (
-      <div className="h-full rounded-[32px] border border-white/10 bg-gradient-to-br from-slate-950 to-slate-900 p-8 shadow-2xl">
-        <div className="mb-8 flex items-center justify-between">
+      <div className="flex h-full flex-col overflow-hidden rounded-[32px] border border-white/10 bg-gradient-to-br from-slate-950 to-slate-900 p-8 shadow-2xl">
+        <div className="mb-6 flex shrink-0 items-center justify-between">
           <div>
-            <div className="text-sm font-black uppercase tracking-[0.3em] text-blue-500">Camp-Wide</div>
+            <div className="text-sm font-black uppercase tracking-[0.3em] text-blue-500">By League</div>
             <div className="text-5xl font-black text-white">Per Game Leaders</div>
           </div>
           <div className="rounded-2xl border border-blue-500/40 bg-blue-500/15 px-6 py-4">
@@ -501,34 +529,45 @@ export default function DisplayPage() {
           </div>
         </div>
 
-        <div className="grid h-[calc(100%-160px)] grid-cols-2 content-start gap-5 overflow-y-auto xl:grid-cols-3">
-          {avgLeaders.map((r) => (
-            <div
-              key={r.key}
-              className="rounded-[28px] border border-white/10 bg-white/[0.04] px-7 py-6"
-            >
-              <div className="text-xs font-black uppercase tracking-[0.25em] text-blue-400">
-                {fmtSport(r.sport)} &middot; {String(r.stat_key).toUpperCase()}
+        <div className="grid min-h-0 flex-1 grid-cols-3 gap-6 overflow-hidden">
+          {LEAGUES.map((lg) => (
+            <div key={lg} className="flex min-h-0 flex-col gap-4">
+              <div className="shrink-0 text-center text-lg font-black uppercase tracking-[0.3em] text-white/40">
+                {fmtLeague(lg)}
               </div>
 
-              <div className="mt-3 flex items-end gap-3">
-                <div className="text-6xl font-black tabular-nums leading-none text-white">
-                  {r.avg.toFixed(1)}
-                </div>
-                <div className="pb-1 text-sm font-black uppercase tracking-widest text-white/40">
-                  per game
-                </div>
-              </div>
+              {pageFor(lg).map((r) => (
+                <div
+                  key={r.key}
+                  className="flex-1 rounded-[24px] border border-white/10 bg-white/[0.04] px-6 py-4"
+                >
+                  <div className="text-[11px] font-black uppercase tracking-[0.25em] text-blue-400">
+                    {fmtSport(r.sport)} &middot; {String(r.stat_key).toUpperCase()}
+                  </div>
 
-              <div className="mt-4 truncate text-3xl font-black text-white">
-                {r.player_name}
-              </div>
-              <div className="mt-1 truncate text-lg font-bold text-white/50">
-                {r.team_name}
-              </div>
-              <div className="mt-3 text-sm font-bold uppercase tracking-widest text-white/30">
-                {r.total} in {r.games} game{r.games === 1 ? "" : "s"}
-              </div>
+                  <div className="mt-1 flex items-end gap-2">
+                    <div className="text-5xl font-black tabular-nums leading-none text-white">
+                      {r.avg.toFixed(1)}
+                    </div>
+                    <div className="pb-1 text-[11px] font-black uppercase tracking-widest text-white/40">
+                      per game
+                    </div>
+                  </div>
+
+                  <div className="mt-2 truncate text-2xl font-black text-white">
+                    {r.player_name}
+                  </div>
+                  <div className="truncate text-sm font-bold text-white/50">
+                    {r.team_name} &middot; {r.total} in {r.games} game{r.games === 1 ? "" : "s"}
+                  </div>
+                </div>
+              ))}
+
+              {!(avgLeaders[lg] || []).length ? (
+                <div className="flex flex-1 items-center justify-center rounded-[24px] border border-white/5 text-sm font-black uppercase tracking-widest text-white/20">
+                  No qualifiers yet
+                </div>
+              ) : null}
             </div>
           ))}
         </div>
