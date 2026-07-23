@@ -110,3 +110,26 @@ button {
   user-select: none;
   -webkit-user-select: none;
 }
+
+/* ============ CAMP BACKGROUND TEST ============
+   Delete this whole block to go back to plain navy. */
+:root {
+  --bg-darkness: 0.78;   /* raise toward 1 = darker, lower = photo shows more */
+}
+
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  background-image:
+    linear-gradient(
+      rgba(8, 23, 44, var(--bg-darkness)),
+      rgba(8, 23, 44, var(--bg-darkness))
+    ),
+    url("/camp-bg.jpg");
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+}
+/* ============ END CAMP BACKGROUND TEST ============ */
