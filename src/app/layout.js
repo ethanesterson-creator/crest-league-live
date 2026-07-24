@@ -103,7 +103,7 @@ export default function RootLayout({ children }) {
               </a>
 
               <a className="bc-muted" href="/install" style={{ fontSize: 14 }}>
-                Install
+                🚧 Fantasy
               </a>
 
               <a className="bc-muted" href="/post" style={{ fontSize: 14 }}>
