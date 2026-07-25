@@ -57,9 +57,9 @@ export default function AwardsPage() {
 
   const byAward = {};
   for (const r of rows) {
-    (byAward[r.award] = byAward[r.award] || []).push(r);
+    (byAward[r.o_award] = byAward[r.o_award] || []).push(r);
   }
-  for (const k of Object.keys(byAward)) byAward[k].sort((a, b) => a.rank - b.rank);
+  for (const k of Object.keys(byAward)) byAward[k].sort((a, b) => a.o_rank - b.o_rank);
 
   return (
     <div className="awards-root pb-20">
@@ -87,26 +87,26 @@ export default function AwardsPage() {
           {AWARD_ORDER.map(([key, subtitle]) => {
             const podium = byAward[key];
             if (!podium || !podium.length) return null;
-            const first = podium.find((p) => p.rank === 1);
-            const rest = podium.filter((p) => p.rank > 1);
+            const first = podium.find((p) => p.o_rank === 1);
+            const rest = podium.filter((p) => p.o_rank > 1);
             const isMVP = key === "mvp";
             return (
               <section key={key} className={`aw-card ${isMVP ? "aw-card-mvp" : ""}`}>
                 <header className="aw-card-head">
-                  <div className="aw-card-title">{first?.award_label || key}</div>
+                  <div className="aw-card-title">{first?.o_award_label || key}</div>
                   <div className="aw-card-sub">{subtitle}</div>
                 </header>
 
                 {/* Gold — first place */}
                 {first ? (
-                  <Link href={`/player/${first.player_id}`} className="aw-first">
+                  <Link href={`/player/${first.o_player_id}`} className="aw-first">
                     <div className="aw-medal">🥇</div>
                     <div className="aw-first-body">
-                      <div className="aw-first-name">{first.player_name}</div>
+                      <div className="aw-first-name">{first.o_player_name}</div>
                       <div className="aw-first-meta">
-                        {fmtLeague(first.league_id)} · {first.team_name}
+                        {fmtLeague(first.o_league_id)} · {first.o_team_name}
                       </div>
-                      <div className="aw-first-value">{first.display}</div>
+                      <div className="aw-first-value">{first.o_display}</div>
                     </div>
                   </Link>
                 ) : null}
@@ -115,13 +115,13 @@ export default function AwardsPage() {
                 {rest.length ? (
                   <div className="aw-rest">
                     {rest.map((p) => (
-                      <Link key={p.player_id} href={`/player/${p.player_id}`} className="aw-runner">
-                        <div className="aw-runner-medal">{p.rank === 2 ? "🥈" : "🥉"}</div>
+                      <Link key={p.o_player_id} href={`/player/${p.o_player_id}`} className="aw-runner">
+                        <div className="aw-runner-medal">{p.o_rank === 2 ? "🥈" : "🥉"}</div>
                         <div className="aw-runner-body">
-                          <div className="aw-runner-name">{p.player_name}</div>
-                          <div className="aw-runner-meta">{p.team_name}</div>
+                          <div className="aw-runner-name">{p.o_player_name}</div>
+                          <div className="aw-runner-meta">{p.o_team_name}</div>
                         </div>
-                        <div className="aw-runner-value">{p.display}</div>
+                        <div className="aw-runner-value">{p.o_display}</div>
                       </Link>
                     ))}
                   </div>

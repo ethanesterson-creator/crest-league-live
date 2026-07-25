@@ -92,7 +92,7 @@ export default function DisplayPage() {
  // Sum league_points per team_name across all leagues
  const totalsMap = {};
  (allStandings || []).forEach((row) => {
-  const name = String(row.team_name || "").trim().toLowerCase();
+  const name = String(row.o_team_name || "").trim().toLowerCase();
   if (!name) return;
   totalsMap[name] = (totalsMap[name] || 0) + Number(row.league_points || 0);
  });
@@ -108,7 +108,7 @@ export default function DisplayPage() {
   .limit(5000);
 
  (ngStandingsData || []).forEach((row) => {
-  const name = String(row.team_name || "").trim().toLowerCase();
+  const name = String(row.o_team_name || "").trim().toLowerCase();
   if (!name) return;
   totalsMap[name] = (totalsMap[name] || 0) + Number(row.points || 0);
  });
@@ -157,25 +157,25 @@ export default function DisplayPage() {
 
       // Hide departed players (kept in DB, just not shown on the board).
       let pool = leaderPool || [];
-      const ids = Array.from(new Set(pool.map((r) => String(r.player_id))));
+      const ids = Array.from(new Set(pool.map((r) => String(r.o_player_id))));
       if (ids.length) {
         const { data: deps } = await supabase.from("players").select("id").in("id", ids).eq("departed", true);
         const departedSet = new Set((deps || []).map((d) => String(d.id)));
-        if (departedSet.size) pool = pool.filter((r) => !departedSet.has(String(r.player_id)));
+        if (departedSet.size) pool = pool.filter((r) => !departedSet.has(String(r.o_player_id)));
       }
 
       const bestPerCategory = new Map();
       for (const row of pool) {
-        if (Number(row.value || 0) <= 0) continue; // never show a 0 as a "leader"
+        if (Number(row.o_value || 0) <= 0) continue; // never show a 0 as a "leader"
         const key = `${String(row.sport || "").toLowerCase()}:${String(row.stat_key || "").toLowerCase()}`;
         const existing = bestPerCategory.get(key);
-        if (!existing || Number(row.value || 0) > Number(existing.value || 0)) {
+        if (!existing || Number(row.o_value || 0) > Number(existing.o_value || 0)) {
           bestPerCategory.set(key, row);
         }
       }
 
       return Array.from(bestPerCategory.values()).sort(
-        (a, b) => Number(b.value || 0) - Number(a.value || 0)
+        (a, b) => Number(b.o_value || 0) - Number(a.o_value || 0)
       );
     }
 
@@ -229,14 +229,14 @@ export default function DisplayPage() {
       for (const row of avgRoster || []) {
         const sp = sportByGame[row.game_id];
         if (!sp) continue;
-        const pid = String(row.player_id);
+        const pid = String(row.o_player_id);
         played[pid] = played[pid] || {};
         played[pid][sp] = (played[pid][sp] || 0) + 1;
       }
     }
 
     // departed players never appear on the board
-    const avgIds = Array.from(new Set((avgTotals || []).map((t) => String(t.player_id))));
+    const avgIds = Array.from(new Set((avgTotals || []).map((t) => String(t.o_player_id))));
     let avgDeparted = new Set();
     if (avgIds.length) {
       const { data: deps } = await supabase
@@ -247,15 +247,15 @@ export default function DisplayPage() {
     // best average per sport + stat
     const bestAvg = new Map();
     for (const t of avgTotals || []) {
-      const pid = String(t.player_id);
+      const pid = String(t.o_player_id);
       if (avgDeparted.has(pid)) continue;
-      const value = Number(t.value || 0);
+      const value = Number(t.o_value || 0);
       if (value <= 0) continue;
       const sp = String(t.sport || "").toLowerCase();
       const games = played[pid]?.[sp] || 0;
       if (games < MIN_GAMES) continue;
       const avg = value / games;
-      const lg = String(t.league_id || "").toLowerCase();
+      const lg = String(t.o_league_id || "").toLowerCase();
       const key = `${lg}:${sp}:${String(t.stat_key || "").toLowerCase()}`;
       const prev = bestAvg.get(key);
       if (!prev || avg > prev.avg) {
@@ -266,16 +266,16 @@ export default function DisplayPage() {
           total: value,
           sport: t.sport,
           stat_key: t.stat_key,
-          player_name: t.player_name,
-          team_name: t.team_name,
-          league_id: t.league_id,
+          player_name: t.o_player_name,
+          team_name: t.o_team_name,
+          league_id: t.o_league_id,
         });
       }
     }
 
     const byLeague = { seniors: [], juniors: [], sophomores: [] };
     for (const row of bestAvg.values()) {
-      const lg = String(row.league_id || "").toLowerCase();
+      const lg = String(row.o_league_id || "").toLowerCase();
       if (byLeague[lg]) byLeague[lg].push(row);
     }
     for (const lg of Object.keys(byLeague)) {
@@ -325,16 +325,16 @@ export default function DisplayPage() {
 
         const rosterMap = {};
         for (const r of rosters || []) {
-          rosterMap[`${r.game_id}::${r.player_id}`] = r;
+          rosterMap[`${r.game_id}::${r.o_player_id}`] = r;
         }
 
         // Aggregate stats per player per game
         const perPlayerGame = {};
         for (const e of evts || []) {
           if (!e.stat_key) continue;
-          const k = `${e.game_id}::${e.player_id}`;
+          const k = `${e.game_id}::${e.o_player_id}`;
           if (!perPlayerGame[k]) {
-            perPlayerGame[k] = { game_id: e.game_id, player_id: e.player_id, stats: {} };
+            perPlayerGame[k] = { game_id: e.game_id, player_id: e.o_player_id, stats: {} };
           }
           perPlayerGame[k].stats[e.stat_key] = (perPlayerGame[k].stats[e.stat_key] || 0) + Number(e.delta || 0);
         }
@@ -353,12 +353,12 @@ export default function DisplayPage() {
         const allScored = Object.values(perPlayerGame)
           .map((entry) => {
             const g = gameMap[entry.game_id];
-            const r = rosterMap[`${entry.game_id}::${entry.player_id}`];
+            const r = rosterMap[`${entry.game_id}::${entry.o_player_id}`];
             const score = eff(g?.sport, entry.stats);
             if (score <= 0) return null;
             return {
-              player_name: r?.player_name || entry.player_id,
-              team_name: r?.team_name || "",
+              player_name: r?.o_player_name || entry.o_player_id,
+              team_name: r?.o_team_name || "",
               sport: g?.sport || "",
               game_id: entry.game_id,
               stats: entry.stats,
@@ -387,7 +387,7 @@ export default function DisplayPage() {
           for (const p of allScored) {
             if (scored.length >= 3) break;
             if (usedGames.has(p.game_id)) continue;
-            if (scored.find((s) => s.player_name === p.player_name)) continue;
+            if (scored.find((s) => s.o_player_name === p.o_player_name)) continue;
             usedGames.add(p.game_id);
             scored.push(p);
           }
@@ -456,7 +456,7 @@ export default function DisplayPage() {
   const live = liveGames.slice(0, 4).map((g) => {
     const left = g.team_a || g.team_a1 || "Team A";
     const right = g.team_b || g.team_b1 || "Team B";
-    const leagueName = fmtLeague(g.league_id || g.league_key);
+    const leagueName = fmtLeague(g.o_league_id || g.league_key);
     return `LIVE: ${leagueName} ${fmtSport(g.sport)} — ${left} ${Number(g.score_a || 0)}-${Number(g.score_b || 0)} ${right}`;
   });
 
@@ -472,7 +472,7 @@ export default function DisplayPage() {
   });
 
   const topStandings = campStandings.slice(0, 3).map((t, i) => {
-    return `CAMP STANDINGS: #${i + 1} ${t.team_name} — ${Number(t.league_points || 0)} pts`;
+    return `CAMP STANDINGS: #${i + 1} ${t.o_team_name} — ${Number(t.league_points || 0)} pts`;
   });
 
   const allLeaders = [
@@ -482,7 +482,7 @@ export default function DisplayPage() {
   ];
 
   const topLeaders = allLeaders.slice(0, 4).map((p) => {
-    return `LEADER: ${p.player_name} — ${Number(p.value || 0)} ${String(p.stat_key || "").toUpperCase()} (${p.team_name || "—"})`;
+    return `LEADER: ${p.o_player_name} — ${Number(p.o_value || 0)} ${String(p.stat_key || "").toUpperCase()} (${p.o_team_name || "—"})`;
   });
 
   return [...live, ...finals, ...topStandings, ...topLeaders].filter(Boolean);
@@ -500,8 +500,8 @@ export default function DisplayPage() {
   function renderAwards() {
     // Group top-3 by award, rotate which award is spotlighted using avgPage.
     const byAward = {};
-    for (const r of awards) (byAward[r.award] = byAward[r.award] || []).push(r);
-    for (const k of Object.keys(byAward)) byAward[k].sort((a, b) => a.rank - b.rank);
+    for (const r of awards) (byAward[r.o_award] = byAward[r.o_award] || []).push(r);
+    for (const k of Object.keys(byAward)) byAward[k].sort((a, b) => a.o_rank - b.o_rank);
     const order = ["mvp","most_wins","iron_man","sharpshooter","buckets","playmaker","slugger"]
       .filter((k) => byAward[k] && byAward[k].length);
 
@@ -516,9 +516,9 @@ export default function DisplayPage() {
     // spotlight one award per rotation tick
     const key = order[avgPage % order.length];
     const podium = byAward[key];
-    const first = podium.find((p) => p.rank === 1);
-    const rest = podium.filter((p) => p.rank > 1);
-    const label = first?.award_label || key;
+    const first = podium.find((p) => p.o_rank === 1);
+    const rest = podium.filter((p) => p.o_rank > 1);
+    const label = first?.o_award_label || key;
 
     return (
       <div className="flex h-full flex-col items-center justify-center overflow-hidden rounded-[32px] border border-[#f5c451]/30 bg-gradient-to-br from-slate-950 to-slate-900 p-10"
@@ -530,13 +530,13 @@ export default function DisplayPage() {
         {first ? (
           <div className="mt-8 flex flex-col items-center">
             <div className="text-8xl" style={{ filter: "drop-shadow(0 6px 20px rgba(245,196,81,0.55))" }}>🥇</div>
-            <div className="mt-3 text-7xl font-black text-white">{first.player_name}</div>
+            <div className="mt-3 text-7xl font-black text-white">{first.o_player_name}</div>
             <div className="mt-2 text-xl font-black uppercase tracking-widest text-white/50">
-              {first.team_name}
+              {first.o_team_name}
             </div>
             <div className="mt-4 rounded-full px-8 py-3 text-2xl font-black"
                  style={{ background: "linear-gradient(180deg,#ffe9a8,#f5c451)", color: "#3a2a05" }}>
-              {first.display}
+              {first.o_display}
             </div>
           </div>
         ) : null}
@@ -545,12 +545,12 @@ export default function DisplayPage() {
         {rest.length ? (
           <div className="mt-8 grid grid-cols-2 gap-6">
             {rest.map((p) => (
-              <div key={p.player_id} className="flex items-center gap-4 rounded-2xl border border-white/10 bg-white/[0.04] px-6 py-4">
-                <div className="text-4xl">{p.rank === 2 ? "🥈" : "🥉"}</div>
+              <div key={p.o_player_id} className="flex items-center gap-4 rounded-2xl border border-white/10 bg-white/[0.04] px-6 py-4">
+                <div className="text-4xl">{p.o_rank === 2 ? "🥈" : "🥉"}</div>
                 <div>
-                  <div className="text-3xl font-black text-white">{p.player_name}</div>
+                  <div className="text-3xl font-black text-white">{p.o_player_name}</div>
                   <div className="text-sm font-bold uppercase tracking-widest text-white/40">
-                    {p.team_name} · {p.display}
+                    {p.o_team_name} · {p.o_display}
                   </div>
                 </div>
               </div>
@@ -626,10 +626,10 @@ export default function DisplayPage() {
                   </div>
 
                   <div className="mt-2 truncate text-2xl font-black text-white">
-                    {r.player_name}
+                    {r.o_player_name}
                   </div>
                   <div className="truncate text-sm font-bold text-white/50">
-                    {r.team_name} &middot; {r.total} in {r.games} game{r.games === 1 ? "" : "s"}
+                    {r.o_team_name} &middot; {r.total} in {r.games} game{r.games === 1 ? "" : "s"}
                   </div>
                 </div>
               ))}
@@ -712,10 +712,10 @@ export default function DisplayPage() {
                   className="text-5xl font-black leading-tight text-white xl:text-6xl"
                   style={{ textShadow: `0 0 40px ${medals[i]}60` }}
                 >
-                  {p.player_name}
+                  {p.o_player_name}
                 </div>
                 <div className="mt-3 text-xl font-black uppercase tracking-widest" style={{ color: medals[i] }}>
-                  {p.team_name}
+                  {p.o_team_name}
                 </div>
               </div>
 
@@ -784,11 +784,11 @@ export default function DisplayPage() {
             </div>
 
             <div className="mt-4 text-4xl font-black text-white">
-              {p.player_name}
+              {p.o_player_name}
             </div>
 
             <div className="mt-2 text-xl font-bold text-white/60">
-              {p.team_name}
+              {p.o_team_name}
             </div>
 
             <div className="mt-8 flex items-end justify-between">
@@ -798,7 +798,7 @@ export default function DisplayPage() {
                 </div>
 
                 <div className="text-7xl font-black text-blue-400">
-                  {p.value}
+                  {p.o_value}
                 </div>
               </div>
 
@@ -975,7 +975,7 @@ export default function DisplayPage() {
 
           <select
             value={rotateSeconds}
-            onChange={(e) => setRotateSeconds(Number(e.target.value))}
+            onChange={(e) => setRotateSeconds(Number(e.target.o_value))}
             className="h-10 rounded-xl border border-white/15 bg-white/10 px-3 text-sm font-black text-white outline-none"
           >
             <option value={12}>12s</option>
@@ -1011,7 +1011,7 @@ export default function DisplayPage() {
               <div className="grid h-[calc(100%-160px)] grid-cols-1 gap-6 xl:grid-cols-2">
                 {campStandings.map((t, i) => (
                   <div
-                    key={`${t.league_id}-${t.team_name}-${i}`}
+                    key={`${t.o_league_id}-${t.o_team_name}-${i}`}
                     className={cx(
                       "flex items-center justify-between rounded-[32px] border border-white/10 bg-white/[0.04] p-10",
                       i === 0 && "border-blue-500/40 bg-blue-500/10"
@@ -1022,7 +1022,7 @@ export default function DisplayPage() {
                         #{i + 1} • ALL LEAGUES
                        </div>
                       <div className="mt-2 text-6xl font-black text-white xl:text-7xl">
-                        {t.team_name}
+                        {t.o_team_name}
                       </div>
                     </div>
 
