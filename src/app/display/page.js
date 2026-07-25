@@ -9,6 +9,7 @@ const SCENES = [
   "camp",
   "spotlight",
   "averages",
+  "awards",
   "finals",
   "leaders_seniors",
   "leaders_juniors",
@@ -20,6 +21,7 @@ const SCENE_LABELS = {
   camp: "Camp Standings",
   spotlight: "Camper Spotlight",
   averages: "Per Game Leaders",
+  awards: "Crest Awards",
   finals: "Recent Finals",
   leaders_seniors: "Seniors Stat Leaders",
   leaders_juniors: "Juniors Stat Leaders",
@@ -72,6 +74,7 @@ export default function DisplayPage() {
 
   
   const [avgLeaders, setAvgLeaders] = useState({ seniors: [], juniors: [], sophomores: [] });
+  const [awards, setAwards] = useState([]);
   const [avgPage, setAvgPage] = useState(0);
 
 
@@ -283,6 +286,10 @@ export default function DisplayPage() {
     }
     setAvgLeaders(byLeague);
 
+    // ---- AWARDS (top 3 per award) ----
+    const { data: awardRows } = await supabase.rpc("get_awards", { p_session: session });
+    setAwards(awardRows || []);
+
     // camper spotlight — top 3 individual performances from last 12 hours
     try {
       const cutoff = new Date(Date.now() - 12 * 60 * 60 * 1000).toISOString();
@@ -490,6 +497,70 @@ export default function DisplayPage() {
   }
 
   /* ===== DATA HELPERS ===== */
+  function renderAwards() {
+    // Group top-3 by award, rotate which award is spotlighted using avgPage.
+    const byAward = {};
+    for (const r of awards) (byAward[r.award] = byAward[r.award] || []).push(r);
+    for (const k of Object.keys(byAward)) byAward[k].sort((a, b) => a.rank - b.rank);
+    const order = ["mvp","most_wins","iron_man","sharpshooter","buckets","playmaker","slugger"]
+      .filter((k) => byAward[k] && byAward[k].length);
+
+    if (!order.length) {
+      return (
+        <div className="flex h-full items-center justify-center text-2xl font-black text-white/40">
+          Awards appear once games are played.
+        </div>
+      );
+    }
+
+    // spotlight one award per rotation tick
+    const key = order[avgPage % order.length];
+    const podium = byAward[key];
+    const first = podium.find((p) => p.rank === 1);
+    const rest = podium.filter((p) => p.rank > 1);
+    const label = first?.award_label || key;
+
+    return (
+      <div className="flex h-full flex-col items-center justify-center overflow-hidden rounded-[32px] border border-[#f5c451]/30 bg-gradient-to-br from-slate-950 to-slate-900 p-10"
+           style={{ boxShadow: "0 0 80px rgba(245,196,81,0.10) inset" }}>
+        <div className="text-sm font-black uppercase tracking-[0.4em] text-[#f5c451]">Crest Awards</div>
+        <div className="mt-2 text-6xl font-black text-white">{label}</div>
+
+        {/* Gold */}
+        {first ? (
+          <div className="mt-8 flex flex-col items-center">
+            <div className="text-8xl" style={{ filter: "drop-shadow(0 6px 20px rgba(245,196,81,0.55))" }}>🥇</div>
+            <div className="mt-3 text-7xl font-black text-white">{first.player_name}</div>
+            <div className="mt-2 text-xl font-black uppercase tracking-widest text-white/50">
+              {first.team_name}
+            </div>
+            <div className="mt-4 rounded-full px-8 py-3 text-2xl font-black"
+                 style={{ background: "linear-gradient(180deg,#ffe9a8,#f5c451)", color: "#3a2a05" }}>
+              {first.display}
+            </div>
+          </div>
+        ) : null}
+
+        {/* Silver + bronze */}
+        {rest.length ? (
+          <div className="mt-8 grid grid-cols-2 gap-6">
+            {rest.map((p) => (
+              <div key={p.player_id} className="flex items-center gap-4 rounded-2xl border border-white/10 bg-white/[0.04] px-6 py-4">
+                <div className="text-4xl">{p.rank === 2 ? "🥈" : "🥉"}</div>
+                <div>
+                  <div className="text-3xl font-black text-white">{p.player_name}</div>
+                  <div className="text-sm font-bold uppercase tracking-widest text-white/40">
+                    {p.team_name} · {p.display}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : null}
+      </div>
+    );
+  }
+
   function renderAverages() {
     const LEAGUES = ["seniors", "juniors", "sophomores"];
     const PER_LEAGUE = 3; // cards per league column. Fits one screen, no scrolling.
@@ -970,6 +1041,7 @@ export default function DisplayPage() {
           )}
 
           {scene === "averages" && renderAverages()}
+          {scene === "awards" && renderAwards()}
           {scene === "finals" && renderFinals()}
           {scene === "spotlight" && renderSpotlight()}
           {scene === "leaders_seniors" && renderLeaders("seniors")}

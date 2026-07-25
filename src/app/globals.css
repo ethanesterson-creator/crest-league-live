@@ -133,3 +133,25 @@ body::before {
   background-repeat: no-repeat;
 }
 /* ============ END CAMP BACKGROUND TEST ============ */
+/* ============ CAMP BACKGROUND ============
+   Lake sunset background across the whole app.
+   Delete this block to go back to plain navy. */
+:root {
+  --bg-darkness: 0.80;   /* higher = darker (text more readable), lower = photo pops */
+}
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  background-image:
+    linear-gradient(
+      rgba(6, 18, 38, var(--bg-darkness)),
+      rgba(6, 18, 38, var(--bg-darkness))
+    ),
+    url("/camp-bg.jpg");
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+}
+/* ============ END CAMP BACKGROUND ============ */

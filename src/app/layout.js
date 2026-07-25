@@ -102,8 +102,8 @@ export default function RootLayout({ children }) {
                 Admin
               </a>
 
-              <a className="bc-muted" href="/install" style={{ fontSize: 14 }}>
-                🚧 Fantasy
+              <a className="bc-muted" href="/awards" style={{ fontSize: 14 }}>
+                Awards
               </a>
 
               <a className="bc-muted" href="/post" style={{ fontSize: 14 }}>

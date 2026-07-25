@@ -1040,6 +1040,32 @@ export default function AdminPage() {
           </div>
 
           <div className="mt-3 text-xs text-white/50">Contact Ethan Esterson If Password Needed</div>
+
+          {/* Install instructions — moved here from the old Install page */}
+          <div className="mt-6 border-t border-white/10 pt-5">
+            <div className="text-lg font-black">📲 Install Crest League Live</div>
+            <div className="mt-1 text-sm text-white/60">Add the app to your home screen in 20 seconds.</div>
+            <div className="mt-4 grid gap-4 md:grid-cols-2">
+              <div className="rounded-xl border border-white/10 bg-black/20 p-4">
+                <div className="font-black">iPhone (Safari)</div>
+                <ol className="mt-2 list-decimal space-y-1 pl-5 text-sm text-white/75">
+                  <li>Open this site in <b>Safari</b>.</li>
+                  <li>Tap the <b>Share</b> button.</li>
+                  <li>Tap <b>Add to Home Screen</b>.</li>
+                  <li>Name it <b>Crest Live</b>, then <b>Add</b>.</li>
+                </ol>
+              </div>
+              <div className="rounded-xl border border-white/10 bg-black/20 p-4">
+                <div className="font-black">Android (Chrome)</div>
+                <ol className="mt-2 list-decimal space-y-1 pl-5 text-sm text-white/75">
+                  <li>Open this site in <b>Chrome</b>.</li>
+                  <li>Tap the <b>3-dot menu</b>.</li>
+                  <li>Tap <b>Add to Home screen</b>.</li>
+                  <li>Confirm <b>Add</b>.</li>
+                </ol>
+              </div>
+            </div>
+          </div>
         </div>
       ) : (
         <>
@@ -1592,6 +1618,28 @@ export default function AdminPage() {
             )}
           </div>
           {/* ================= END SESSION CONTROL ================= */}
+
+          {/* ================= AWARDS CONTROL ================= */}
+          <div className="mt-8 rounded-2xl border border-amber-400/20 bg-amber-500/5 p-5">
+            <div className="text-lg font-black">🏆 Awards</div>
+            <div className="mt-1 text-sm text-white/60">
+              The Awards page shows live leaders during the session. When league play is over, mark it final to crown winners.
+            </div>
+            <button
+              onClick={async () => {
+                const cur = Boolean(cwSettings?.league_ended);
+                const { error } = await supabase.from("app_settings")
+                  .update({ league_ended: !cur }).eq("id", 1);
+                if (error) { setErr(error.message); return; }
+                setMsg(!cur ? "Awards now show FINAL winners." : "Awards back to live race.");
+                await loadCwSettings();
+              }}
+              className="mt-4 rounded-xl border border-amber-400/40 bg-amber-500/15 px-5 py-2.5 text-sm font-black text-amber-100 hover:bg-amber-500/25"
+            >
+              {cwSettings?.league_ended ? "↩ Reopen (back to live race)" : "🏆 Mark league final (crown winners)"}
+            </button>
+          </div>
+          {/* ================= END AWARDS CONTROL ================= */}
 
           {/* ================= SESSION 1 ARCHIVE (read-only) ================= */}
           <div className="mt-8 rounded-2xl border border-white/10 bg-white/[0.03] p-5">
