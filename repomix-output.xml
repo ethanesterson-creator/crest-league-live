@@ -42,6 +42,7 @@ The content is organized as follows:
 <directory_structure>
 public/
   apple-touch-icon.png
+  camp-bg.jpg
   file.svg
   globe.svg
   icon-192.png
@@ -52,6 +53,8 @@ public/
 src/
   app/
     admin/
+      page.js
+    awards/
       page.js
     display/
       ColorWarBoard.jsx
@@ -117,57 +120,6 @@ This section contains the contents of the repository's files.
 
 <file path="public/window.svg">
 <svg fill="none" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"><path fill-rule="evenodd" clip-rule="evenodd" d="M1.5 2.5h13v10a1 1 0 0 1-1 1h-11a1 1 0 0 1-1-1zM0 1h16v11.5a2.5 2.5 0 0 1-2.5 2.5h-11A2.5 2.5 0 0 1 0 12.5zm3.75 4.5a.75.75 0 1 0 0-1.5.75.75 0 0 0 0 1.5M7 4.75a.75.75 0 1 1-1.5 0 .75.75 0 0 1 1.5 0m1.75.75a.75.75 0 1 0 0-1.5.75.75 0 0 0 0 1.5" fill="#666"/></svg>
-</file>
-
-<file path="src/app/install/page.js">
-export default function InstallPage() {
-  return (
-    <div className="pb-12">
-      <div className="mt-6">
-        <div className="text-3xl font-black">Install Crest League Live</div>
-        <div className="mt-1 text-white/70">
-          No App Store. Install from your browser in 20 seconds.
-        </div>
-      </div>
-
-      <div className="mt-6 grid gap-6 md:grid-cols-2">
-        <div className="rounded-2xl border border-white/10 bg-white/5 p-6">
-          <div className="text-xl font-black">iPhone (Safari)</div>
-          <ol className="mt-3 list-decimal space-y-2 pl-5 text-white/80">
-            <li>Open this site in <b>Safari</b> (not Google app).</li>
-            <li>Tap the <b>Share</b> button (square with arrow).</li>
-            <li>Scroll and tap <b>Add to Home Screen</b>.</li>
-            <li>Name it <b>Crest Live</b> → tap <b>Add</b>.</li>
-            <li>Open it from your Home Screen like a real app.</li>
-          </ol>
-          <div className="mt-4 text-xs text-white/50">
-            Tip: After installing, use the Home Screen icon (it opens fullscreen).
-          </div>
-        </div>
-
-        <div className="rounded-2xl border border-white/10 bg-white/5 p-6">
-          <div className="text-xl font-black">Android (Chrome)</div>
-          <ol className="mt-3 list-decimal space-y-2 pl-5 text-white/80">
-            <li>Open this site in <b>Chrome</b>.</li>
-            <li>Tap the <b>3-dot menu</b> (top right).</li>
-            <li>Tap <b>Install app</b> or <b>Add to Home screen</b>.</li>
-            <li>Open it from your Home Screen like a real app.</li>
-          </ol>
-          <div className="mt-4 text-xs text-white/50">
-            If you don’t see “Install”, use “Add to Home screen”.
-          </div>
-        </div>
-      </div>
-
-      <div className="mt-6 rounded-2xl border border-emerald-400/20 bg-emerald-500/10 p-6">
-        <div className="text-lg font-black text-emerald-100">Staff Rule</div>
-        <div className="mt-1 text-white/80">
-          Use the installed app icon during games. It’s faster and stays fullscreen.
-        </div>
-      </div>
-    </div>
-  );
-}
 </file>
 
 <file path="src/lib/supabase.js">
@@ -505,259 +457,6 @@ export default function PlayerProfilePage() {
 }
 </file>
 
-<file path="src/app/globals.css">
-/* Tailwind */
-@import "tailwindcss";
-
-/* Bauercrest theme tokens */
-:root {
-  --bc-navy: #0b1f3b;
-  --bc-navy-2: #08172c;
-  --bc-white: #ffffff;
-
-  /* surfaces */
-  --bc-bg: var(--bc-navy-2);
-  --bc-card: rgba(255, 255, 255, 0.06);
-  --bc-card-2: rgba(255, 255, 255, 0.09);
-  --bc-border: rgba(255, 255, 255, 0.14);
-
-  /* text */
-  --bc-text: var(--bc-white);
-  --bc-muted: rgba(255, 255, 255, 0.75);
-  --bc-faint: rgba(255, 255, 255, 0.55);
-
-  /* feedback */
-  --bc-success: #16a34a;
-  --bc-danger: #dc2626;
-}
-
-html,
-body {
-  height: 100%;
-}
-
-body {
-  background: var(--bc-bg);
-  color: var(--bc-text);
-  color-scheme: dark;
-}
-
-
-/* Optional: nicer selection */
-::selection {
-  background: rgba(255, 255, 255, 0.2);
-}
-
-/* Utility-ish classes (so we don’t repeat styles everywhere) */
-.bc-container {
-  max-width: 1100px;
-  margin: 0 auto;
-  padding: 16px;
-}
-
-.bc-card {
-  background: var(--bc-card);
-  border: 1px solid var(--bc-border);
-  border-radius: 16px;
-}
-
-.bc-card-pad {
-  padding: 16px;
-}
-
-.bc-muted {
-  color: var(--bc-muted);
-}
-
-.bc-faint {
-  color: var(--bc-faint);
-}
-
-.bc-divider {
-  border-top: 1px solid var(--bc-border);
-}
-
-/* Make buttons/inputs feel less “prototype” even before we build components */
-button {
-  cursor: pointer;
-}
-
-input,
-select,
-textarea {
-  background: rgba(255, 255, 255, 0.06);
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  color: var(--bc-text);
-  border-radius: 12px;
-  padding: 10px 12px;
-  outline: none;
-}
-
-input::placeholder,
-textarea::placeholder {
-  color: rgba(255, 255, 255, 0.5);
-}
-
-a {
-  color: inherit;
-  text-decoration: none;
-}
-
-/* Fix native select dropdown list (Windows/Chrome white-on-white) */
-select option {
-  background: var(--bc-navy);
-  color: var(--bc-white);
-}
-
-/* Kill double-tap-zoom tap swallowing + 300ms delay on all interactive elements */
-button, a, select, input, [role="button"] {
-  touch-action: manipulation;
-  -webkit-tap-highlight-color: transparent;
-}
-button {
-  user-select: none;
-  -webkit-user-select: none;
-}
-</file>
-
-<file path="src/app/layout.js">
-import { Geist, Geist_Mono } from "next/font/google";
-import "./globals.css";
-
-const geistSans = Geist({
-  variable: "--font-geist-sans",
-  subsets: ["latin"],
-});
-
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
-  subsets: ["latin"],
-});
-
-export const metadata = {
-  title: "Crest League Live",
-  description: "Live scoring, standings, stat leaders, highlights.",
-  applicationName: "Crest League Live",
-  appleWebApp: {
-    capable: true,
-    statusBarStyle: "black-translucent",
-    title: "Crest Live",
-  },
-  formatDetection: {
-    telephone: false,
-  },
-  manifest: "/manifest.webmanifest",
-  icons: {
-    icon: "/icon-192.png",
-    apple: "/apple-touch-icon.png",
-  },
-};
-
-export const viewport = {
-  themeColor: "#0B1B3A",
-  width: "device-width",
-  initialScale: 1,
-  maximumScale: 1,
-  userScalable: false,
-};
-
-export default function RootLayout({ children }) {
-  return (
-    <html lang="en">
-      <body className={`${geistSans.variable} ${geistMono.variable} antialiased`}>
-        {/* Top App Bar */}
-        <header
-          style={{
-            position: "sticky",
-            top: 0,
-            zIndex: 50,
-            background: "rgba(8, 23, 44, 0.85)",
-            backdropFilter: "blur(10px)",
-            borderBottom: "1px solid rgba(255,255,255,0.12)",
-          }}
-        >
-          <div
-            className="bc-container"
-            style={{ display: "flex", alignItems: "center", gap: 12 }}
-          >
-            <div style={{ fontWeight: 900, letterSpacing: 0.5 }}>
-              Crest League Live
-            </div>
-
-            <div className="bc-faint" style={{ fontSize: 12 }}>
-              Created By Ethan Esterson
-            </div>
-
-            {/* Nav links */}
-            <div
-              style={{
-                marginLeft: "auto",
-                display: "flex",
-                gap: 14,
-                alignItems: "center",
-              }}
-            >
-              <a className="bc-muted" href="/" style={{ fontSize: 14 }}>
-                Home
-              </a>
-
-              <a className="bc-muted" href="/standings" style={{ fontSize: 14 }}>
-                Standings
-              </a>
-
-              <a className="bc-muted" href="/leaders" style={{ fontSize: 14 }}>
-                Leaders
-              </a>
-
-              <a className="bc-muted" href="/past-games" style={{ fontSize: 14 }}>
-                Past Games
-              </a>
-
-              <a className="bc-muted" href="/display" style={{ fontSize: 14 }}>
-                Display
-              </a>
-
-              <a className="bc-muted" href="/highlights" style={{ fontSize: 14 }}>
-                Highlights
-              </a>
-
-              <a className="bc-muted" href="/admin" style={{ fontSize: 14 }}>
-                Admin
-              </a>
-
-              <a className="bc-muted" href="/install" style={{ fontSize: 14 }}>
-                Install
-              </a>
-
-              <a className="bc-muted" href="/post" style={{ fontSize: 14 }}>
-                Post Games
-              </a>
-
-
-              {/* Next later:
-                  - Stat Leaders
-                  - Display Board
-              */}
-            </div>
-          </div>
-        </header>
-
-        {/* Page content */}
-        <main className="bc-container">{children}</main>
-
-        {/* Footer */}
-        <footer
-          className="bc-container bc-faint"
-          style={{ paddingTop: 24, paddingBottom: 24, fontSize: 12 }}
-        >
-          Built for Camp Bauercrest — Crest League Live
-        </footer>
-      </body>
-    </html>
-  );
-}
-</file>
-
 <file path="src/app/manifest.js">
 export default function manifest() {
   return {
@@ -816,6 +515,245 @@ export async function notifyGameFinalized(game, extra = {}) {
     // Never let a notification failure affect the finalize flow.
   }
 }
+</file>
+
+<file path="src/app/awards/page.js">
+"use client";
+
+// ============================================================================
+// CREST AWARDS — /awards
+// Trophy-ceremony page. During the session: top 3 contenders per award, #1 on
+// a gold pedestal, #2 and #3 below. After league ends: same layout, framed as
+// final winners. Reads get_awards() (session-aware). No writes.
+// ============================================================================
+
+import { useEffect, useState } from "react";
+import Link from "next/link";
+import { supabase } from "@/lib/supabase";
+import { useAppMode } from "@/lib/useAppMode";
+
+function fmtLeague(id) {
+  const s = String(id || "").toLowerCase();
+  if (s === "seniors") return "Seniors";
+  if (s === "juniors") return "Juniors";
+  if (s === "sophomores") return "Sophomores";
+  return id || "";
+}
+
+// award display order + a one-line subtitle for each
+const AWARD_ORDER = [
+  ["mvp", "The best all-around athlete against the best competition"],
+  ["most_wins", "Most games won all session"],
+  ["iron_man", "Played in more games than anyone"],
+  ["sharpshooter", "Most goals across all sports"],
+  ["buckets", "Most points on the hardwood"],
+  ["playmaker", "Most assists"],
+  ["slugger", "Most home runs"],
+];
+
+export default function AwardsPage() {
+  const { session } = useAppMode();
+  const [rows, setRows] = useState([]);
+  const [seasonOver, setSeasonOver] = useState(false);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    (async () => {
+      setLoading(true);
+      try {
+        const { data } = await supabase.rpc("get_awards", { p_session: session });
+        setRows(data || []);
+
+        // "Season over" = current session's league mode has ended. We infer it
+        // from app_settings.league_ended if present; otherwise always "race".
+        const { data: st } = await supabase
+          .from("app_settings").select("league_ended").eq("id", 1).maybeSingle();
+        setSeasonOver(Boolean(st?.league_ended));
+      } finally {
+        setLoading(false);
+      }
+    })();
+  }, [session]);
+
+  const byAward = {};
+  for (const r of rows) {
+    (byAward[r.o_award] = byAward[r.o_award] || []).push(r);
+  }
+  for (const k of Object.keys(byAward)) byAward[k].sort((a, b) => a.o_rank - b.o_rank);
+
+  return (
+    <div className="awards-root pb-20">
+      <style>{awardsCSS}</style>
+
+      {/* Hero */}
+      <div className="aw-hero">
+        <div className="aw-hero-eyebrow">{seasonOver ? "Final Results" : "The Race Is On"}</div>
+        <h1 className="aw-hero-title">
+          Crest <span className="aw-gold-text">Awards</span>
+        </h1>
+        <div className="aw-hero-sub">
+          {seasonOver
+            ? "Session champions, decided on the field."
+            : "Who's leading each award right now. It's not over yet."}
+        </div>
+      </div>
+
+      {loading ? (
+        <div className="aw-loading">Tallying the votes…</div>
+      ) : !rows.length ? (
+        <div className="aw-loading">No games logged yet. Awards appear once play begins.</div>
+      ) : (
+        <div className="aw-grid">
+          {AWARD_ORDER.map(([key, subtitle]) => {
+            const podium = byAward[key];
+            if (!podium || !podium.length) return null;
+            const first = podium.find((p) => p.o_rank === 1);
+            const rest = podium.filter((p) => p.o_rank > 1);
+            const isMVP = key === "mvp";
+            return (
+              <section key={key} className={`aw-card ${isMVP ? "aw-card-mvp" : ""}`}>
+                <header className="aw-card-head">
+                  <div className="aw-card-title">{first?.o_award_label || key}</div>
+                  <div className="aw-card-sub">{subtitle}</div>
+                </header>
+
+                {/* Gold — first place */}
+                {first ? (
+                  <Link href={`/player/${first.o_player_id}`} className="aw-first">
+                    <div className="aw-medal">🥇</div>
+                    <div className="aw-first-body">
+                      <div className="aw-first-name">{first.o_player_name}</div>
+                      <div className="aw-first-meta">
+                        {fmtLeague(first.o_league_id)} · {first.o_team_name}
+                      </div>
+                      <div className="aw-first-value">{first.o_display}</div>
+                    </div>
+                  </Link>
+                ) : null}
+
+                {/* Silver + bronze */}
+                {rest.length ? (
+                  <div className="aw-rest">
+                    {rest.map((p) => (
+                      <Link key={p.o_player_id} href={`/player/${p.o_player_id}`} className="aw-runner">
+                        <div className="aw-runner-medal">{p.o_rank === 2 ? "🥈" : "🥉"}</div>
+                        <div className="aw-runner-body">
+                          <div className="aw-runner-name">{p.o_player_name}</div>
+                          <div className="aw-runner-meta">{p.o_team_name}</div>
+                        </div>
+                        <div className="aw-runner-value">{p.o_display}</div>
+                      </Link>
+                    ))}
+                  </div>
+                ) : null}
+              </section>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+const awardsCSS = `
+.awards-root {
+  --gold: #f5c451;
+  --gold-deep: #b8860b;
+  --silver: #cbd5e1;
+  --bronze: #c8865a;
+  --ink: #0a1730;
+}
+.aw-hero { text-align:center; padding: 32px 16px 20px; }
+.aw-hero-eyebrow {
+  font-size: 13px; font-weight: 900; letter-spacing: .35em; text-transform: uppercase;
+  color: var(--gold);
+}
+.aw-hero-title {
+  font-size: clamp(40px, 8vw, 76px); font-weight: 900; line-height: .95; margin-top: 8px;
+  letter-spacing: -.02em;
+}
+.aw-gold-text {
+  background: linear-gradient(180deg, #ffe9a8 0%, var(--gold) 45%, var(--gold-deep) 100%);
+  -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent;
+}
+.aw-hero-sub { margin-top: 10px; color: rgba(255,255,255,.6); font-size: 16px; font-weight: 600; }
+.aw-loading { text-align:center; padding: 60px 0; color: rgba(255,255,255,.5); font-weight: 800; }
+
+.aw-grid {
+  margin-top: 22px; display: grid; gap: 20px;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+}
+@media (min-width: 900px) { .aw-grid { gap: 24px; } }
+
+.aw-card {
+  border: 1px solid rgba(255,255,255,.10);
+  background: linear-gradient(180deg, rgba(255,255,255,.05), rgba(255,255,255,.02));
+  border-radius: 26px; padding: 22px; backdrop-filter: blur(6px);
+}
+.aw-card-mvp {
+  grid-column: 1 / -1;
+  border: 1px solid rgba(245,196,81,.45);
+  background:
+    radial-gradient(120% 140% at 50% 0%, rgba(245,196,81,.14), transparent 60%),
+    linear-gradient(180deg, rgba(255,255,255,.05), rgba(255,255,255,.02));
+  box-shadow: 0 0 60px rgba(245,196,81,.12);
+}
+.aw-card-head { text-align:center; margin-bottom: 16px; }
+.aw-card-title {
+  font-size: 22px; font-weight: 900; letter-spacing: -.01em;
+}
+.aw-card-mvp .aw-card-title { font-size: 30px; }
+.aw-card-sub { margin-top: 4px; font-size: 12.5px; color: rgba(255,255,255,.45); font-weight: 600; }
+
+/* First place */
+.aw-first {
+  display: flex; flex-direction: column; align-items: center; gap: 8px;
+  padding: 20px; border-radius: 20px; text-decoration: none; color: inherit;
+  background:
+    radial-gradient(90% 120% at 50% -10%, rgba(245,196,81,.18), transparent 60%);
+  border: 1px solid rgba(245,196,81,.30);
+  transition: transform .15s ease, box-shadow .15s ease;
+}
+.aw-first:hover { transform: translateY(-2px); box-shadow: 0 12px 30px rgba(0,0,0,.35); }
+.aw-medal { font-size: 46px; line-height: 1; filter: drop-shadow(0 4px 12px rgba(245,196,81,.5)); }
+.aw-card-mvp .aw-medal { font-size: 60px; }
+.aw-first-body { text-align:center; }
+.aw-first-name {
+  font-size: 26px; font-weight: 900; letter-spacing:-.01em;
+}
+.aw-card-mvp .aw-first-name { font-size: 40px; }
+.aw-first-meta {
+  margin-top: 2px; font-size: 12px; text-transform: uppercase; letter-spacing:.12em;
+  color: rgba(255,255,255,.5); font-weight: 800;
+}
+.aw-first-value {
+  margin-top: 10px; display:inline-block;
+  padding: 6px 16px; border-radius: 999px;
+  background: linear-gradient(180deg, #ffe9a8, var(--gold));
+  color: #3a2a05; font-weight: 900; font-size: 15px;
+}
+.aw-card-mvp .aw-first-value { font-size: 18px; padding: 8px 22px; }
+
+/* Runners up */
+.aw-rest { margin-top: 12px; display: grid; gap: 8px; }
+.aw-card-mvp .aw-rest { grid-template-columns: 1fr 1fr; }
+.aw-runner {
+  display:flex; align-items:center; gap: 12px;
+  padding: 12px 14px; border-radius: 16px; text-decoration: none; color: inherit;
+  background: rgba(255,255,255,.03); border: 1px solid rgba(255,255,255,.08);
+  transition: background .15s ease;
+}
+.aw-runner:hover { background: rgba(255,255,255,.07); }
+.aw-runner-medal { font-size: 24px; }
+.aw-runner-body { flex: 1; min-width: 0; }
+.aw-runner-name { font-weight: 900; font-size: 16px; truncate: true; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.aw-runner-meta { font-size: 11px; color: rgba(255,255,255,.45); font-weight: 700; text-transform: uppercase; letter-spacing:.08em; }
+.aw-runner-value { font-weight: 900; font-size: 14px; color: rgba(255,255,255,.75); white-space: nowrap; }
+
+@media (prefers-reduced-motion: reduce) {
+  .aw-first, .aw-runner { transition: none; }
+}
+`;
 </file>
 
 <file path="src/app/highlights/page.js">
@@ -989,6 +927,27 @@ export default function HighlightsAdminPage() {
         )}
       </div>
     </main>
+  );
+}
+</file>
+
+<file path="src/app/install/page.js">
+"use client";
+
+// The old /install route now points people to Awards. Install instructions
+// live under the Admin password box. This redirects any old bookmark.
+import { useEffect } from "react";
+import { useRouter } from "next/navigation";
+
+export default function InstallRedirect() {
+  const router = useRouter();
+  useEffect(() => {
+    router.replace("/awards");
+  }, [router]);
+  return (
+    <div className="mt-10 text-center text-white/60">
+      Redirecting to Awards…
+    </div>
   );
 }
 </file>
@@ -1451,6 +1410,304 @@ export default function PastGameDetailPage() {
         </div>
       </div>
     </div>
+  );
+}
+</file>
+
+<file path="src/app/globals.css">
+/* Tailwind */
+@import "tailwindcss";
+
+/* Bauercrest theme tokens */
+:root {
+  --bc-navy: #0b1f3b;
+  --bc-navy-2: #08172c;
+  --bc-white: #ffffff;
+
+  /* surfaces */
+  --bc-bg: var(--bc-navy-2);
+  --bc-card: rgba(255, 255, 255, 0.06);
+  --bc-card-2: rgba(255, 255, 255, 0.09);
+  --bc-border: rgba(255, 255, 255, 0.14);
+
+  /* text */
+  --bc-text: var(--bc-white);
+  --bc-muted: rgba(255, 255, 255, 0.75);
+  --bc-faint: rgba(255, 255, 255, 0.55);
+
+  /* feedback */
+  --bc-success: #16a34a;
+  --bc-danger: #dc2626;
+}
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  background: var(--bc-bg);
+  color: var(--bc-text);
+  color-scheme: dark;
+}
+
+
+/* Optional: nicer selection */
+::selection {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+/* Utility-ish classes (so we don’t repeat styles everywhere) */
+.bc-container {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 16px;
+}
+
+.bc-card {
+  background: var(--bc-card);
+  border: 1px solid var(--bc-border);
+  border-radius: 16px;
+}
+
+.bc-card-pad {
+  padding: 16px;
+}
+
+.bc-muted {
+  color: var(--bc-muted);
+}
+
+.bc-faint {
+  color: var(--bc-faint);
+}
+
+.bc-divider {
+  border-top: 1px solid var(--bc-border);
+}
+
+/* Make buttons/inputs feel less “prototype” even before we build components */
+button {
+  cursor: pointer;
+}
+
+input,
+select,
+textarea {
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  color: var(--bc-text);
+  border-radius: 12px;
+  padding: 10px 12px;
+  outline: none;
+}
+
+input::placeholder,
+textarea::placeholder {
+  color: rgba(255, 255, 255, 0.5);
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+/* Fix native select dropdown list (Windows/Chrome white-on-white) */
+select option {
+  background: var(--bc-navy);
+  color: var(--bc-white);
+}
+
+/* Kill double-tap-zoom tap swallowing + 300ms delay on all interactive elements */
+button, a, select, input, [role="button"] {
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+button {
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+/* ============ CAMP BACKGROUND TEST ============
+   Delete this whole block to go back to plain navy. */
+:root {
+  --bg-darkness: 0.78;   /* raise toward 1 = darker, lower = photo shows more */
+}
+
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  background-image:
+    linear-gradient(
+      rgba(8, 23, 44, var(--bg-darkness)),
+      rgba(8, 23, 44, var(--bg-darkness))
+    ),
+    url("/camp-bg.jpg");
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+}
+/* ============ END CAMP BACKGROUND TEST ============ */
+/* ============ CAMP BACKGROUND ============
+   Lake sunset background across the whole app.
+   Delete this block to go back to plain navy. */
+:root {
+  --bg-darkness: 0.80;   /* higher = darker (text more readable), lower = photo pops */
+}
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  background-image:
+    linear-gradient(
+      rgba(6, 18, 38, var(--bg-darkness)),
+      rgba(6, 18, 38, var(--bg-darkness))
+    ),
+    url("/camp-bg.jpg");
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+}
+/* ============ END CAMP BACKGROUND ============ */
+</file>
+
+<file path="src/app/layout.js">
+import { Geist, Geist_Mono } from "next/font/google";
+import "./globals.css";
+
+const geistSans = Geist({
+  variable: "--font-geist-sans",
+  subsets: ["latin"],
+});
+
+const geistMono = Geist_Mono({
+  variable: "--font-geist-mono",
+  subsets: ["latin"],
+});
+
+export const metadata = {
+  title: "Crest League Live",
+  description: "Live scoring, standings, stat leaders, highlights.",
+  applicationName: "Crest League Live",
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "black-translucent",
+    title: "Crest Live",
+  },
+  formatDetection: {
+    telephone: false,
+  },
+  manifest: "/manifest.webmanifest",
+  icons: {
+    icon: "/icon-192.png",
+    apple: "/apple-touch-icon.png",
+  },
+};
+
+export const viewport = {
+  themeColor: "#0B1B3A",
+  width: "device-width",
+  initialScale: 1,
+  maximumScale: 1,
+  userScalable: false,
+};
+
+export default function RootLayout({ children }) {
+  return (
+    <html lang="en">
+      <body className={`${geistSans.variable} ${geistMono.variable} antialiased`}>
+        {/* Top App Bar */}
+        <header
+          style={{
+            position: "sticky",
+            top: 0,
+            zIndex: 50,
+            background: "rgba(8, 23, 44, 0.85)",
+            backdropFilter: "blur(10px)",
+            borderBottom: "1px solid rgba(255,255,255,0.12)",
+          }}
+        >
+          <div
+            className="bc-container"
+            style={{ display: "flex", alignItems: "center", gap: 12 }}
+          >
+            <div style={{ fontWeight: 900, letterSpacing: 0.5 }}>
+              Crest League Live
+            </div>
+
+            <div className="bc-faint" style={{ fontSize: 12 }}>
+              Created By Ethan Esterson
+            </div>
+
+            {/* Nav links */}
+            <div
+              style={{
+                marginLeft: "auto",
+                display: "flex",
+                gap: 14,
+                alignItems: "center",
+              }}
+            >
+              <a className="bc-muted" href="/" style={{ fontSize: 14 }}>
+                Home
+              </a>
+
+              <a className="bc-muted" href="/standings" style={{ fontSize: 14 }}>
+                Standings
+              </a>
+
+              <a className="bc-muted" href="/leaders" style={{ fontSize: 14 }}>
+                Leaders
+              </a>
+
+              <a className="bc-muted" href="/past-games" style={{ fontSize: 14 }}>
+                Past Games
+              </a>
+
+              <a className="bc-muted" href="/display" style={{ fontSize: 14 }}>
+                Display
+              </a>
+
+              <a className="bc-muted" href="/highlights" style={{ fontSize: 14 }}>
+                Highlights
+              </a>
+
+              <a className="bc-muted" href="/admin" style={{ fontSize: 14 }}>
+                Admin
+              </a>
+
+              <a className="bc-muted" href="/awards" style={{ fontSize: 14 }}>
+                Awards
+              </a>
+
+              <a className="bc-muted" href="/post" style={{ fontSize: 14 }}>
+                Post Games
+              </a>
+
+
+              {/* Next later:
+                  - Stat Leaders
+                  - Display Board
+              */}
+            </div>
+          </div>
+        </header>
+
+        {/* Page content */}
+        <main className="bc-container">{children}</main>
+
+        {/* Footer */}
+        <footer
+          className="bc-container bc-faint"
+          style={{ paddingTop: 24, paddingBottom: 24, fontSize: 12 }}
+        >
+          Built for Camp Bauercrest — Crest League Live
+        </footer>
+      </body>
+    </html>
   );
 }
 </file>
@@ -2389,6 +2646,168 @@ export default function LeadersPage() {
 }
 </file>
 
+<file path="src/lib/sportRules.js">
+// src/lib/sportRules.js
+
+function key(s) {
+  return String(s ?? "").trim().toLowerCase();
+}
+
+export const SPORT_RULES = {
+  hoop: {
+    label: "Hoop",
+    clock: {
+      enabled: true,
+      modes: [
+        {
+          id: "quarters",
+          label: "Quarters",
+          presets: [300, 360, 420, 480, 600, 720, 900, 1200, 1800],
+        },
+        {
+          id: "halves",
+          label: "Halves",
+          presets: [600, 720, 900, 1200, 1500, 1800],
+        },
+      ],
+      defaultMode: "quarters",
+    },
+    scoreButtons: [1, 2, 3],
+    stats: [
+      { key: "pts", label: "PTS", deltas: [1, 2, 3] },
+      { key: "foul", label: "F", deltas: [1] },
+    ],
+  },
+
+  soccer: {
+    label: "Soccer",
+    clock: {
+      enabled: true,
+      modes: [{ id: "countdown", label: "Countdown", presets: [600, 900, 1200, 1500, 1800] }],
+      defaultMode: "countdown",
+    },
+    scoreButtons: [1],
+    stats: [
+      { key: "g", label: "G", deltas: [1] },
+      { key: "a", label: "A", deltas: [1] },
+    ],
+  },
+
+  softball: {
+    label: "Softball",
+    clock: { enabled: false },
+    scoreButtons: [1],
+    stats: [
+      { key: "h", label: "H", deltas: [1] },
+      { key: "hr", label: "HR", deltas: [1] },
+    ],
+  },
+
+  volleyball: {
+    label: "Volleyball",
+    clock: { enabled: false },
+    scoreButtons: [1],
+    stats: [],
+  },
+
+  football: {
+    label: "Football",
+    clock: {
+      enabled: true,
+      modes: [
+        { id: "quarters", label: "Quarters", presets: [300, 360, 420, 480, 600, 720] },
+        { id: "halves", label: "Halves", presets: [600, 720, 900, 1200, 1500, 1800] },
+      ],
+      defaultMode: "quarters",
+    },
+    scoreButtons: [1, 2, 6],
+    stats: [
+      { key: "td", label: "TD", deltas: [1] },
+    ],
+  },
+
+  speedball: {
+    label: "Speedball",
+    clock: {
+      enabled: true,
+      modes: [
+        {
+          id: "periods",
+          label: "8 Periods",
+          presets: [240, 300, 360, 420, 480, 540, 600],
+        },
+      ],
+      defaultMode: "periods",
+    },
+    scoreButtons: [1],
+    stats: [
+      { key: "g", label: "G", deltas: [1] },
+      { key: "a", label: "A", deltas: [1] },
+    ],
+  },
+
+  euro: {
+    label: "Euro",
+    clock: {
+      enabled: true,
+      modes: [
+        { id: "quarters", label: "Quarters", presets: [300, 360, 420, 480, 600, 720, 900] },
+        { id: "halves", label: "Halves", presets: [600, 720, 900, 1200, 1500, 1800] },
+      ],
+      defaultMode: "quarters",
+    },
+    scoreButtons: [1],
+    stats: [
+      { key: "g", label: "G", deltas: [1] },
+      { key: "a", label: "A", deltas: [1] },
+    ],
+  },
+
+  hockey: {
+    label: "Hockey",
+    clock: {
+      enabled: true,
+      modes: [
+        { id: "periods", label: "3 Periods", presets: [300, 360, 420, 480, 600, 720, 900, 1200] },
+      ],
+      defaultMode: "periods",
+    },
+    scoreButtons: [1],
+    stats: [
+      { key: "g", label: "G", deltas: [1] },
+      { key: "a", label: "A", deltas: [1] },
+    ],
+  },
+
+  kickball: {
+    label: "Kickball",
+    clock: { enabled: false },
+    scoreButtons: [1],
+    stats: [],
+  },
+
+  newcomb: {
+    label: "Newcomb",
+    clock: { enabled: false },
+    scoreButtons: [1],
+    stats: [],
+  },
+};
+
+export function getSportRules(sport) {
+  const k = key(sport);
+
+  const aliases = {
+    basketball: "hoop",
+    bb: "hoop",
+    hoops: "hoop",
+  };
+
+  const resolved = aliases[k] ?? k;
+  return SPORT_RULES[resolved] ?? { label: resolved, clock: { enabled: false }, scoreButtons: [1], stats: [] };
+}
+</file>
+
 <file path="src/app/post/[id]/page.js">
 "use client";
 
@@ -3096,168 +3515,6 @@ export default function PostDraftEditorPage() {
 }
 </file>
 
-<file path="src/lib/sportRules.js">
-// src/lib/sportRules.js
-
-function key(s) {
-  return String(s ?? "").trim().toLowerCase();
-}
-
-export const SPORT_RULES = {
-  hoop: {
-    label: "Hoop",
-    clock: {
-      enabled: true,
-      modes: [
-        {
-          id: "quarters",
-          label: "Quarters",
-          presets: [300, 360, 420, 480, 600, 720, 900, 1200, 1800],
-        },
-        {
-          id: "halves",
-          label: "Halves",
-          presets: [600, 720, 900, 1200, 1500, 1800],
-        },
-      ],
-      defaultMode: "quarters",
-    },
-    scoreButtons: [1, 2, 3],
-    stats: [
-      { key: "pts", label: "PTS", deltas: [1, 2, 3] },
-      { key: "foul", label: "F", deltas: [1] },
-    ],
-  },
-
-  soccer: {
-    label: "Soccer",
-    clock: {
-      enabled: true,
-      modes: [{ id: "countdown", label: "Countdown", presets: [600, 900, 1200, 1500, 1800] }],
-      defaultMode: "countdown",
-    },
-    scoreButtons: [1],
-    stats: [
-      { key: "g", label: "G", deltas: [1] },
-      { key: "a", label: "A", deltas: [1] },
-    ],
-  },
-
-  softball: {
-    label: "Softball",
-    clock: { enabled: false },
-    scoreButtons: [1],
-    stats: [
-      { key: "h", label: "H", deltas: [1] },
-      { key: "hr", label: "HR", deltas: [1] },
-    ],
-  },
-
-  volleyball: {
-    label: "Volleyball",
-    clock: { enabled: false },
-    scoreButtons: [1],
-    stats: [],
-  },
-
-  football: {
-    label: "Football",
-    clock: {
-      enabled: true,
-      modes: [
-        { id: "quarters", label: "Quarters", presets: [300, 360, 420, 480, 600, 720] },
-        { id: "halves", label: "Halves", presets: [600, 720, 900, 1200, 1500, 1800] },
-      ],
-      defaultMode: "quarters",
-    },
-    scoreButtons: [1, 2, 6],
-    stats: [
-      { key: "td", label: "TD", deltas: [1] },
-    ],
-  },
-
-  speedball: {
-    label: "Speedball",
-    clock: {
-      enabled: true,
-      modes: [
-        {
-          id: "periods",
-          label: "8 Periods",
-          presets: [240, 300, 360, 420, 480, 540, 600],
-        },
-      ],
-      defaultMode: "periods",
-    },
-    scoreButtons: [1],
-    stats: [
-      { key: "g", label: "G", deltas: [1] },
-      { key: "a", label: "A", deltas: [1] },
-    ],
-  },
-
-  euro: {
-    label: "Euro",
-    clock: {
-      enabled: true,
-      modes: [
-        { id: "quarters", label: "Quarters", presets: [300, 360, 420, 480, 600, 720, 900] },
-        { id: "halves", label: "Halves", presets: [600, 720, 900, 1200, 1500, 1800] },
-      ],
-      defaultMode: "quarters",
-    },
-    scoreButtons: [1],
-    stats: [
-      { key: "g", label: "G", deltas: [1] },
-      { key: "a", label: "A", deltas: [1] },
-    ],
-  },
-
-  hockey: {
-    label: "Hockey",
-    clock: {
-      enabled: true,
-      modes: [
-        { id: "periods", label: "3 Periods", presets: [300, 360, 420, 480, 600, 720, 900, 1200] },
-      ],
-      defaultMode: "periods",
-    },
-    scoreButtons: [1],
-    stats: [
-      { key: "g", label: "G", deltas: [1] },
-      { key: "a", label: "A", deltas: [1] },
-    ],
-  },
-
-  kickball: {
-    label: "Kickball",
-    clock: { enabled: false },
-    scoreButtons: [1],
-    stats: [],
-  },
-
-  newcomb: {
-    label: "Newcomb",
-    clock: { enabled: false },
-    scoreButtons: [1],
-    stats: [],
-  },
-};
-
-export function getSportRules(sport) {
-  const k = key(sport);
-
-  const aliases = {
-    basketball: "hoop",
-    bb: "hoop",
-    hoops: "hoop",
-  };
-
-  const resolved = aliases[k] ?? k;
-  return SPORT_RULES[resolved] ?? { label: resolved, clock: { enabled: false }, scoreButtons: [1], stats: [] };
-}
-</file>
-
 <file path="src/app/standings/page.js">
 "use client";
 
@@ -3577,6 +3834,7 @@ export default function AdminPage() {
   // ---- Color War mode switch ----
   const [cwSettings, setCwSettings] = useState(null);       // full app_settings row
   const [sessionSwitchText, setSessionSwitchText] = useState("");
+  const [showFinalGames, setShowFinalGames] = useState(false);
   // S1 archive viewer (read-only view of frozen Session 1)
   const [archiveOpen, setArchiveOpen] = useState(false);
   const [archiveLeague, setArchiveLeague] = useState("seniors");
@@ -4586,6 +4844,32 @@ export default function AdminPage() {
           </div>
 
           <div className="mt-3 text-xs text-white/50">Contact Ethan Esterson If Password Needed</div>
+
+          {/* Install instructions — moved here from the old Install page */}
+          <div className="mt-6 border-t border-white/10 pt-5">
+            <div className="text-lg font-black">📲 Install Crest League Live</div>
+            <div className="mt-1 text-sm text-white/60">Add the app to your home screen in 20 seconds.</div>
+            <div className="mt-4 grid gap-4 md:grid-cols-2">
+              <div className="rounded-xl border border-white/10 bg-black/20 p-4">
+                <div className="font-black">iPhone (Safari)</div>
+                <ol className="mt-2 list-decimal space-y-1 pl-5 text-sm text-white/75">
+                  <li>Open this site in <b>Safari</b>.</li>
+                  <li>Tap the <b>Share</b> button.</li>
+                  <li>Tap <b>Add to Home Screen</b>.</li>
+                  <li>Name it <b>Crest Live</b>, then <b>Add</b>.</li>
+                </ol>
+              </div>
+              <div className="rounded-xl border border-white/10 bg-black/20 p-4">
+                <div className="font-black">Android (Chrome)</div>
+                <ol className="mt-2 list-decimal space-y-1 pl-5 text-sm text-white/75">
+                  <li>Open this site in <b>Chrome</b>.</li>
+                  <li>Tap the <b>3-dot menu</b>.</li>
+                  <li>Tap <b>Add to Home screen</b>.</li>
+                  <li>Confirm <b>Add</b>.</li>
+                </ol>
+              </div>
+            </div>
+          </div>
         </div>
       ) : (
         <>
@@ -4941,15 +5225,25 @@ export default function AdminPage() {
                 <div className="mt-1 text-sm text-white/70">Admin-only delete. Rebuilds standings + leaders.</div>
               </div>
 
-              <button
-                onClick={loadFinalGames}
-                disabled={busy || loadingFinal}
-                className="rounded-xl border border-white/15 bg-white/5 px-4 py-2 text-sm font-black hover:bg-white/10 disabled:opacity-60"
-              >
-                {loadingFinal ? "Loading…" : "Refresh"}
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setShowFinalGames((v) => !v)}
+                  className="rounded-xl border border-white/15 bg-white/5 px-4 py-2 text-sm font-black hover:bg-white/10"
+                >
+                  {showFinalGames ? "Hide" : `Show (${finalGames.length})`}
+                </button>
+                <button
+                  onClick={loadFinalGames}
+                  disabled={busy || loadingFinal}
+                  className="rounded-xl border border-white/15 bg-white/5 px-4 py-2 text-sm font-black hover:bg-white/10 disabled:opacity-60"
+                >
+                  {loadingFinal ? "Loading…" : "Refresh"}
+                </button>
+              </div>
             </div>
 
+            {showFinalGames ? (
+            <>
             <div className="mt-3 text-xs text-white/60">
               Required confirmation word to delete: <b>DELETE</b>
             </div>
@@ -5031,6 +5325,8 @@ export default function AdminPage() {
                 ))}
               </div>
             )}
+            </>
+            ) : null}
           </div>
 
           {/* Non-game points */}
@@ -5126,6 +5422,28 @@ export default function AdminPage() {
             )}
           </div>
           {/* ================= END SESSION CONTROL ================= */}
+
+          {/* ================= AWARDS CONTROL ================= */}
+          <div className="mt-8 rounded-2xl border border-amber-400/20 bg-amber-500/5 p-5">
+            <div className="text-lg font-black">🏆 Awards</div>
+            <div className="mt-1 text-sm text-white/60">
+              The Awards page shows live leaders during the session. When league play is over, mark it final to crown winners.
+            </div>
+            <button
+              onClick={async () => {
+                const cur = Boolean(cwSettings?.league_ended);
+                const { error } = await supabase.from("app_settings")
+                  .update({ league_ended: !cur }).eq("id", 1);
+                if (error) { setErr(error.message); return; }
+                setMsg(!cur ? "Awards now show FINAL winners." : "Awards back to live race.");
+                await loadCwSettings();
+              }}
+              className="mt-4 rounded-xl border border-amber-400/40 bg-amber-500/15 px-5 py-2.5 text-sm font-black text-amber-100 hover:bg-amber-500/25"
+            >
+              {cwSettings?.league_ended ? "↩ Reopen (back to live race)" : "🏆 Mark league final (crown winners)"}
+            </button>
+          </div>
+          {/* ================= END AWARDS CONTROL ================= */}
 
           {/* ================= SESSION 1 ARCHIVE (read-only) ================= */}
           <div className="mt-8 rounded-2xl border border-white/10 bg-white/[0.03] p-5">
@@ -6369,6 +6687,7 @@ export default function PostGamesPage() {
     const { data, error } = await supabase
       .from("players")
       .select("team_name")
+      .eq("departed", false)
       .limit(5000);
 
     if (error) {
@@ -7007,958 +7326,6 @@ export default function PostGamesPage() {
 }
 </file>
 
-<file path="src/app/display/page.js">
-"use client";
-
-import { useEffect, useMemo, useRef, useState } from "react";
-import { supabase } from "@/lib/supabase";
-import { useAppMode } from "@/lib/useAppMode";
-import ColorWarBoard from "./ColorWarBoard";
-
-const SCENES = [
-  "camp",
-  "spotlight",
-  "rivalry",
-  "finals",
-  "leaders_seniors",
-  "leaders_juniors",
-  "leaders_sophomores",
-  "highlights",
-];
-
-const SCENE_LABELS = {
-  camp: "Camp Standings",
-  spotlight: "Camper Spotlight",
-  rivalry: "Rivalry Tracker",
-  finals: "Recent Finals",
-  leaders_seniors: "Seniors Stat Leaders",
-  leaders_juniors: "Juniors Stat Leaders",
-  leaders_sophomores: "Sophomores Stat Leaders",
-  highlights: "Highlights",
-};
-
-const TICKER_MESSAGES = [];
-
-function cx(...x) {
-  return x.filter(Boolean).join(" ");
-}
-
-function fmtLeague(id) {
-  if (!id) return "";
-  const s = String(id).toLowerCase();
-  if (s === "seniors") return "Seniors";
-  if (s === "juniors") return "Juniors";
-  if (s === "sophomores") return "Sophomores";
-  return id;
-}
-
-function fmtSport(s) {
-  return String(s || "").toUpperCase();
-}
-
-function fmtClock(d) {
-  return new Date(d).toLocaleTimeString([], {
-    hour: "2-digit",
-    minute: "2-digit",
-  });
-}
-
-function computeRivalries(rows) {
-  const records = {};
-
-  function pairKey(x, y) {
-    return [x, y].sort().join("||");
-  }
-
-  for (const g of rows || []) {
-    if (g.deleted) continue;
-    const sa = Number(g.score_a || 0);
-    const sb = Number(g.score_b || 0);
-    if (sa === sb) continue;
-
-    const aTeams = [g.team_a, g.team_a2].filter(Boolean).map((t) => String(t).toLowerCase());
-    const bTeams = [g.team_b, g.team_b2].filter(Boolean).map((t) => String(t).toLowerCase());
-
-    const aWon = sa > sb;
-    const winners = aWon ? aTeams : bTeams;
-    const losers = aWon ? bTeams : aTeams;
-
-    for (const w of winners) {
-      for (const l of losers) {
-        if (w === l) continue;
-        const key = pairKey(w, l);
-        if (!records[key]) {
-          const [t1, t2] = key.split("||");
-          records[key] = { t1, t2, t1Wins: 0, t2Wins: 0 };
-        }
-        const r = records[key];
-        if (r.t1 === w) r.t1Wins += 1;
-        else r.t2Wins += 1;
-      }
-    }
-  }
-
-  return Object.values(records).sort((a, b) => (a.t1 + a.t2).localeCompare(b.t1 + b.t2));
-}
-
-export default function DisplayPage() {
-  const { isCW, session, blueName, whiteName, blueLogo, whiteLogo, loading: modeLoading } = useAppMode();
-  const [scene, setScene] = useState("camp");
-
-  const [campStandings, setCampStandings] = useState([]);
-  const [liveGames, setLiveGames] = useState([]);
-  const [finalGames, setFinalGames] = useState([]);
-  const [leadersByLeague, setLeadersByLeague] = useState({ seniors: [], juniors: [], sophomores: [] });
-  const [highlights, setHighlights] = useState([]);
-  const [spotlight, setSpotlight] = useState([]);
-
-  const [rotateSeconds, setRotateSeconds] = useState(18);
-  const [autoRotate, setAutoRotate] = useState(true);
-  const [autoRefresh, setAutoRefresh] = useState(true);
-
-  const [now, setNow] = useState(Date.now());
-
-  
-  const [rivalries, setRivalries] = useState([]);
-
-
-  const wrapRef = useRef(null);
-
-  async function loadAll() {
-   // camp standings — aggregate points across all leagues per team, INCLUDING non-game points
-   const { data: allStandings } = await supabase
-  .from("standings")
-  .select("team_name, league_points")
-  .eq("sport", "overall")
-  .eq("season", "league")
-  .eq("session", session);
-
- // Sum league_points per team_name across all leagues
- const totalsMap = {};
- (allStandings || []).forEach((row) => {
-  const name = String(row.team_name || "").trim().toLowerCase();
-  if (!name) return;
-  totalsMap[name] = (totalsMap[name] || 0) + Number(row.league_points || 0);
- });
-
- // Add non-game points on top, same as the public Standings "Overall" tab
- const { data: ngStandingsData } = await supabase
-  .from("non_game_points")
-  .select("team_name, points")
-  .eq("deleted", false)
-  .eq("status", "final")
-  .eq("season", "league")
-  .eq("session", session)
-  .limit(5000);
-
- (ngStandingsData || []).forEach((row) => {
-  const name = String(row.team_name || "").trim().toLowerCase();
-  if (!name) return;
-  totalsMap[name] = (totalsMap[name] || 0) + Number(row.points || 0);
- });
-
- const aggregated = Object.entries(totalsMap)
-  .map(([team_name, league_points]) => ({ team_name, league_points }))
-  .sort((a, b) => b.league_points - a.league_points);
-
- setCampStandings(aggregated);
-    // live games
-    const { data: live } = await supabase
-      .from("live_games")
-      .select("*")
-      .eq("status", "active")
-      .eq("season", "league")
-      .eq("session", session)
-      .is("played_on", null)
-      .order("updated_at", { ascending: false });
-
-    setLiveGames(live || []);
-
-    // finals
-    const { data: finals } = await supabase
-      .from("games")
-      .select("*")
-      .eq("status", "final")
-      .eq("deleted", false)
-      .eq("season", "league")
-      .eq("session", session)
-      .order("updated_at", { ascending: false })
-      .limit(12);
-
-    setFinalGames(finals || []);
-
-    // leaders — fetch ALL THREE leagues independently. Each league's stat
-    // leaders is its own dedicated scene now, so all three need their own
-    // data on every load, not just whichever league happens to be selected.
-    async function fetchLeadersForLeague(lid) {
-      const { data: leaderPool } = await supabase
-        .from("player_totals")
-        .select("*")
-        .eq("league_id", lid)
-        .eq("season", "league")
-        .eq("session", session)
-        .order("value", { ascending: false })
-        .limit(500);
-
-      // Hide departed players (kept in DB, just not shown on the board).
-      let pool = leaderPool || [];
-      const ids = Array.from(new Set(pool.map((r) => String(r.player_id))));
-      if (ids.length) {
-        const { data: deps } = await supabase.from("players").select("id").in("id", ids).eq("departed", true);
-        const departedSet = new Set((deps || []).map((d) => String(d.id)));
-        if (departedSet.size) pool = pool.filter((r) => !departedSet.has(String(r.player_id)));
-      }
-
-      const bestPerCategory = new Map();
-      for (const row of pool) {
-        const key = `${String(row.sport || "").toLowerCase()}:${String(row.stat_key || "").toLowerCase()}`;
-        const existing = bestPerCategory.get(key);
-        if (!existing || Number(row.value || 0) > Number(existing.value || 0)) {
-          bestPerCategory.set(key, row);
-        }
-      }
-
-      return Array.from(bestPerCategory.values()).sort(
-        (a, b) => Number(b.value || 0) - Number(a.value || 0)
-      );
-    }
-
-    const [seniorsLeaders, juniorsLeaders, sophomoresLeaders] = await Promise.all([
-      fetchLeadersForLeague("seniors"),
-      fetchLeadersForLeague("juniors"),
-      fetchLeadersForLeague("sophomores"),
-    ]);
-
-    setLeadersByLeague({
-      seniors: seniorsLeaders,
-      juniors: juniorsLeaders,
-      sophomores: sophomoresLeaders,
-    });
-
-    // rivalry tracker — every finalized game, head-to-head across the whole summer
-    const { data: allFinalGames } = await supabase
-      .from("games")
-      .select("team_a, team_a2, team_b, team_b2, score_a, score_b, deleted")
-      .eq("status", "final")
-      .eq("deleted", false)
-      .eq("season", "league")
-      .eq("session", session)
-      .limit(2000);
-
-    setRivalries(computeRivalries(allFinalGames || []));
-
-    // camper spotlight — top 3 individual performances from last 12 hours
-    try {
-      const cutoff = new Date(Date.now() - 12 * 60 * 60 * 1000).toISOString();
-
-      const { data: recentGames } = await supabase
-        .from("live_games")
-        .select("id, sport, league_key")
-        .eq("status", "final")
-        .eq("season", "league")
-        .eq("session", session)
-        .gte("updated_at", cutoff);
-
-      const recentIds = (recentGames || []).map((g) => g.id);
-
-      if (recentIds.length === 0) {
-        setSpotlight([]);
-      } else {
-        const gameMap = {};
-        for (const g of recentGames || []) gameMap[g.id] = g;
-
-        const { data: evts } = await supabase
-          .from("live_events")
-          .select("game_id, player_id, stat_key, delta")
-          .eq("event_type", "stat")
-          .in("game_id", recentIds)
-          .limit(20000);
-
-        const { data: rosters } = await supabase
-          .from("game_roster")
-          .select("game_id, player_id, player_name, team_name")
-          .in("game_id", recentIds)
-          .limit(5000);
-
-        const rosterMap = {};
-        for (const r of rosters || []) {
-          rosterMap[`${r.game_id}::${r.player_id}`] = r;
-        }
-
-        // Aggregate stats per player per game
-        const perPlayerGame = {};
-        for (const e of evts || []) {
-          if (!e.stat_key) continue;
-          const k = `${e.game_id}::${e.player_id}`;
-          if (!perPlayerGame[k]) {
-            perPlayerGame[k] = { game_id: e.game_id, player_id: e.player_id, stats: {} };
-          }
-          perPlayerGame[k].stats[e.stat_key] = (perPlayerGame[k].stats[e.stat_key] || 0) + Number(e.delta || 0);
-        }
-
-        function eff(sport, stats) {
-          const s = String(sport || "").toLowerCase();
-          const v = (k) => Number(stats[k] || 0);
-          if (s === "hoop") return v("pts") - v("foul");
-          if (s === "softball") return v("h") + v("hr") * 2;
-          if (["euro", "soccer", "hockey", "speedball"].includes(s)) return v("g") * 2 + v("a");
-          if (s === "football") return v("td") * 6;
-          if (s === "volleyball") return v("ace") + v("kill");
-          return 0;
-        }
-
-        const allScored = Object.values(perPlayerGame)
-          .map((entry) => {
-            const g = gameMap[entry.game_id];
-            const r = rosterMap[`${entry.game_id}::${entry.player_id}`];
-            const score = eff(g?.sport, entry.stats);
-            if (score <= 0) return null;
-            return {
-              player_name: r?.player_name || entry.player_id,
-              team_name: r?.team_name || "",
-              sport: g?.sport || "",
-              game_id: entry.game_id,
-              stats: entry.stats,
-              score,
-            };
-          })
-          .filter(Boolean)
-          .sort((a, b) => b.score - a.score);
-
-        // Enforce variety: one player per game, one per sport
-        const usedGames = new Set();
-        const usedSports = new Set();
-        const scored = [];
-
-        for (const p of allScored) {
-          if (scored.length >= 3) break;
-          if (usedGames.has(p.game_id)) continue;
-          if (usedSports.has(String(p.sport).toLowerCase())) continue;
-          usedGames.add(p.game_id);
-          usedSports.add(String(p.sport).toLowerCase());
-          scored.push(p);
-        }
-
-        // Fallback: relax sport constraint if we don't have 3 yet
-        if (scored.length < 3) {
-          for (const p of allScored) {
-            if (scored.length >= 3) break;
-            if (usedGames.has(p.game_id)) continue;
-            if (scored.find((s) => s.player_name === p.player_name)) continue;
-            usedGames.add(p.game_id);
-            scored.push(p);
-          }
-        }
-
-        setSpotlight(scored);
-      }
-    } catch {
-      setSpotlight([]);
-    }
-
-    // highlights
-    const { data: h } = await supabase
-      .from("highlights")
-      .select("*")
-      .eq("show_on_board", true)
-      .order("created_at", { ascending: false });
-
-    setHighlights(h || []);
-  }
-
-  useEffect(() => {
-    loadAll();
-  }, []);
-
-  useEffect(() => {
-    const t = setInterval(() => {
-      setNow(Date.now());
-    }, 1000);
-
-    return () => clearInterval(t);
-  }, []);
-
-  useEffect(() => {
-    if (!autoRefresh) return;
-
-    const t = setInterval(() => {
-      loadAll();
-    }, 15000);
-
-    return () => clearInterval(t);
-  }, [autoRefresh]);
-
- useEffect(() => {
-    if (!autoRotate) return;
-
-    // Pure linear rotation. Each league's stat leaders is now its own
-    // hardcoded scene (leaders_seniors, leaders_juniors, leaders_sophomores),
-    // so no shared "league" variable needs to be mutated during rotation —
-    // each scene is self-contained and always shows the right league.
-    const t = setInterval(() => {
-      setScene((prevScene) => {
-        const idx = SCENES.indexOf(prevScene);
-        const safeIdx = idx === -1 ? 0 : idx;
-        const nextScene = SCENES[(safeIdx + 1) % SCENES.length];
-
-        return nextScene;
-      });
-    }, rotateSeconds * 1000);
-
-    return () => clearInterval(t);
-  }, [autoRotate, rotateSeconds]);
-
- const tickerItems = useMemo(() => {
-  const live = liveGames.slice(0, 4).map((g) => {
-    const left = g.team_a || g.team_a1 || "Team A";
-    const right = g.team_b || g.team_b1 || "Team B";
-    const leagueName = fmtLeague(g.league_id || g.league_key);
-    return `LIVE: ${leagueName} ${fmtSport(g.sport)} — ${left} ${Number(g.score_a || 0)}-${Number(g.score_b || 0)} ${right}`;
-  });
-
-  const finals = finalGames.slice(0, 6).map((g) => {
-    const a = Number(g.score_a || 0);
-    const b = Number(g.score_b || 0);
-    const sideA = [g.team_a, g.team_a2].filter(Boolean).join(" + ");
-    const sideB = [g.team_b, g.team_b2].filter(Boolean).join(" + ");
-    const winner = a > b ? sideA : sideB;
-    const loser = a > b ? sideB : sideA;
-    const bowl = g.is_bowl_game ? `${String(g.bowl_name || "BOWL").toUpperCase()}: ` : "";
-    return `FINAL: ${bowl}${winner} defeats ${loser}, ${Math.max(a, b)}-${Math.min(a, b)}`;
-  });
-
-  const topStandings = campStandings.slice(0, 3).map((t, i) => {
-    return `CAMP STANDINGS: #${i + 1} ${t.team_name} — ${Number(t.league_points || 0)} pts`;
-  });
-
-  const allLeaders = [
-    ...(leadersByLeague.seniors || []),
-    ...(leadersByLeague.juniors || []),
-    ...(leadersByLeague.sophomores || []),
-  ];
-
-  const topLeaders = allLeaders.slice(0, 4).map((p) => {
-    return `LEADER: ${p.player_name} — ${Number(p.value || 0)} ${String(p.stat_key || "").toUpperCase()} (${p.team_name || "—"})`;
-  });
-
-  return [...live, ...finals, ...topStandings, ...topLeaders].filter(Boolean);
-}, [liveGames, finalGames, campStandings, leadersByLeague]);
-
-  async function goFullscreen() {
-    if (!document.fullscreenElement) {
-      await wrapRef.current?.requestFullscreen?.();
-    } else {
-      await document.exitFullscreen?.();
-    }
-  }
-
-  /* ===== DATA HELPERS ===== */
-      function renderRivalries() {
-    if (!rivalries.length) {
-      return (
-        <div className="flex h-full items-center justify-center text-2xl font-black text-white/40">
-          No head-to-head results yet.
-        </div>
-      );
-    }
-
-    return (
-      <div className="h-full rounded-[32px] border border-white/10 bg-gradient-to-br from-slate-950 to-slate-900 p-8 shadow-2xl">
-        <div className="mb-8 flex items-center justify-between">
-          <div>
-            <div className="text-sm font-black uppercase tracking-[0.3em] text-blue-500">Camp-Wide</div>
-            <div className="text-5xl font-black text-white">Rivalry Tracker</div>
-          </div>
-          <div className="rounded-2xl border border-blue-500/40 bg-blue-500/15 px-6 py-4">
-            <div className="text-xs font-bold uppercase tracking-widest text-blue-300">ALL-TIME SERIES</div>
-          </div>
-        </div>
-
-        <div className="grid h-[calc(100%-160px)] grid-cols-1 gap-5 overflow-y-auto xl:grid-cols-2">
-          {rivalries.map((r) => {
-            const leaderIsT1 = r.t1Wins > r.t2Wins;
-            const leaderIsT2 = r.t2Wins > r.t1Wins;
-            return (
-              <div
-                key={`${r.t1}-${r.t2}`}
-                className="flex items-center justify-between rounded-[28px] border border-white/10 bg-white/[0.04] px-8 py-7"
-              >
-                <div className={cx("truncate text-3xl font-black", leaderIsT1 ? "text-white" : "text-white/50")}>
-                  {r.t1}
-                </div>
-                <div className="flex shrink-0 items-center gap-4">
-                  <div className={cx("text-6xl font-black tabular-nums", leaderIsT1 ? "text-blue-400" : "text-white/40")}>
-                    {r.t1Wins}
-                  </div>
-                  <div className="text-2xl font-black text-white/30">–</div>
-                  <div className={cx("text-6xl font-black tabular-nums", leaderIsT2 ? "text-blue-400" : "text-white/40")}>
-                    {r.t2Wins}
-                  </div>
-                </div>
-                <div className={cx("truncate text-right text-3xl font-black", leaderIsT2 ? "text-white" : "text-white/50")}>
-                  {r.t2}
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      </div>
-    );
-  }
-
-  function renderSpotlight() {
-    if (typeof window === "undefined") return null;
-    const medals = ["#FFD700", "#C0C0C0", "#CD7F32"];
-    const ranks = ["#1", "#2", "#3"];
-
-    function statLine(sport, stats) {
-      const s = String(sport || "").toLowerCase();
-      const v = (k) => Number(stats[k] || 0);
-      let parts = [];
-      if (s === "hoop") parts = [[v("pts"), "PTS"], [v("foul"), "F"]];
-      else if (s === "softball") parts = [[v("h"), "H"], [v("hr"), "HR"]];
-      else if (["euro", "soccer", "hockey", "speedball"].includes(s)) parts = [[v("g"), "G"], [v("a"), "A"]];
-      else if (s === "football") parts = [[v("td"), "TD"]];
-      else parts = Object.entries(stats).map(([k, val]) => [val, k.toUpperCase()]);
-      const nonZero = parts.filter(([val]) => val > 0);
-      return (nonZero.length ? nonZero : parts.slice(0, 1)).map(([val, label]) => `${val} ${label}`).join(" · ");
-    }
-
-    if (!spotlight.length) {
-      return (
-        <div className="flex h-full items-center justify-center text-2xl font-black text-white/40">
-          No performances tracked yet — check back after tonight's games.
-        </div>
-      );
-    }
-
-    return (
-      <div className="flex h-full flex-col">
-        <div className="mb-8 flex items-center justify-between">
-          <div>
-            <div className="text-sm font-black uppercase tracking-[0.3em] text-blue-400">Recent</div>
-            <div className="text-5xl font-black text-white">Camper Spotlight</div>
-          </div>
-          <div className="rounded-2xl border border-blue-500/30 bg-blue-500/10 px-6 py-3 text-sm font-black uppercase tracking-widest text-blue-300">
-            Top Performances
-          </div>
-        </div>
-
-        <div className={`grid flex-1 gap-6 ${spotlight.length === 3 ? "grid-cols-3" : spotlight.length === 2 ? "grid-cols-2" : "grid-cols-1"}`}>
-          {spotlight.map((p, i) => (
-            <div
-              key={i}
-              className="relative flex flex-col justify-between overflow-hidden rounded-[40px] border border-white/10 bg-gradient-to-br from-white/[0.06] to-white/[0.02] p-10"
-              style={{ boxShadow: `0 0 60px ${medals[i]}18` }}
-            >
-              {/* Rank badge */}
-              <div
-                className="absolute right-8 top-8 text-6xl font-black tabular-nums opacity-20"
-                style={{ color: medals[i] }}
-              >
-                {ranks[i]}
-              </div>
-
-              {/* Sport tag */}
-              <div className="inline-flex w-fit items-center rounded-full border border-white/10 bg-white/5 px-4 py-1.5">
-                <span className="text-xs font-black uppercase tracking-[0.2em] text-white/50">
-                  {String(p.sport).toUpperCase()}
-                </span>
-              </div>
-
-              {/* Name + team */}
-              <div className="mt-6 flex-1">
-                <div
-                  className="text-5xl font-black leading-tight text-white xl:text-6xl"
-                  style={{ textShadow: `0 0 40px ${medals[i]}60` }}
-                >
-                  {p.player_name}
-                </div>
-                <div className="mt-3 text-xl font-black uppercase tracking-widest" style={{ color: medals[i] }}>
-                  {p.team_name}
-                </div>
-              </div>
-
-              {/* Stat line */}
-              <div className="mt-8 rounded-2xl border border-white/10 bg-black/20 px-6 py-5">
-                <div className="text-xs font-black uppercase tracking-widest text-white/30">Stat Line</div>
-                <div className="mt-2 text-3xl font-black tabular-nums text-white xl:text-4xl">
-                  {statLine(p.sport, p.stats)}
-                </div>
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
-    );
-  }
-
-  function renderFinals() {
-    return (
-      <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
-        {finalGames.map((g) => (
-          <div
-            key={g.id}
-            className="rounded-[32px] border border-white/10 bg-gradient-to-br from-slate-900 to-black p-8"
-          >
-            <div className="text-sm font-black uppercase tracking-[0.2em] text-blue-400">
-              FINAL
-            </div>
-
-            <div className="mt-3 text-lg font-black text-white/60">
-              {fmtLeague(g.league_id)} • {fmtSport(g.sport)}
-            </div>
-
-            <div className="mt-5 text-3xl font-black text-white">
-              {g.team_a}
-            </div>
-
-            <div className="my-5 text-center text-6xl font-black text-blue-400">
-              {g.score_a} - {g.score_b}
-            </div>
-
-            <div className="text-right text-3xl font-black text-white">
-              {g.team_b}
-            </div>
-          </div>
-        ))}
-      </div>
-    );
-  }
-
-  function renderLeaders(leagueKey) {
-    const leaders = leadersByLeague[leagueKey] || [];
-    return (
-      <div className="flex h-full flex-col gap-6">
-        <div className="text-sm font-black uppercase tracking-[0.3em] text-blue-400">
-          {fmtLeague(leagueKey)} Stat Leaders
-        </div>
-        <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
-        {leaders.slice(0, 9).map((p) => (
-          <div
-            key={`${String(p.sport || "").toLowerCase()}-${String(p.stat_key || "").toLowerCase()}`}
-            className="rounded-[32px] border border-white/10 bg-gradient-to-br from-slate-900 to-black p-8"
-          >
-            <div className="text-sm font-black uppercase tracking-[0.2em] text-blue-400">
-              STAT LEADER
-            </div>
-
-            <div className="mt-4 text-4xl font-black text-white">
-              {p.player_name}
-            </div>
-
-            <div className="mt-2 text-xl font-bold text-white/60">
-              {p.team_name}
-            </div>
-
-            <div className="mt-8 flex items-end justify-between">
-              <div>
-                <div className="text-lg font-black uppercase text-white/50">
-                  {p.stat_key}
-                </div>
-
-                <div className="text-7xl font-black text-blue-400">
-                  {p.value}
-                </div>
-              </div>
-
-              <div className="text-sm font-black uppercase tracking-widest text-white/40">
-                {fmtSport(p.sport)}
-              </div>
-            </div>
-          </div>
-        ))}
-        </div>
-      </div>
-    );
-  }
-
- function renderHighlights() {
-    if (!highlights.length) return (
-      <div className="flex h-full items-center justify-center text-white/40 text-2xl font-black">
-        No highlights yet.
-      </div>
-    );
-
-    // Time-derived index: advances every 8s since page load, immune to
-    // re-renders, data refreshes, and remounts. `now` already ticks every
-    // second in this component, keeping this fresh.
-    const safeIndex = Math.floor(Date.now() / 8000) % highlights.length;
-    const h = highlights[safeIndex];
-
-    const { data } = supabase.storage
-      .from("highlights")
-      .getPublicUrl(h.file_path);
-
-    const url = data?.publicUrl;
-
-    return (
-      <div className="grid grid-cols-1 gap-8 h-full">
-        <div className="overflow-hidden rounded-[40px] border border-white/10 bg-black">
-          <div className="border-b border-white/10 bg-gradient-to-r from-blue-700 to-blue-500 px-8 py-4 flex items-center justify-between">
-            <div>
-              <div className="text-sm font-black uppercase tracking-[0.3em] text-white/70">
-                FEATURED HIGHLIGHT
-              </div>
-              <div className="mt-1 text-4xl font-black text-white">
-                {h.title || "Camp Highlight"}
-              </div>
-            </div>
-            <div className="text-sm font-black text-white/50">
-              {safeIndex + 1} / {highlights.length}
-            </div>
-          </div>
-
-          <div className="h-[calc(100%-96px)] bg-black">
-            {h.file_type === "video" ? (
-              <video
-                key={h.id}
-                src={url}
-                autoPlay
-                muted
-                playsInline
-                className="h-full w-full object-contain"
-              />
-            ) : (
-              <img
-                key={h.id}
-                src={url}
-                alt=""
-                className="h-full w-full object-contain"
-              />
-            )}
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  /* ===== MAIN RETURN ===== */
-    if (isCW) {
-      return <ColorWarBoard session={session} blueName={blueName} whiteName={whiteName} blueLogo={blueLogo} whiteLogo={whiteLogo} />;
-    }
-
-    return (
-    <main
-      ref={wrapRef}
-      className="relative min-h-screen overflow-hidden bg-[#050509] text-white"
-    >
-      {/* Background */}
-      <div className="pointer-events-none absolute inset-0">
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(58,113,255,0.30),transparent_35%),radial-gradient(circle_at_bottom_right,rgba(30,64,175,0.22),transparent_40%)]" />
-        <div className="absolute inset-0 bg-[linear-gradient(120deg,rgba(255,255,255,0.06)_1px,transparent_1px)] bg-[length:48px_48px] opacity-[0.08]" />
-      </div>
-
-      {/* Top compact ESPN-style header */}
-      <header className="relative z-10 flex h-[72px] items-center justify-between border-b border-white/10 bg-black/65 px-6 backdrop-blur-xl">
-        <div className="flex items-center gap-5">
-          <div className="flex items-center gap-2 rounded-xl border border-blue-400/30 bg-black/40 px-4 py-2 shadow-[0_0_18px_rgba(58,113,255,0.35)]">
-            <span
-              className="text-2xl font-black italic tracking-tighter"
-              style={{
-                color: "#bcd4ff",
-                textShadow: "0 0 6px #5b8cff, 0 0 14px #3a71ff, 0 0 22px rgba(58,113,255,0.6)",
-              }}
-            >
-              CBSN
-            </span>
-          </div>
-
-          <div className="hidden text-sm font-black uppercase tracking-[0.25em] text-white/50 md:block">
-            Camp Bauercrest Sports Network
-          </div>
-        </div>
-
-        <div className="flex items-center gap-3">
-
-          <button
-            onClick={loadAll}
-            className="h-10 rounded-xl border border-white/15 bg-white/10 px-4 text-sm font-black hover:bg-white/20"
-          >
-            Refresh
-          </button>
-
-          <button
-            onClick={() => setAutoRefresh((x) => !x)}
-            className="h-10 rounded-xl border border-white/15 bg-white/10 px-4 text-sm font-black hover:bg-white/20"
-          >
-            Auto {autoRefresh ? "On" : "Off"}
-          </button>
-
-          <button
-            onClick={() => setAutoRotate((x) => !x)}
-            className="h-10 rounded-xl border border-white/15 bg-white/10 px-4 text-sm font-black hover:bg-white/20"
-          >
-            Rotate {autoRotate ? "On" : "Off"}
-          </button>
-
-          <button
-            onClick={goFullscreen}
-            className="h-10 rounded-xl border border-blue-500/40 bg-blue-600 px-4 text-sm font-black text-white hover:bg-blue-500"
-          >
-            Fullscreen
-          </button>
-
-          <div className="hidden h-10 items-center rounded-xl border border-white/15 bg-white/10 px-4 text-sm font-black tabular-nums text-white/80 lg:flex">
-            {fmtClock(now)}
-          </div>
-        </div>
-      </header>
-
-      {/* Scene tabs compact row */}
-      <section className="relative z-10 flex h-[58px] items-center justify-between border-b border-white/10 bg-[#0b0b10]/80 px-6 backdrop-blur-xl">
-        <div className="flex items-center gap-2">
-          {SCENES.map((s) => (
-            <button
-              key={s}
-              onClick={() => setScene(s)}
-              className={cx(
-                "h-10 rounded-xl px-4 text-sm font-black uppercase tracking-wide transition",
-                scene === s
-                  ? "bg-white text-black shadow-lg"
-                  : "border border-white/10 bg-white/5 text-white/70 hover:bg-white/10 hover:text-white"
-              )}
-            >
-              {SCENE_LABELS[s]}
-            </button>
-          ))}
-        </div>
-
-        <div className="flex items-center gap-3">
-          <div className="hidden text-xs font-black uppercase tracking-[0.25em] text-white/40 md:block">
-            Current Scene
-          </div>
-
-          <div className="rounded-xl border border-blue-500/30 bg-blue-500/10 px-4 py-2 text-sm font-black uppercase tracking-wide text-blue-300">
-            {SCENE_LABELS[scene]}
-          </div>
-
-          <select
-            value={rotateSeconds}
-            onChange={(e) => setRotateSeconds(Number(e.target.value))}
-            className="h-10 rounded-xl border border-white/15 bg-white/10 px-3 text-sm font-black text-white outline-none"
-          >
-            <option value={12}>12s</option>
-            <option value={18}>18s</option>
-            <option value={25}>25s</option>
-            <option value={35}>35s</option>
-          </select>
-        </div>
-      </section>
-
-      {/* Main board area */}
-      <section className="relative z-10 h-[calc(100vh-72px-58px-52px)] p-6">
-        <div className="h-full overflow-hidden">
-          {scene === "camp" && (
-            <div className="rounded-[32px] border border-white/10 bg-gradient-to-br from-slate-950 to-slate-900 p-8 shadow-2xl">
-              <div className="mb-8 flex items-center justify-between">
-                <div>
-                  <div className="text-sm font-black uppercase tracking-[0.3em] text-blue-500">
-                    Camp-Wide
-                  </div>
-                  <div className="text-5xl font-black text-white">
-                    Overall Camp Standings
-                  </div>
-                </div>
-
-                <div className="rounded-2xl border border-blue-500/40 bg-blue-500/15 px-6 py-4">
-                  <div className="text-xs font-bold uppercase tracking-widest text-blue-300">
-                    ALL AGE GROUPS
-                  </div>
-                </div>
-              </div>
-
-              <div className="grid h-[calc(100%-160px)] grid-cols-1 gap-6 xl:grid-cols-2">
-                {campStandings.map((t, i) => (
-                  <div
-                    key={`${t.league_id}-${t.team_name}-${i}`}
-                    className={cx(
-                      "flex items-center justify-between rounded-[32px] border border-white/10 bg-white/[0.04] p-10",
-                      i === 0 && "border-blue-500/40 bg-blue-500/10"
-                    )}
-                  >
-                    <div>
-                      <div className="text-lg font-black uppercase tracking-[0.2em] text-white/40">
-                        #{i + 1} • ALL LEAGUES
-                       </div>
-                      <div className="mt-2 text-6xl font-black text-white xl:text-7xl">
-                        {t.team_name}
-                      </div>
-                    </div>
-
-                    <div className="text-right">
-                      <div className="text-lg font-black uppercase tracking-[0.2em] text-blue-300">
-                        POINTS
-                      </div>
-                      <div className="text-8xl font-black text-blue-400 xl:text-9xl">
-                        {Number(t.league_points || 0)}
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {scene === "rivalry" && renderRivalries()}
-          {scene === "finals" && renderFinals()}
-          {scene === "spotlight" && renderSpotlight()}
-          {scene === "leaders_seniors" && renderLeaders("seniors")}
-          {scene === "leaders_juniors" && renderLeaders("juniors")}
-          {scene === "leaders_sophomores" && renderLeaders("sophomores")}
-          {scene === "highlights" && renderHighlights()}
-        </div>
-      </section>
-
-      {/* Bottom ticker */}
-      <Ticker items={tickerItems} />
-
-      {/* Error overlay */}
-      {false && (
-        <div className="absolute right-4 top-24 z-50 rounded-xl border border-blue-500/30 bg-blue-950/90 px-4 py-3 text-sm font-bold text-blue-100">
-          Error loading board
-        </div>
-      )}
-    </main>
-  );
-}
-
-/* ===== BOTTOM COMPONENTS ===== */
-function Ticker({ items }) {
-  const text = items && items.length ? items.join("     •     ") : "";
-  if (!text) return null;
-  return (
-    <footer className="absolute bottom-0 left-0 right-0 z-20 flex h-[52px] overflow-hidden border-t-2 border-blue-400/60 bg-[#0a1530] shadow-[0_-4px_20px_rgba(58,113,255,0.25)]">
-      <div className="flex shrink-0 items-center bg-black px-5">
-        <div
-          className="text-sm font-black uppercase tracking-[0.25em]"
-          style={{ color: "#bcd4ff", textShadow: "0 0 8px #3a71ff" }}
-        >
-          CBSN Ticker
-        </div>
-      </div>
-
-      <div className="relative flex flex-1 items-center overflow-hidden">
-        <div className="animate-[ticker_55s_linear_infinite] whitespace-nowrap px-8 text-xl font-black uppercase tracking-wide text-white">
-          {text}     •     {text}
-        </div>
-      </div>
-
-      <style jsx>{`
-        @keyframes ticker {
-          0% {
-            transform: translateX(0%);
-          }
-          100% {
-            transform: translateX(-50%);
-          }
-        }
-      `}</style>
-    </footer>
-  );
-}
-</file>
-
 <file path="src/app/live/[id]/page.js">
 "use client";
 
@@ -8055,8 +7422,8 @@ async function fetchCaptainIds({ leagueId, teamNames }) {
   if (!teamNames?.length) return new Set();
   const isCrestCup = norm(leagueId) === "crest_cup";
   const query = isCrestCup
-    ? supabase.from("players").select("id, role, team_name").in("team_name", teamNames)
-    : supabase.from("players").select("id, role, team_name").eq("league_id", leagueId).in("team_name", teamNames);
+    ? supabase.from("players").select("id, role, team_name").in("team_name", teamNames).eq("departed", false)
+    : supabase.from("players").select("id, role, team_name").eq("league_id", leagueId).in("team_name", teamNames).eq("departed", false);
   const { data } = await query;
   const ids = new Set();
   for (const p of data || []) if (String(p.role || "").toLowerCase().includes("captain")) ids.add(String(p.id));
@@ -9441,6 +8808,1109 @@ export default function LiveGamePage() {
         </div>
       )}
     </div>
+  );
+}
+</file>
+
+<file path="src/app/display/page.js">
+"use client";
+
+import { useEffect, useMemo, useRef, useState } from "react";
+import { supabase } from "@/lib/supabase";
+import { useAppMode } from "@/lib/useAppMode";
+import ColorWarBoard from "./ColorWarBoard";
+
+const SCENES = [
+  "camp",
+  "spotlight",
+  "averages",
+  "awards",
+  "finals",
+  "leaders_seniors",
+  "leaders_juniors",
+  "leaders_sophomores",
+  "highlights",
+];
+
+const SCENE_LABELS = {
+  camp: "Camp Standings",
+  spotlight: "Camper Spotlight",
+  averages: "Per Game Leaders",
+  awards: "Crest Awards",
+  finals: "Recent Finals",
+  leaders_seniors: "Seniors Stat Leaders",
+  leaders_juniors: "Juniors Stat Leaders",
+  leaders_sophomores: "Sophomores Stat Leaders",
+  highlights: "Highlights",
+};
+
+const TICKER_MESSAGES = [];
+
+function cx(...x) {
+  return x.filter(Boolean).join(" ");
+}
+
+function fmtLeague(id) {
+  if (!id) return "";
+  const s = String(id).toLowerCase();
+  if (s === "seniors") return "Seniors";
+  if (s === "juniors") return "Juniors";
+  if (s === "sophomores") return "Sophomores";
+  return id;
+}
+
+function fmtSport(s) {
+  return String(s || "").toUpperCase();
+}
+
+function fmtClock(d) {
+  return new Date(d).toLocaleTimeString([], {
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+export default function DisplayPage() {
+  const { isCW, session, blueName, whiteName, blueLogo, whiteLogo, loading: modeLoading } = useAppMode();
+  const [scene, setScene] = useState("camp");
+
+  const [campStandings, setCampStandings] = useState([]);
+  const [liveGames, setLiveGames] = useState([]);
+  const [finalGames, setFinalGames] = useState([]);
+  const [leadersByLeague, setLeadersByLeague] = useState({ seniors: [], juniors: [], sophomores: [] });
+  const [highlights, setHighlights] = useState([]);
+  const [spotlight, setSpotlight] = useState([]);
+
+  const [rotateSeconds, setRotateSeconds] = useState(18);
+  const [autoRotate, setAutoRotate] = useState(true);
+  const [autoRefresh, setAutoRefresh] = useState(true);
+
+  const [now, setNow] = useState(Date.now());
+
+  
+  const [avgLeaders, setAvgLeaders] = useState({ seniors: [], juniors: [], sophomores: [] });
+  const [awards, setAwards] = useState([]);
+  const [avgPage, setAvgPage] = useState(0);
+
+
+  const wrapRef = useRef(null);
+
+  async function loadAll() {
+   // camp standings — aggregate points across all leagues per team, INCLUDING non-game points
+   const { data: allStandings } = await supabase
+  .from("standings")
+  .select("team_name, league_points")
+  .eq("sport", "overall")
+  .eq("season", "league")
+  .eq("session", session);
+
+ // Sum league_points per team_name across all leagues
+ const totalsMap = {};
+ (allStandings || []).forEach((row) => {
+  const name = String(row.o_team_name || "").trim().toLowerCase();
+  if (!name) return;
+  totalsMap[name] = (totalsMap[name] || 0) + Number(row.league_points || 0);
+ });
+
+ // Add non-game points on top, same as the public Standings "Overall" tab
+ const { data: ngStandingsData } = await supabase
+  .from("non_game_points")
+  .select("team_name, points")
+  .eq("deleted", false)
+  .eq("status", "final")
+  .eq("season", "league")
+  .eq("session", session)
+  .limit(5000);
+
+ (ngStandingsData || []).forEach((row) => {
+  const name = String(row.o_team_name || "").trim().toLowerCase();
+  if (!name) return;
+  totalsMap[name] = (totalsMap[name] || 0) + Number(row.points || 0);
+ });
+
+ const aggregated = Object.entries(totalsMap)
+  .map(([team_name, league_points]) => ({ team_name, league_points }))
+  .sort((a, b) => b.league_points - a.league_points);
+
+ setCampStandings(aggregated);
+    // live games
+    const { data: live } = await supabase
+      .from("live_games")
+      .select("*")
+      .eq("status", "active")
+      .eq("season", "league")
+      .eq("session", session)
+      .is("played_on", null)
+      .order("updated_at", { ascending: false });
+
+    setLiveGames(live || []);
+
+    // finals
+    const { data: finals } = await supabase
+      .from("live_games")
+      .select("*")
+      .eq("status", "final")
+      .eq("season", "league")
+      .eq("session", session)
+      .order("updated_at", { ascending: false })
+      .limit(12);
+
+    setFinalGames(finals || []);
+
+    // leaders — fetch ALL THREE leagues independently. Each league's stat
+    // leaders is its own dedicated scene now, so all three need their own
+    // data on every load, not just whichever league happens to be selected.
+    async function fetchLeadersForLeague(lid) {
+      const { data: leaderPool } = await supabase
+        .from("player_totals")
+        .select("*")
+        .eq("league_id", lid)
+        .eq("season", "league")
+        .eq("session", session)
+        .order("value", { ascending: false })
+        .limit(500);
+
+      // Hide departed players (kept in DB, just not shown on the board).
+      let pool = leaderPool || [];
+      const ids = Array.from(new Set(pool.map((r) => String(r.o_player_id))));
+      if (ids.length) {
+        const { data: deps } = await supabase.from("players").select("id").in("id", ids).eq("departed", true);
+        const departedSet = new Set((deps || []).map((d) => String(d.id)));
+        if (departedSet.size) pool = pool.filter((r) => !departedSet.has(String(r.o_player_id)));
+      }
+
+      const bestPerCategory = new Map();
+      for (const row of pool) {
+        if (Number(row.o_value || 0) <= 0) continue; // never show a 0 as a "leader"
+        const key = `${String(row.sport || "").toLowerCase()}:${String(row.stat_key || "").toLowerCase()}`;
+        const existing = bestPerCategory.get(key);
+        if (!existing || Number(row.o_value || 0) > Number(existing.o_value || 0)) {
+          bestPerCategory.set(key, row);
+        }
+      }
+
+      return Array.from(bestPerCategory.values()).sort(
+        (a, b) => Number(b.o_value || 0) - Number(a.o_value || 0)
+      );
+    }
+
+    const [seniorsLeaders, juniorsLeaders, sophomoresLeaders] = await Promise.all([
+      fetchLeadersForLeague("seniors"),
+      fetchLeadersForLeague("juniors"),
+      fetchLeadersForLeague("sophomores"),
+    ]);
+
+    setLeadersByLeague({
+      seniors: seniorsLeaders,
+      juniors: juniorsLeaders,
+      sophomores: sophomoresLeaders,
+    });
+
+    // ---- PER GAME LEADERS -------------------------------------------------
+    // For each sport + stat, who averages the most per game played. The
+    // denominator is games the player was ROSTERED for in that sport, so a
+    // kid with 10 goals across 5 games shows 2.0, not 10.0.
+    const MIN_GAMES = 2; // raise this to require more games to qualify
+
+    // stat totals for the current session
+    const { data: avgTotals } = await supabase
+      .from("player_totals")
+      .select("league_id, sport, player_id, player_name, team_name, stat_key, value")
+      .eq("season", "league")
+      .eq("session", session)
+      .limit(20000);
+
+    // finalized games, so we know each game's sport
+    const { data: avgGames } = await supabase
+      .from("live_games")
+      .select("id, sport")
+      .eq("status", "final")
+      .eq("season", "league")
+      .eq("session", session)
+      .limit(5000);
+
+    const sportByGame = {};
+    for (const g of avgGames || []) sportByGame[g.id] = String(g.sport || "").toLowerCase();
+
+    // rosters -> games played per player per sport
+    const gameIds = Object.keys(sportByGame);
+    let played = {};
+    if (gameIds.length) {
+      const { data: avgRoster } = await supabase
+        .from("game_roster")
+        .select("game_id, player_id")
+        .in("game_id", gameIds)
+        .limit(50000);
+      for (const row of avgRoster || []) {
+        const sp = sportByGame[row.game_id];
+        if (!sp) continue;
+        const pid = String(row.o_player_id);
+        played[pid] = played[pid] || {};
+        played[pid][sp] = (played[pid][sp] || 0) + 1;
+      }
+    }
+
+    // departed players never appear on the board
+    const avgIds = Array.from(new Set((avgTotals || []).map((t) => String(t.o_player_id))));
+    let avgDeparted = new Set();
+    if (avgIds.length) {
+      const { data: deps } = await supabase
+        .from("players").select("id").in("id", avgIds).eq("departed", true);
+      avgDeparted = new Set((deps || []).map((d) => String(d.id)));
+    }
+
+    // best average per sport + stat
+    const bestAvg = new Map();
+    for (const t of avgTotals || []) {
+      const pid = String(t.o_player_id);
+      if (avgDeparted.has(pid)) continue;
+      const value = Number(t.o_value || 0);
+      if (value <= 0) continue;
+      const sp = String(t.sport || "").toLowerCase();
+      const games = played[pid]?.[sp] || 0;
+      if (games < MIN_GAMES) continue;
+      const avg = value / games;
+      const lg = String(t.o_league_id || "").toLowerCase();
+      const key = `${lg}:${sp}:${String(t.stat_key || "").toLowerCase()}`;
+      const prev = bestAvg.get(key);
+      if (!prev || avg > prev.avg) {
+        bestAvg.set(key, {
+          key,
+          avg,
+          games,
+          total: value,
+          sport: t.sport,
+          stat_key: t.stat_key,
+          player_name: t.o_player_name,
+          team_name: t.o_team_name,
+          league_id: t.o_league_id,
+        });
+      }
+    }
+
+    const byLeague = { seniors: [], juniors: [], sophomores: [] };
+    for (const row of bestAvg.values()) {
+      const lg = String(row.o_league_id || "").toLowerCase();
+      if (byLeague[lg]) byLeague[lg].push(row);
+    }
+    for (const lg of Object.keys(byLeague)) {
+      byLeague[lg].sort((a, b) => {
+        const s = String(a.sport).localeCompare(String(b.sport));
+        return s !== 0 ? s : String(a.stat_key).localeCompare(String(b.stat_key));
+      });
+    }
+    setAvgLeaders(byLeague);
+
+    // ---- AWARDS (top 3 per award) ----
+    const { data: awardRows } = await supabase.rpc("get_awards", { p_session: session });
+    setAwards(awardRows || []);
+
+    // camper spotlight — top 3 individual performances from last 12 hours
+    try {
+      const cutoff = new Date(Date.now() - 12 * 60 * 60 * 1000).toISOString();
+
+      const { data: recentGames } = await supabase
+        .from("live_games")
+        .select("id, sport, league_key")
+        .eq("status", "final")
+        .eq("season", "league")
+        .eq("session", session)
+        .gte("updated_at", cutoff);
+
+      const recentIds = (recentGames || []).map((g) => g.id);
+
+      if (recentIds.length === 0) {
+        setSpotlight([]);
+      } else {
+        const gameMap = {};
+        for (const g of recentGames || []) gameMap[g.id] = g;
+
+        const { data: evts } = await supabase
+          .from("live_events")
+          .select("game_id, player_id, stat_key, delta")
+          .eq("event_type", "stat")
+          .in("game_id", recentIds)
+          .limit(20000);
+
+        const { data: rosters } = await supabase
+          .from("game_roster")
+          .select("game_id, player_id, player_name, team_name")
+          .in("game_id", recentIds)
+          .limit(5000);
+
+        const rosterMap = {};
+        for (const r of rosters || []) {
+          rosterMap[`${r.game_id}::${r.o_player_id}`] = r;
+        }
+
+        // Aggregate stats per player per game
+        const perPlayerGame = {};
+        for (const e of evts || []) {
+          if (!e.stat_key) continue;
+          const k = `${e.game_id}::${e.o_player_id}`;
+          if (!perPlayerGame[k]) {
+            perPlayerGame[k] = { game_id: e.game_id, player_id: e.o_player_id, stats: {} };
+          }
+          perPlayerGame[k].stats[e.stat_key] = (perPlayerGame[k].stats[e.stat_key] || 0) + Number(e.delta || 0);
+        }
+
+        function eff(sport, stats) {
+          const s = String(sport || "").toLowerCase();
+          const v = (k) => Number(stats[k] || 0);
+          if (s === "hoop") return v("pts") - v("foul");
+          if (s === "softball") return v("h") + v("hr") * 2;
+          if (["euro", "soccer", "hockey", "speedball"].includes(s)) return v("g") * 2 + v("a");
+          if (s === "football") return v("td") * 6;
+          if (s === "volleyball") return v("ace") + v("kill");
+          return 0;
+        }
+
+        const allScored = Object.values(perPlayerGame)
+          .map((entry) => {
+            const g = gameMap[entry.game_id];
+            const r = rosterMap[`${entry.game_id}::${entry.o_player_id}`];
+            const score = eff(g?.sport, entry.stats);
+            if (score <= 0) return null;
+            return {
+              player_name: r?.o_player_name || entry.o_player_id,
+              team_name: r?.o_team_name || "",
+              sport: g?.sport || "",
+              game_id: entry.game_id,
+              stats: entry.stats,
+              score,
+            };
+          })
+          .filter(Boolean)
+          .sort((a, b) => b.score - a.score);
+
+        // Enforce variety: one player per game, one per sport
+        const usedGames = new Set();
+        const usedSports = new Set();
+        const scored = [];
+
+        for (const p of allScored) {
+          if (scored.length >= 3) break;
+          if (usedGames.has(p.game_id)) continue;
+          if (usedSports.has(String(p.sport).toLowerCase())) continue;
+          usedGames.add(p.game_id);
+          usedSports.add(String(p.sport).toLowerCase());
+          scored.push(p);
+        }
+
+        // Fallback: relax sport constraint if we don't have 3 yet
+        if (scored.length < 3) {
+          for (const p of allScored) {
+            if (scored.length >= 3) break;
+            if (usedGames.has(p.game_id)) continue;
+            if (scored.find((s) => s.o_player_name === p.o_player_name)) continue;
+            usedGames.add(p.game_id);
+            scored.push(p);
+          }
+        }
+
+        setSpotlight(scored);
+      }
+    } catch {
+      setSpotlight([]);
+    }
+
+    // highlights
+    const { data: h } = await supabase
+      .from("highlights")
+      .select("*")
+      .eq("show_on_board", true)
+      .order("created_at", { ascending: false });
+
+    setHighlights(h || []);
+  }
+
+  useEffect(() => {
+    loadAll();
+  }, []);
+
+  useEffect(() => {
+    const t = setInterval(() => {
+      setNow(Date.now());
+    }, 1000);
+
+    return () => clearInterval(t);
+  }, []);
+
+  useEffect(() => {
+    if (!autoRefresh) return;
+
+    const t = setInterval(() => {
+      loadAll();
+    }, 15000);
+
+    return () => clearInterval(t);
+  }, [autoRefresh]);
+
+ useEffect(() => {
+    if (!autoRotate) return;
+
+    // Pure linear rotation. Each league's stat leaders is now its own
+    // hardcoded scene (leaders_seniors, leaders_juniors, leaders_sophomores),
+    // so no shared "league" variable needs to be mutated during rotation —
+    // each scene is self-contained and always shows the right league.
+    const t = setInterval(() => {
+      setAvgPage((p) => p + 1);
+      setScene((prevScene) => {
+        const idx = SCENES.indexOf(prevScene);
+        const safeIdx = idx === -1 ? 0 : idx;
+        const nextScene = SCENES[(safeIdx + 1) % SCENES.length];
+
+        return nextScene;
+      });
+    }, rotateSeconds * 1000);
+
+    return () => clearInterval(t);
+  }, [autoRotate, rotateSeconds]);
+
+ const tickerItems = useMemo(() => {
+  const live = liveGames.slice(0, 4).map((g) => {
+    const left = g.team_a || g.team_a1 || "Team A";
+    const right = g.team_b || g.team_b1 || "Team B";
+    const leagueName = fmtLeague(g.o_league_id || g.league_key);
+    return `LIVE: ${leagueName} ${fmtSport(g.sport)} — ${left} ${Number(g.score_a || 0)}-${Number(g.score_b || 0)} ${right}`;
+  });
+
+  const finals = finalGames.slice(0, 6).map((g) => {
+    const a = Number(g.score_a || 0);
+    const b = Number(g.score_b || 0);
+    const sideA = [g.team_a, g.team_a2].filter(Boolean).join(" + ");
+    const sideB = [g.team_b, g.team_b2].filter(Boolean).join(" + ");
+    const winner = a > b ? sideA : sideB;
+    const loser = a > b ? sideB : sideA;
+    const bowl = g.is_bowl_game ? `${String(g.bowl_name || "BOWL").toUpperCase()}: ` : "";
+    return `FINAL: ${bowl}${winner} defeats ${loser}, ${Math.max(a, b)}-${Math.min(a, b)}`;
+  });
+
+  const topStandings = campStandings.slice(0, 3).map((t, i) => {
+    return `CAMP STANDINGS: #${i + 1} ${t.o_team_name} — ${Number(t.league_points || 0)} pts`;
+  });
+
+  const allLeaders = [
+    ...(leadersByLeague.seniors || []),
+    ...(leadersByLeague.juniors || []),
+    ...(leadersByLeague.sophomores || []),
+  ];
+
+  const topLeaders = allLeaders.slice(0, 4).map((p) => {
+    return `LEADER: ${p.o_player_name} — ${Number(p.o_value || 0)} ${String(p.stat_key || "").toUpperCase()} (${p.o_team_name || "—"})`;
+  });
+
+  return [...live, ...finals, ...topStandings, ...topLeaders].filter(Boolean);
+}, [liveGames, finalGames, campStandings, leadersByLeague]);
+
+  async function goFullscreen() {
+    if (!document.fullscreenElement) {
+      await wrapRef.current?.requestFullscreen?.();
+    } else {
+      await document.exitFullscreen?.();
+    }
+  }
+
+  /* ===== DATA HELPERS ===== */
+  function renderAwards() {
+    // Group top-3 by award, rotate which award is spotlighted using avgPage.
+    const byAward = {};
+    for (const r of awards) (byAward[r.o_award] = byAward[r.o_award] || []).push(r);
+    for (const k of Object.keys(byAward)) byAward[k].sort((a, b) => a.o_rank - b.o_rank);
+    const order = ["mvp","most_wins","iron_man","sharpshooter","buckets","playmaker","slugger"]
+      .filter((k) => byAward[k] && byAward[k].length);
+
+    if (!order.length) {
+      return (
+        <div className="flex h-full items-center justify-center text-2xl font-black text-white/40">
+          Awards appear once games are played.
+        </div>
+      );
+    }
+
+    // spotlight one award per rotation tick
+    const key = order[avgPage % order.length];
+    const podium = byAward[key];
+    const first = podium.find((p) => p.o_rank === 1);
+    const rest = podium.filter((p) => p.o_rank > 1);
+    const label = first?.o_award_label || key;
+
+    return (
+      <div className="flex h-full flex-col items-center justify-center overflow-hidden rounded-[32px] border border-[#f5c451]/30 bg-gradient-to-br from-slate-950 to-slate-900 p-10"
+           style={{ boxShadow: "0 0 80px rgba(245,196,81,0.10) inset" }}>
+        <div className="text-sm font-black uppercase tracking-[0.4em] text-[#f5c451]">Crest Awards</div>
+        <div className="mt-2 text-6xl font-black text-white">{label}</div>
+
+        {/* Gold */}
+        {first ? (
+          <div className="mt-8 flex flex-col items-center">
+            <div className="text-8xl" style={{ filter: "drop-shadow(0 6px 20px rgba(245,196,81,0.55))" }}>🥇</div>
+            <div className="mt-3 text-7xl font-black text-white">{first.o_player_name}</div>
+            <div className="mt-2 text-xl font-black uppercase tracking-widest text-white/50">
+              {first.o_team_name}
+            </div>
+            <div className="mt-4 rounded-full px-8 py-3 text-2xl font-black"
+                 style={{ background: "linear-gradient(180deg,#ffe9a8,#f5c451)", color: "#3a2a05" }}>
+              {first.o_display}
+            </div>
+          </div>
+        ) : null}
+
+        {/* Silver + bronze */}
+        {rest.length ? (
+          <div className="mt-8 grid grid-cols-2 gap-6">
+            {rest.map((p) => (
+              <div key={p.o_player_id} className="flex items-center gap-4 rounded-2xl border border-white/10 bg-white/[0.04] px-6 py-4">
+                <div className="text-4xl">{p.o_rank === 2 ? "🥈" : "🥉"}</div>
+                <div>
+                  <div className="text-3xl font-black text-white">{p.o_player_name}</div>
+                  <div className="text-sm font-bold uppercase tracking-widest text-white/40">
+                    {p.o_team_name} · {p.o_display}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : null}
+      </div>
+    );
+  }
+
+  function renderAverages() {
+    const LEAGUES = ["seniors", "juniors", "sophomores"];
+    const PER_LEAGUE = 3; // cards per league column. Fits one screen, no scrolling.
+
+    const total = LEAGUES.reduce((n, lg) => n + (avgLeaders[lg]?.length || 0), 0);
+    if (!total) {
+      return (
+        <div className="flex h-full items-center justify-center text-2xl font-black text-white/40">
+          Not enough games played yet.
+        </div>
+      );
+    }
+
+    // Rotate through each league's categories so everything gets airtime
+    // over the course of the day without anyone having to scroll.
+    function pageFor(lg) {
+      const rows = avgLeaders[lg] || [];
+      if (rows.length <= PER_LEAGUE) return rows;
+      const pages = Math.ceil(rows.length / PER_LEAGUE);
+      const start = (avgPage % pages) * PER_LEAGUE;
+      const slice = rows.slice(start, start + PER_LEAGUE);
+      // wrap around so the last page is never half empty
+      return slice.length < PER_LEAGUE
+        ? slice.concat(rows.slice(0, PER_LEAGUE - slice.length))
+        : slice;
+    }
+
+    return (
+      <div className="flex h-full flex-col overflow-hidden rounded-[32px] border border-white/10 bg-gradient-to-br from-slate-950 to-slate-900 p-8 shadow-2xl">
+        <div className="mb-6 flex shrink-0 items-center justify-between">
+          <div>
+            <div className="text-sm font-black uppercase tracking-[0.3em] text-blue-500">By League</div>
+            <div className="text-5xl font-black text-white">Per Game Leaders</div>
+          </div>
+          <div className="rounded-2xl border border-blue-500/40 bg-blue-500/15 px-6 py-4">
+            <div className="text-xs font-bold uppercase tracking-widest text-blue-300">BEST AVERAGE</div>
+          </div>
+        </div>
+
+        <div className="grid min-h-0 flex-1 grid-cols-3 gap-6 overflow-hidden">
+          {LEAGUES.map((lg) => (
+            <div key={lg} className="flex min-h-0 flex-col gap-4">
+              <div className="shrink-0 text-center text-lg font-black uppercase tracking-[0.3em] text-white/40">
+                {fmtLeague(lg)}
+              </div>
+
+              {pageFor(lg).map((r) => (
+                <div
+                  key={r.key}
+                  className="flex-1 rounded-[24px] border border-white/10 bg-white/[0.04] px-6 py-4"
+                >
+                  <div className="text-[11px] font-black uppercase tracking-[0.25em] text-blue-400">
+                    {fmtSport(r.sport)} &middot; {String(r.stat_key).toUpperCase()}
+                  </div>
+
+                  <div className="mt-1 flex items-end gap-2">
+                    <div className="text-5xl font-black tabular-nums leading-none text-white">
+                      {r.avg.toFixed(1)}
+                    </div>
+                    <div className="pb-1 text-[11px] font-black uppercase tracking-widest text-white/40">
+                      per game
+                    </div>
+                  </div>
+
+                  <div className="mt-2 truncate text-2xl font-black text-white">
+                    {r.o_player_name}
+                  </div>
+                  <div className="truncate text-sm font-bold text-white/50">
+                    {r.o_team_name} &middot; {r.total} in {r.games} game{r.games === 1 ? "" : "s"}
+                  </div>
+                </div>
+              ))}
+
+              {!(avgLeaders[lg] || []).length ? (
+                <div className="flex flex-1 items-center justify-center rounded-[24px] border border-white/5 text-sm font-black uppercase tracking-widest text-white/20">
+                  No qualifiers yet
+                </div>
+              ) : null}
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  function renderSpotlight() {
+    if (typeof window === "undefined") return null;
+    const medals = ["#FFD700", "#C0C0C0", "#CD7F32"];
+    const ranks = ["#1", "#2", "#3"];
+
+    function statLine(sport, stats) {
+      const s = String(sport || "").toLowerCase();
+      const v = (k) => Number(stats[k] || 0);
+      let parts = [];
+      if (s === "hoop") parts = [[v("pts"), "PTS"], [v("foul"), "F"]];
+      else if (s === "softball") parts = [[v("h"), "H"], [v("hr"), "HR"]];
+      else if (["euro", "soccer", "hockey", "speedball"].includes(s)) parts = [[v("g"), "G"], [v("a"), "A"]];
+      else if (s === "football") parts = [[v("td"), "TD"]];
+      else parts = Object.entries(stats).map(([k, val]) => [val, k.toUpperCase()]);
+      const nonZero = parts.filter(([val]) => val > 0);
+      return (nonZero.length ? nonZero : parts.slice(0, 1)).map(([val, label]) => `${val} ${label}`).join(" · ");
+    }
+
+    if (!spotlight.length) {
+      return (
+        <div className="flex h-full items-center justify-center text-2xl font-black text-white/40">
+          No performances tracked yet — check back after tonight's games.
+        </div>
+      );
+    }
+
+    return (
+      <div className="flex h-full flex-col">
+        <div className="mb-8 flex items-center justify-between">
+          <div>
+            <div className="text-sm font-black uppercase tracking-[0.3em] text-blue-400">Recent</div>
+            <div className="text-5xl font-black text-white">Camper Spotlight</div>
+          </div>
+          <div className="rounded-2xl border border-blue-500/30 bg-blue-500/10 px-6 py-3 text-sm font-black uppercase tracking-widest text-blue-300">
+            Top Performances
+          </div>
+        </div>
+
+        <div className={`grid flex-1 gap-6 ${spotlight.length === 3 ? "grid-cols-3" : spotlight.length === 2 ? "grid-cols-2" : "grid-cols-1"}`}>
+          {spotlight.map((p, i) => (
+            <div
+              key={i}
+              className="relative flex flex-col justify-between overflow-hidden rounded-[40px] border border-white/10 bg-gradient-to-br from-white/[0.06] to-white/[0.02] p-10"
+              style={{ boxShadow: `0 0 60px ${medals[i]}18` }}
+            >
+              {/* Rank badge */}
+              <div
+                className="absolute right-8 top-8 text-6xl font-black tabular-nums opacity-20"
+                style={{ color: medals[i] }}
+              >
+                {ranks[i]}
+              </div>
+
+              {/* Sport tag */}
+              <div className="inline-flex w-fit items-center rounded-full border border-white/10 bg-white/5 px-4 py-1.5">
+                <span className="text-xs font-black uppercase tracking-[0.2em] text-white/50">
+                  {String(p.sport).toUpperCase()}
+                </span>
+              </div>
+
+              {/* Name + team */}
+              <div className="mt-6 flex-1">
+                <div
+                  className="text-5xl font-black leading-tight text-white xl:text-6xl"
+                  style={{ textShadow: `0 0 40px ${medals[i]}60` }}
+                >
+                  {p.o_player_name}
+                </div>
+                <div className="mt-3 text-xl font-black uppercase tracking-widest" style={{ color: medals[i] }}>
+                  {p.o_team_name}
+                </div>
+              </div>
+
+              {/* Stat line */}
+              <div className="mt-8 rounded-2xl border border-white/10 bg-black/20 px-6 py-5">
+                <div className="text-xs font-black uppercase tracking-widest text-white/30">Stat Line</div>
+                <div className="mt-2 text-3xl font-black tabular-nums text-white xl:text-4xl">
+                  {statLine(p.sport, p.stats)}
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  function renderFinals() {
+    return (
+      <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
+        {finalGames.map((g) => (
+          <div
+            key={g.id}
+            className="rounded-[32px] border border-white/10 bg-gradient-to-br from-slate-900 to-black p-8"
+          >
+            <div className="text-sm font-black uppercase tracking-[0.2em] text-blue-400">
+              FINAL
+            </div>
+
+            <div className="mt-3 text-lg font-black text-white/60">
+              {fmtLeague(g.league_key)} • {fmtSport(g.sport)}
+            </div>
+
+            <div className="mt-5 text-3xl font-black text-white">
+              {g.team_a1}{g.team_a2 ? ` + ${g.team_a2}` : ""}
+            </div>
+
+            <div className="my-5 text-center text-6xl font-black text-blue-400">
+              {g.score_a} - {g.score_b}
+            </div>
+
+            <div className="text-right text-3xl font-black text-white">
+              {g.team_b1}{g.team_b2 ? ` + ${g.team_b2}` : ""}
+            </div>
+          </div>
+        ))}
+      </div>
+    );
+  }
+
+  function renderLeaders(leagueKey) {
+    const leaders = leadersByLeague[leagueKey] || [];
+    return (
+      <div className="flex h-full flex-col gap-6">
+        <div className="text-sm font-black uppercase tracking-[0.3em] text-blue-400">
+          {fmtLeague(leagueKey)} Stat Leaders
+        </div>
+        <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
+        {leaders.slice(0, 9).map((p) => (
+          <div
+            key={`${String(p.sport || "").toLowerCase()}-${String(p.stat_key || "").toLowerCase()}`}
+            className="rounded-[32px] border border-white/10 bg-gradient-to-br from-slate-900 to-black p-8"
+          >
+            <div className="text-sm font-black uppercase tracking-[0.2em] text-blue-400">
+              STAT LEADER
+            </div>
+
+            <div className="mt-4 text-4xl font-black text-white">
+              {p.o_player_name}
+            </div>
+
+            <div className="mt-2 text-xl font-bold text-white/60">
+              {p.o_team_name}
+            </div>
+
+            <div className="mt-8 flex items-end justify-between">
+              <div>
+                <div className="text-lg font-black uppercase text-white/50">
+                  {p.stat_key}
+                </div>
+
+                <div className="text-7xl font-black text-blue-400">
+                  {p.o_value}
+                </div>
+              </div>
+
+              <div className="text-sm font-black uppercase tracking-widest text-white/40">
+                {fmtSport(p.sport)}
+              </div>
+            </div>
+          </div>
+        ))}
+        </div>
+      </div>
+    );
+  }
+
+ function renderHighlights() {
+    if (!highlights.length) return (
+      <div className="flex h-full items-center justify-center text-white/40 text-2xl font-black">
+        No highlights yet.
+      </div>
+    );
+
+    // Time-derived index: advances every 8s since page load, immune to
+    // re-renders, data refreshes, and remounts. `now` already ticks every
+    // second in this component, keeping this fresh.
+    const safeIndex = Math.floor(Date.now() / 8000) % highlights.length;
+    const h = highlights[safeIndex];
+
+    const { data } = supabase.storage
+      .from("highlights")
+      .getPublicUrl(h.file_path);
+
+    const url = data?.publicUrl;
+
+    return (
+      <div className="grid grid-cols-1 gap-8 h-full">
+        <div className="overflow-hidden rounded-[40px] border border-white/10 bg-black">
+          <div className="border-b border-white/10 bg-gradient-to-r from-blue-700 to-blue-500 px-8 py-4 flex items-center justify-between">
+            <div>
+              <div className="text-sm font-black uppercase tracking-[0.3em] text-white/70">
+                FEATURED HIGHLIGHT
+              </div>
+              <div className="mt-1 text-4xl font-black text-white">
+                {h.title || "Camp Highlight"}
+              </div>
+            </div>
+            <div className="text-sm font-black text-white/50">
+              {safeIndex + 1} / {highlights.length}
+            </div>
+          </div>
+
+          <div className="h-[calc(100%-96px)] bg-black">
+            {h.file_type === "video" ? (
+              <video
+                key={h.id}
+                src={url}
+                autoPlay
+                muted
+                playsInline
+                className="h-full w-full object-contain"
+              />
+            ) : (
+              <img
+                key={h.id}
+                src={url}
+                alt=""
+                className="h-full w-full object-contain"
+              />
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  /* ===== MAIN RETURN ===== */
+    if (isCW) {
+      return <ColorWarBoard session={session} blueName={blueName} whiteName={whiteName} blueLogo={blueLogo} whiteLogo={whiteLogo} />;
+    }
+
+    return (
+    <main
+      ref={wrapRef}
+      className="relative min-h-screen overflow-hidden bg-[#050509] text-white"
+    >
+      {/* Background */}
+      <div className="pointer-events-none absolute inset-0">
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(58,113,255,0.30),transparent_35%),radial-gradient(circle_at_bottom_right,rgba(30,64,175,0.22),transparent_40%)]" />
+        <div className="absolute inset-0 bg-[linear-gradient(120deg,rgba(255,255,255,0.06)_1px,transparent_1px)] bg-[length:48px_48px] opacity-[0.08]" />
+      </div>
+
+      {/* Top compact ESPN-style header */}
+      <header className="relative z-10 flex h-[72px] items-center justify-between border-b border-white/10 bg-black/65 px-6 backdrop-blur-xl">
+        <div className="flex items-center gap-5">
+          <div className="flex items-center gap-2 rounded-xl border border-blue-400/30 bg-black/40 px-4 py-2 shadow-[0_0_18px_rgba(58,113,255,0.35)]">
+            <span
+              className="text-2xl font-black italic tracking-tighter"
+              style={{
+                color: "#bcd4ff",
+                textShadow: "0 0 6px #5b8cff, 0 0 14px #3a71ff, 0 0 22px rgba(58,113,255,0.6)",
+              }}
+            >
+              CBSN
+            </span>
+          </div>
+
+          <div className="hidden text-sm font-black uppercase tracking-[0.25em] text-white/50 md:block">
+            Camp Bauercrest Sports Network
+          </div>
+        </div>
+
+        <div className="flex items-center gap-3">
+
+          <button
+            onClick={loadAll}
+            className="h-10 rounded-xl border border-white/15 bg-white/10 px-4 text-sm font-black hover:bg-white/20"
+          >
+            Refresh
+          </button>
+
+          <button
+            onClick={() => setAutoRefresh((x) => !x)}
+            className="h-10 rounded-xl border border-white/15 bg-white/10 px-4 text-sm font-black hover:bg-white/20"
+          >
+            Auto {autoRefresh ? "On" : "Off"}
+          </button>
+
+          <button
+            onClick={() => setAutoRotate((x) => !x)}
+            className="h-10 rounded-xl border border-white/15 bg-white/10 px-4 text-sm font-black hover:bg-white/20"
+          >
+            Rotate {autoRotate ? "On" : "Off"}
+          </button>
+
+          <button
+            onClick={goFullscreen}
+            className="h-10 rounded-xl border border-blue-500/40 bg-blue-600 px-4 text-sm font-black text-white hover:bg-blue-500"
+          >
+            Fullscreen
+          </button>
+
+          <div className="hidden h-10 items-center rounded-xl border border-white/15 bg-white/10 px-4 text-sm font-black tabular-nums text-white/80 lg:flex">
+            {fmtClock(now)}
+          </div>
+        </div>
+      </header>
+
+      {/* Scene tabs compact row */}
+      <section className="relative z-10 flex h-[58px] items-center justify-between border-b border-white/10 bg-[#0b0b10]/80 px-6 backdrop-blur-xl">
+        <div className="flex items-center gap-2">
+          {SCENES.map((s) => (
+            <button
+              key={s}
+              onClick={() => setScene(s)}
+              className={cx(
+                "h-10 rounded-xl px-4 text-sm font-black uppercase tracking-wide transition",
+                scene === s
+                  ? "bg-white text-black shadow-lg"
+                  : "border border-white/10 bg-white/5 text-white/70 hover:bg-white/10 hover:text-white"
+              )}
+            >
+              {SCENE_LABELS[s]}
+            </button>
+          ))}
+        </div>
+
+        <div className="flex items-center gap-3">
+          <div className="hidden text-xs font-black uppercase tracking-[0.25em] text-white/40 md:block">
+            Current Scene
+          </div>
+
+          <div className="rounded-xl border border-blue-500/30 bg-blue-500/10 px-4 py-2 text-sm font-black uppercase tracking-wide text-blue-300">
+            {SCENE_LABELS[scene]}
+          </div>
+
+          <select
+            value={rotateSeconds}
+            onChange={(e) => setRotateSeconds(Number(e.target.o_value))}
+            className="h-10 rounded-xl border border-white/15 bg-white/10 px-3 text-sm font-black text-white outline-none"
+          >
+            <option value={12}>12s</option>
+            <option value={18}>18s</option>
+            <option value={25}>25s</option>
+            <option value={35}>35s</option>
+          </select>
+        </div>
+      </section>
+
+      {/* Main board area */}
+      <section className="relative z-10 h-[calc(100vh-72px-58px-52px)] p-6">
+        <div className="h-full overflow-hidden">
+          {scene === "camp" && (
+            <div className="rounded-[32px] border border-white/10 bg-gradient-to-br from-slate-950 to-slate-900 p-8 shadow-2xl">
+              <div className="mb-8 flex items-center justify-between">
+                <div>
+                  <div className="text-sm font-black uppercase tracking-[0.3em] text-blue-500">
+                    Camp-Wide
+                  </div>
+                  <div className="text-5xl font-black text-white">
+                    Overall Camp Standings
+                  </div>
+                </div>
+
+                <div className="rounded-2xl border border-blue-500/40 bg-blue-500/15 px-6 py-4">
+                  <div className="text-xs font-bold uppercase tracking-widest text-blue-300">
+                    ALL AGE GROUPS
+                  </div>
+                </div>
+              </div>
+
+              <div className="grid h-[calc(100%-160px)] grid-cols-1 gap-6 xl:grid-cols-2">
+                {campStandings.map((t, i) => (
+                  <div
+                    key={`${t.o_league_id}-${t.o_team_name}-${i}`}
+                    className={cx(
+                      "flex items-center justify-between rounded-[32px] border border-white/10 bg-white/[0.04] p-10",
+                      i === 0 && "border-blue-500/40 bg-blue-500/10"
+                    )}
+                  >
+                    <div>
+                      <div className="text-lg font-black uppercase tracking-[0.2em] text-white/40">
+                        #{i + 1} • ALL LEAGUES
+                       </div>
+                      <div className="mt-2 text-6xl font-black text-white xl:text-7xl">
+                        {t.o_team_name}
+                      </div>
+                    </div>
+
+                    <div className="text-right">
+                      <div className="text-lg font-black uppercase tracking-[0.2em] text-blue-300">
+                        POINTS
+                      </div>
+                      <div className="text-8xl font-black text-blue-400 xl:text-9xl">
+                        {Number(t.league_points || 0)}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {scene === "averages" && renderAverages()}
+          {scene === "awards" && renderAwards()}
+          {scene === "finals" && renderFinals()}
+          {scene === "spotlight" && renderSpotlight()}
+          {scene === "leaders_seniors" && renderLeaders("seniors")}
+          {scene === "leaders_juniors" && renderLeaders("juniors")}
+          {scene === "leaders_sophomores" && renderLeaders("sophomores")}
+          {scene === "highlights" && renderHighlights()}
+        </div>
+      </section>
+
+      {/* Bottom ticker */}
+      <Ticker items={tickerItems} />
+
+      {/* Error overlay */}
+      {false && (
+        <div className="absolute right-4 top-24 z-50 rounded-xl border border-blue-500/30 bg-blue-950/90 px-4 py-3 text-sm font-bold text-blue-100">
+          Error loading board
+        </div>
+      )}
+    </main>
+  );
+}
+
+/* ===== BOTTOM COMPONENTS ===== */
+function Ticker({ items }) {
+  const text = items && items.length ? items.join("     •     ") : "";
+  if (!text) return null;
+  return (
+    <footer className="absolute bottom-0 left-0 right-0 z-20 flex h-[52px] overflow-hidden border-t-2 border-blue-400/60 bg-[#0a1530] shadow-[0_-4px_20px_rgba(58,113,255,0.25)]">
+      <div className="flex shrink-0 items-center bg-black px-5">
+        <div
+          className="text-sm font-black uppercase tracking-[0.25em]"
+          style={{ color: "#bcd4ff", textShadow: "0 0 8px #3a71ff" }}
+        >
+          CBSN Ticker
+        </div>
+      </div>
+
+      <div className="relative flex flex-1 items-center overflow-hidden">
+        <div className="animate-[ticker_55s_linear_infinite] whitespace-nowrap px-8 text-xl font-black uppercase tracking-wide text-white">
+          {text}     •     {text}
+        </div>
+      </div>
+
+      <style jsx>{`
+        @keyframes ticker {
+          0% {
+            transform: translateX(0%);
+          }
+          100% {
+            transform: translateX(-50%);
+          }
+        }
+      `}</style>
+    </footer>
   );
 }
 </file>
