@@ -138,7 +138,8 @@ export default function StandingsPage() {
     <div className="pb-10">
       <div className="mt-6 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <div className="text-2xl font-black">Standings</div>
+          <div className="bc-eyebrow">Camp Bauercrest</div>
+          <h1 className="bc-page-title mt-1">Camp <span className="bc-accent-text">Standings</span></h1>
           <div className="text-sm text-white/70">
             Camp-wide standings combining every age group into one table per team.
           </div>

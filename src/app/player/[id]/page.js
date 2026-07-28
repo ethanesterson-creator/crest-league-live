@@ -58,7 +58,7 @@ export default function PlayerProfilePage() {
 
         // Wins + games via roster
         const { data: rosters } = await supabase
-          .from("game_roster").select("game_id, team_side").eq("player_id", id).limit(2000);
+          .from("game_roster").select("game_id, team_side").eq("player_id", id).eq("is_playing", true).limit(2000);
         const gids = (rosters || []).map((r) => r.game_id);
         if (gids.length) {
           const { data: gm } = await supabase

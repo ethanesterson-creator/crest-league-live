@@ -127,7 +127,8 @@ export default function LeadersPage() {
     <div className="pb-10">
       <div className="mt-6 flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
         <div>
-          <div className="text-2xl font-black">Stat Leaders</div>
+          <div className="bc-eyebrow">Camp Bauercrest</div>
+          <h1 className="bc-page-title mt-1">Stat <span className="bc-accent-text">Leaders</span></h1>
           <div className="text-sm text-white/70">
             Updates automatically after you finalize a game.
           </div>

@@ -155,3 +155,90 @@ body::before {
   background-repeat: no-repeat;
 }
 /* ============ END CAMP BACKGROUND ============ */
+/* ============================================================================
+   CBSN THEME TOUCH-UP  —  append to globals.css
+   Shared classes that give every page the broadcast look without rewriting
+   each one. Existing pages already use .bc-card etc; these enhance them.
+   ============================================================================ */
+:root {
+  --bc-accent: #3a71ff;
+  --bc-accent-soft: rgba(58, 113, 255, 0.15);
+  --bc-gold: #f5c451;
+}
+
+/* Elevate the default card: subtle gradient + glow on hover */
+.bc-card {
+  background: linear-gradient(180deg, rgba(255,255,255,0.055), rgba(255,255,255,0.025));
+  border: 1px solid rgba(255,255,255,0.12);
+  border-radius: 18px;
+  transition: border-color .15s ease, box-shadow .15s ease;
+}
+.bc-card:hover {
+  border-color: rgba(58,113,255,0.30);
+}
+
+/* Page title treatment — use on each page's <h1> for consistency */
+.bc-page-title {
+  font-size: clamp(28px, 5vw, 44px);
+  font-weight: 900;
+  letter-spacing: -0.02em;
+  line-height: 1;
+}
+.bc-page-title .bc-accent-text {
+  background: linear-gradient(180deg, #9dbaff, var(--bc-accent));
+  -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent;
+}
+.bc-eyebrow {
+  font-size: 12px; font-weight: 900; letter-spacing: 0.3em; text-transform: uppercase;
+  color: #7ea6ff;
+}
+
+/* Accent pill / chip */
+.bc-chip {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 6px 14px; border-radius: 999px;
+  background: var(--bc-accent-soft); border: 1px solid rgba(58,113,255,0.35);
+  font-weight: 800; font-size: 13px; color: #bcd4ff;
+}
+
+/* Section header with an accent bar on the left */
+.bc-section-head {
+  display: flex; align-items: center; gap: 12px; margin-bottom: 14px;
+}
+.bc-section-head::before {
+  content: ""; width: 4px; height: 22px; border-radius: 4px;
+  background: linear-gradient(180deg, var(--bc-accent), rgba(58,113,255,0.3));
+}
+.bc-section-head h2, .bc-section-title {
+  font-size: 20px; font-weight: 900; letter-spacing: -0.01em;
+}
+
+/* Nicer table rows */
+.bc-table { width: 100%; border-collapse: collapse; }
+.bc-table th {
+  text-align: left; font-size: 11px; font-weight: 900; letter-spacing: .1em;
+  text-transform: uppercase; color: rgba(255,255,255,.45); padding: 8px 6px;
+}
+.bc-table td { padding: 12px 6px; border-top: 1px solid rgba(255,255,255,.08); }
+.bc-table tr:hover td { background: rgba(255,255,255,.02); }
+
+/* Rank badge for standings (#1 gets a subtle gold tint) */
+.bc-rank {
+  display:inline-flex; align-items:center; justify-content:center;
+  width: 26px; height: 26px; border-radius: 8px; font-weight: 900; font-size: 13px;
+  background: rgba(255,255,255,.06); color: rgba(255,255,255,.6);
+}
+.bc-rank-1 { background: rgba(245,196,81,.18); color: var(--bc-gold); }
+
+/* Primary action button */
+.bc-btn-accent {
+  background: linear-gradient(180deg, #4d80ff, #3a71ff);
+  border: 1px solid rgba(58,113,255,.5); color: #fff; font-weight: 900;
+  border-radius: 14px; padding: 10px 18px;
+  box-shadow: 0 6px 18px rgba(58,113,255,.25);
+}
+.bc-btn-accent:hover { filter: brightness(1.08); }
+
+/* Nav polish — active state and hover */
+.bc-nav-link { transition: color .12s ease; }
+.bc-nav-link:hover { color: #bcd4ff; }
