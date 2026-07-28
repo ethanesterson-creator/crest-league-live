@@ -492,19 +492,23 @@ export default function HomePage() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100">
+    <div className="min-h-screen text-slate-100">
       <div className="mx-auto max-w-4xl p-4">
         {/* Header */}
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-3xl font-extrabold tracking-tight">Crest League Live</h1>
+            <div className="text-[11px] font-black uppercase tracking-[0.3em]" style={{ color: "#7ea6ff" }}>Camp Bauercrest</div>
+            <h1 className="mt-1 text-4xl font-black tracking-tight" style={{ textShadow: "0 2px 20px rgba(58,113,255,0.3)" }}>
+              Crest <span style={{ background: "linear-gradient(180deg,#9dbaff,#3a71ff)", WebkitBackgroundClip: "text", backgroundClip: "text", WebkitTextFillColor: "transparent" }}>League Live</span>
+            </h1>
             <div className="mt-1 text-sm text-slate-300">
-              Status: <span className="font-semibold text-emerald-400">{status}</span>
+              Status: <span className="font-semibold" style={{ color: "#5b8cff" }}>{status}</span>
             </div>
           </div>
           <button
             onClick={loadGames}
-            className="rounded-xl border border-slate-700 bg-slate-900 px-4 py-2 text-sm font-semibold hover:bg-slate-800"
+            className="rounded-xl border px-4 py-2 text-sm font-black hover:brightness-110"
+            style={{ borderColor: "rgba(58,113,255,0.4)", background: "rgba(58,113,255,0.12)", color: "#bcd4ff" }}
           >
             Refresh
           </button>
@@ -826,7 +830,8 @@ export default function HomePage() {
             onClick={createGame}
             disabled={!canCreate || creating}
             className={`mt-4 w-full rounded-2xl px-4 py-3 text-lg font-extrabold shadow
-              ${canCreate && !creating ? "bg-emerald-500 text-slate-950 hover:bg-emerald-400" : "bg-slate-800 text-slate-400"}`}
+              ${canCreate && !creating ? "text-white hover:brightness-110" : "bg-slate-800 text-slate-400"}`}
+            style={canCreate && !creating ? { background: "linear-gradient(180deg,#4d80ff,#3a71ff)", boxShadow: "0 6px 20px rgba(58,113,255,0.3)" } : {}}
           >
             {creating ? "Creating…" : "Create Game"}
           </button>
@@ -876,7 +881,7 @@ export default function HomePage() {
 
                         <div className="mt-1 text-sm text-slate-300">
                           {g.league_key} • {g.sport} • Level {g.level} • {g.mode} •{" "}
-                          <span className="text-emerald-400 font-semibold">{g.status}</span>
+                          <span className="font-semibold" style={{ color: "#5b8cff" }}>{g.status}</span>
                         </div>
                         <div className="mt-1 text-xs text-slate-500 break-all">ID: {g.id}</div>
                       </div>
@@ -890,7 +895,7 @@ export default function HomePage() {
                         </div>
 
                         <div className="flex gap-2">
-                          <Link className="rounded-xl bg-emerald-500 px-4 py-2 text-sm font-extrabold text-slate-950 hover:bg-emerald-400" href={`/live/${g.id}`}>
+                          <Link className="rounded-xl px-4 py-2 text-sm font-extrabold text-white hover:brightness-110" style={{ background: "linear-gradient(180deg,#4d80ff,#3a71ff)" }} href={`/live/${g.id}`}>
                             Open
                           </Link>
 
