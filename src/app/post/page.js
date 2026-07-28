@@ -199,6 +199,21 @@ export default function PostGamesPage() {
     if (list.length) setNgTeam((prev) => (norm(prev) ? prev : list[0]));
   }
 
+  async function deleteDraft(id, label) {
+    if (!confirm(`Delete this draft?\n\n${label}\n\nThis cannot be undone.`)) return;
+    try {
+      // Remove child rows first, then the game.
+      await supabase.from("live_events").delete().eq("game_id", id);
+      await supabase.from("game_roster").delete().eq("game_id", id);
+      const { error } = await supabase.from("live_games").delete().eq("id", id);
+      if (error) { setErr(error.message); return; }
+      setMsg("🗑️ Draft deleted.");
+      await loadDrafts();
+    } catch (e) {
+      setErr(e?.message ?? String(e));
+    }
+  }
+
   async function loadDrafts() {
     const { data, error } = await supabase
       .from("live_games")
@@ -787,27 +802,32 @@ export default function PostGamesPage() {
                   g.matchup_type === "two_team" ? matchupLabel(g.team_b1, g.team_b2) : norm(g.team_b1);
 
                 return (
-                  <Link
+                  <div
                     key={g.id}
-                    href={`/post/${g.id}`}
-                    className="block rounded-2xl border border-white/10 bg-black/20 p-4 hover:bg-black/30"
+                    className="relative rounded-2xl border border-white/10 bg-black/20 p-4"
                   >
-                    <div className="flex items-center justify-between gap-3">
-                      <div className="text-xs text-white/60">{g.played_on ?? "—"}</div>
-                      
-                    </div>
-
-                    <div className="mt-1 text-xl font-black">
-                      {left} vs {right}
-                    </div>
-                    <div className="mt-1 text-sm text-white/70">
-                      {g.league_key} • {g.sport} • Level {g.level} • {g.mode} •{" "}
-                      <span className="text-yellow-300 font-bold">draft</span>
-                    </div>
-                    <div className="mt-2 text-2xl font-black tabular-nums">
-                      {Number(g.score_a || 0)} - {Number(g.score_b || 0)}
-                    </div>
-                  </Link>
+                    <Link href={`/post/${g.id}`} className="block hover:opacity-90">
+                      <div className="flex items-center justify-between gap-3 pr-20">
+                        <div className="text-xs text-white/60">{g.played_on ?? "—"}</div>
+                      </div>
+                      <div className="mt-1 text-xl font-black pr-20">
+                        {left} vs {right}
+                      </div>
+                      <div className="mt-1 text-sm text-white/70">
+                        {g.league_key} • {g.sport} • Level {g.level} • {g.mode} •{" "}
+                        <span className="text-yellow-300 font-bold">draft</span>
+                      </div>
+                      <div className="mt-2 text-2xl font-black tabular-nums">
+                        {Number(g.score_a || 0)} - {Number(g.score_b || 0)}
+                      </div>
+                    </Link>
+                    <button
+                      onClick={(e) => { e.preventDefault(); e.stopPropagation(); deleteDraft(g.id, `${left} vs ${right}`); }}
+                      className="absolute right-3 top-3 rounded-lg border border-red-500/40 bg-red-500/10 px-3 py-1.5 text-xs font-black text-red-200 hover:bg-red-500/20"
+                    >
+                      Delete
+                    </button>
+                  </div>
                 );
               })}
             </div>

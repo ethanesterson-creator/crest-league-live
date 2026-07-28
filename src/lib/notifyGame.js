@@ -1,9 +1,13 @@
 // Sends a push notification via ntfy.sh when a game is finalized, so the admin
 // gets a phone alert confirming the game exists (no scavenging for missing
-// post-games later). Uses the same ntfy setup as the sign-out app.
+// post-games later).
 //
-// Set your topic here — this is the ntfy topic you subscribe to on your phone.
-const NTFY_TOPIC = "crest-league-games"; // change to your actual topic
+// IMPORTANT: HTTP headers must be Latin-1 only. Emojis or accented characters
+// (like the é in "Derrick Rosé") in a header value make fetch throw, which is
+// why notifications silently failed before. We keep headers plain ASCII and
+// use ntfy's JSON body format instead, which is UTF-8 safe.
+
+const NTFY_TOPIC = "crest-league-games";
 
 export async function notifyGameFinalized(game, extra = {}) {
   try {
@@ -16,13 +20,19 @@ export async function notifyGameFinalized(game, extra = {}) {
     const sport = norm(game.sport);
     const level = norm(game.level);
 
-    const title = `✅ Game finalized: ${league} ${sport} ${level}`;
-    const body = `${sideA} vs ${sideB}  —  ${score}`;
+    // JSON body format — everything travels in the UTF-8 body, no header
+    // encoding problems. Emojis and accents (Derrick Rosé) are safe here.
+    const payload = {
+      topic: NTFY_TOPIC,
+      title: `Game finalized: ${league} ${sport} ${level}`.trim(),
+      message: `${sideA} vs ${sideB}\n${score}`,
+      tags: ["white_check_mark"],
+    };
 
-    await fetch(`https://ntfy.sh/${NTFY_TOPIC}`, {
+    await fetch("https://ntfy.sh", {
       method: "POST",
-      headers: { "Title": title, "Tags": "trophy", "Priority": "default" },
-      body,
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
     });
   } catch {
     // Never let a notification failure affect the finalize flow.
