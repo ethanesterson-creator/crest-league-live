@@ -5,7 +5,12 @@ import { supabase } from "@/lib/supabase";
 import { useAppMode } from "@/lib/useAppMode";
 import ColorWarBoard from "./ColorWarBoard";
 
-const SCENES = [
+// BANQUET MODE — set true for the last-night banquet board (gold + navy,
+// champions first, no CBSN blue). Set back to false to return to normal.
+const BANQUET = true;
+
+const SCENES_BANQUET = ["champions", "awards", "spotlight", "highlights"];
+const SCENES_NORMAL = [
   "camp",
   "spotlight",
   "averages",
@@ -16,8 +21,10 @@ const SCENES = [
   "leaders_sophomores",
   "highlights",
 ];
+const SCENES = BANQUET ? SCENES_BANQUET : SCENES_NORMAL;
 
 const SCENE_LABELS = {
+  champions: "League Champions",
   camp: "Camp Standings",
   spotlight: "Camper Spotlight",
   averages: "Per Game Leaders",
@@ -60,6 +67,7 @@ export default function DisplayPage() {
   const [scene, setScene] = useState("camp");
 
   const [campStandings, setCampStandings] = useState([]);
+  const [champions, setChampions] = useState({});
   const [liveGames, setLiveGames] = useState([]);
   const [finalGames, setFinalGames] = useState([]);
   const [leadersByLeague, setLeadersByLeague] = useState({ seniors: [], juniors: [], sophomores: [] });
@@ -118,6 +126,24 @@ export default function DisplayPage() {
   .sort((a, b) => b.league_points - a.league_points);
 
  setCampStandings(aggregated);
+
+    // ---- LEAGUE CHAMPIONS (per league winner for banquet) ----
+    const { data: leagueStandings } = await supabase
+      .from("standings")
+      .select("league_id, team_name, wins, losses, league_points")
+      .eq("sport", "overall")
+      .eq("season", "league")
+      .eq("session", session);
+    const champByLeague = {};
+    for (const row of leagueStandings || []) {
+      const lg = String(row.league_id || "").toLowerCase();
+      if (!lg) continue;
+      const pts = Number(row.league_points || 0);
+      if (!champByLeague[lg] || pts > champByLeague[lg].league_points) {
+        champByLeague[lg] = { team_name: row.team_name, league_points: pts, wins: row.wins, losses: row.losses };
+      }
+    }
+    setChampions(champByLeague);
     // live games
     const { data: live } = await supabase
       .from("live_games")
@@ -497,6 +523,58 @@ export default function DisplayPage() {
   }
 
   /* ===== DATA HELPERS ===== */
+  function renderChampions() {
+    const LEAGUES = [
+      { key: "seniors", label: "Senior League" },
+      { key: "juniors", label: "Junior League" },
+      { key: "sophomores", label: "Sophomore League" },
+    ];
+    return (
+      <div className="flex h-full flex-col overflow-hidden rounded-[32px] p-10"
+           style={{
+             border: "1px solid rgba(245,196,81,0.35)",
+             background: "linear-gradient(160deg, #0b1f3b 0%, #08172c 100%)",
+             boxShadow: "inset 0 0 120px rgba(245,196,81,0.08)",
+           }}>
+        <div className="mb-8 text-center">
+          <div className="text-sm font-black uppercase tracking-[0.5em]" style={{ color: "#f5c451" }}>
+            2026 Season
+          </div>
+          <div className="mt-2 text-7xl font-black text-white" style={{ fontFamily: "Georgia, serif" }}>
+            League Champions
+          </div>
+        </div>
+
+        <div className="grid flex-1 grid-cols-3 gap-8">
+          {LEAGUES.map(({ key, label }) => {
+            const champ = champions[key];
+            return (
+              <div key={key} className="flex flex-col items-center justify-center rounded-[28px] p-8 text-center"
+                   style={{
+                     border: "1px solid rgba(245,196,81,0.30)",
+                     background: "radial-gradient(120% 90% at 50% 0%, rgba(245,196,81,0.12), transparent 65%)",
+                   }}>
+                <div className="text-8xl" style={{ filter: "drop-shadow(0 6px 20px rgba(245,196,81,0.5))" }}>🏆</div>
+                <div className="mt-4 text-xl font-black uppercase tracking-[0.3em]" style={{ color: "#f5c451" }}>
+                  {label}
+                </div>
+                <div className="mt-3 text-5xl font-black text-white" style={{ fontFamily: "Georgia, serif" }}>
+                  {champ ? champ.team_name : "—"}
+                </div>
+                {champ ? (
+                  <div className="mt-4 rounded-full px-6 py-2 text-lg font-black"
+                       style={{ background: "linear-gradient(180deg,#ffe9a8,#f5c451)", color: "#3a2a05" }}>
+                    {champ.wins}-{champ.losses} · {champ.league_points} pts
+                  </div>
+                ) : null}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    );
+  }
+
   function renderAwards() {
     // Group top-3 by award, rotate which award is spotlighted using avgPage.
     const byAward = {};
@@ -835,7 +913,7 @@ export default function DisplayPage() {
     return (
       <div className="grid grid-cols-1 gap-8 h-full">
         <div className="overflow-hidden rounded-[40px] border border-white/10 bg-black">
-          <div className="border-b border-white/10 bg-gradient-to-r from-blue-700 to-blue-500 px-8 py-4 flex items-center justify-between">
+          <div className="border-b px-8 py-4 flex items-center justify-between" style={{ borderColor: "rgba(245,196,81,0.3)", background: "linear-gradient(90deg, #0b1f3b, #08172c)" }}>
             <div>
               <div className="text-sm font-black uppercase tracking-[0.3em] text-white/70">
                 FEATURED HIGHLIGHT
@@ -892,12 +970,12 @@ export default function DisplayPage() {
       {/* Top compact ESPN-style header */}
       <header className="relative z-10 flex h-[72px] items-center justify-between border-b border-white/10 bg-black/65 px-6 backdrop-blur-xl">
         <div className="flex items-center gap-5">
-          <div className="flex items-center gap-2 rounded-xl border border-blue-400/30 bg-black/40 px-4 py-2 shadow-[0_0_18px_rgba(58,113,255,0.35)]">
+          <div className="flex items-center gap-2 rounded-xl border px-4 py-2" style={{ borderColor: "rgba(245,196,81,0.4)", background: "rgba(0,0,0,0.4)", boxShadow: "0 0 18px rgba(245,196,81,0.3)" }}>
             <span
               className="text-2xl font-black italic tracking-tighter"
               style={{
-                color: "#bcd4ff",
-                textShadow: "0 0 6px #5b8cff, 0 0 14px #3a71ff, 0 0 22px rgba(58,113,255,0.6)",
+                color: "#f5c451",
+                textShadow: "0 0 6px #f5c451, 0 0 14px #f5c451, 0 0 22px rgba(245,196,81,0.6)",
               }}
             >
               CBSN
@@ -934,7 +1012,7 @@ export default function DisplayPage() {
 
           <button
             onClick={goFullscreen}
-            className="h-10 rounded-xl border border-blue-500/40 bg-blue-600 px-4 text-sm font-black text-white hover:bg-blue-500"
+            className="h-10 rounded-xl border px-4 text-sm font-black text-white hover:brightness-110" style={{ borderColor: "rgba(245,196,81,0.4)", background: "rgba(245,196,81,0.15)" }}
           >
             Fullscreen
           </button>
@@ -955,9 +1033,10 @@ export default function DisplayPage() {
               className={cx(
                 "h-10 rounded-xl px-4 text-sm font-black uppercase tracking-wide transition",
                 scene === s
-                  ? "bg-white text-black shadow-lg"
+                  ? "text-black shadow-lg"
                   : "border border-white/10 bg-white/5 text-white/70 hover:bg-white/10 hover:text-white"
               )}
+              style={scene === s ? { background: "linear-gradient(180deg,#ffe9a8,#f5c451)" } : {}}
             >
               {SCENE_LABELS[s]}
             </button>
@@ -1041,6 +1120,7 @@ export default function DisplayPage() {
           )}
 
           {scene === "averages" && renderAverages()}
+          {scene === "champions" && renderChampions()}
           {scene === "awards" && renderAwards()}
           {scene === "finals" && renderFinals()}
           {scene === "spotlight" && renderSpotlight()}
@@ -1069,11 +1149,11 @@ function Ticker({ items }) {
   const text = items && items.length ? items.join("     •     ") : "";
   if (!text) return null;
   return (
-    <footer className="absolute bottom-0 left-0 right-0 z-20 flex h-[52px] overflow-hidden border-t-2 border-blue-400/60 bg-[#0a1530] shadow-[0_-4px_20px_rgba(58,113,255,0.25)]">
+    <footer className="absolute bottom-0 left-0 right-0 z-20 flex h-[52px] overflow-hidden border-t-2" style={{ borderColor: "rgba(245,196,81,0.5)", background: "#08172c", boxShadow: "0 -4px 20px rgba(245,196,81,0.2)" }}>
       <div className="flex shrink-0 items-center bg-black px-5">
         <div
           className="text-sm font-black uppercase tracking-[0.25em]"
-          style={{ color: "#bcd4ff", textShadow: "0 0 8px #3a71ff" }}
+          style={{ color: "#f5c451", textShadow: "0 0 8px #f5c451" }}
         >
           CBSN Ticker
         </div>
