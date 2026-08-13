@@ -66,13 +66,19 @@ export default function AdminPage() {
   const [teamOptions, setTeamOptions] = useState([]); // ["red","blue"...]
   const [fromPlayers, setFromPlayers] = useState([]); // players on from team
 
-  const adminPw = process.env.NEXT_PUBLIC_ADMIN_PASSWORD || "";
+  // Fixed internal Supabase Auth account for the admin panel — see
+  // supabase/harden_admin_access.sql. There's no real inbox at this address;
+  // it exists only so Supabase Auth has a username to sign in with. The
+  // actual secret is the password on that account (set in the Supabase
+  // dashboard), never shipped to the client the way NEXT_PUBLIC_* vars are.
+  const ADMIN_AUTH_EMAIL = "admin@crest-league.internal";
 
+  // Restore an existing session on reload instead of forcing re-login.
   useEffect(() => {
-    if (!adminPw) {
-      setErr("Admin password is not set. Add NEXT_PUBLIC_ADMIN_PASSWORD to .env.local and redeploy.");
-    }
-  }, [adminPw]);
+    supabase.auth.getSession().then(({ data }) => {
+      if (data?.session) setAuthed(true);
+    });
+  }, []);
 
   function resetMessages() {
     setErr("");
@@ -616,16 +622,21 @@ export default function AdminPage() {
     }
   }
 
-  function login() {
+  async function login() {
     resetMessages();
+    if (!pw) return;
 
-    if (!adminPw) return;
-    if (pw === adminPw) {
+    const { error } = await supabase.auth.signInWithPassword({
+      email: ADMIN_AUTH_EMAIL,
+      password: pw,
+    });
+
+    if (error) {
+      setErr("Incorrect password.");
+    } else {
       setAuthed(true);
       setPw("");
       setMsg("✅ Admin unlocked.");
-    } else {
-      setErr("Incorrect password.");
     }
   }
 
