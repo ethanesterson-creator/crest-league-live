@@ -74,6 +74,20 @@ hand in the dashboard and aren't versioned anywhere. Worth fixing.
 | `highlights` | 0 | currently empty |
 | `app_settings` | 1 (id=1) | single-row global config: mode, session, CW team names/logos |
 
+## Auth model
+
+There is no Supabase Auth for regular use — `/live/[id]`, `/post`,
+`/post/[id]`, `/highlights`, and deleting an unfinalized game from `/` all
+write with no login, by design (counselors just use a link). Only `/admin`
+requires signing in, via `supabase.auth.signInWithPassword` against a fixed
+account (`admin@crest-league.internal` — see `src/app/admin/page.js`).
+`supabase/harden_admin_access.sql` restricts the admin-exclusive RPCs
+(`rebuild_leaderboards`, `admin_reset_season`, `admin_clear_snapshots`,
+`admin_delete_finalized_game`) and table writes (`players`, `player_totals`,
+`app_settings`, `standings`, `points_rules`, `leagues`, `games`) to that
+authenticated session. Everything else stays anon-writable on purpose —
+don't "fix" that without re-checking which pages depend on it staying open.
+
 ## Data safety
 
 This DB holds real data about real campers (minors) — names, teams, stats.
