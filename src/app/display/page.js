@@ -62,6 +62,87 @@ function fmtClock(d) {
   });
 }
 
+// Isolated so its 1x/second tick never re-renders the rest of the board —
+// same fix already proven on the live scoring page (see comment there about
+// eaten taps from a page re-rendering every 250ms).
+function LiveClock() {
+  const [now, setNow] = useState(Date.now());
+  useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, []);
+  return fmtClock(now);
+}
+
+// Same isolation as LiveClock: this used to re-render every second by
+// forcing the WHOLE board to re-render via top-level `now` state, even when
+// this scene wasn't visible. Now it only ticks (and only re-renders) itself,
+// and only while it's actually mounted (i.e. the highlights scene is showing).
+function HighlightsScene({ highlights }) {
+  const [, forceTick] = useState(0);
+  useEffect(() => {
+    const t = setInterval(() => forceTick((v) => v + 1), 1000);
+    return () => clearInterval(t);
+  }, []);
+
+  if (!highlights.length) return (
+    <div className="flex h-full items-center justify-center text-white/40 text-2xl font-black">
+      No highlights yet.
+    </div>
+  );
+
+  // Time-derived index: advances every 8s since page load, immune to
+  // re-renders, data refreshes, and remounts.
+  const safeIndex = Math.floor(Date.now() / 8000) % highlights.length;
+  const h = highlights[safeIndex];
+
+  const { data } = supabase.storage
+    .from("highlights")
+    .getPublicUrl(h.file_path);
+
+  const url = data?.publicUrl;
+
+  return (
+    <div className="grid grid-cols-1 gap-8 h-full">
+      <div className="overflow-hidden rounded-[40px] border border-white/10 bg-black">
+        <div className="border-b px-8 py-4 flex items-center justify-between" style={{ borderColor: "rgba(245,196,81,0.3)", background: "linear-gradient(90deg, #0b1f3b, #08172c)" }}>
+          <div>
+            <div className="text-sm font-black uppercase tracking-[0.3em] text-white/70">
+              FEATURED HIGHLIGHT
+            </div>
+            <div className="mt-1 text-4xl font-black text-white">
+              {h.title || "Camp Highlight"}
+            </div>
+          </div>
+          <div className="text-sm font-black text-white/50">
+            {safeIndex + 1} / {highlights.length}
+          </div>
+        </div>
+
+        <div className="h-[calc(100%-96px)] bg-black">
+          {h.file_type === "video" ? (
+            <video
+              key={h.id}
+              src={url}
+              autoPlay
+              muted
+              playsInline
+              className="h-full w-full object-contain"
+            />
+          ) : (
+            <img
+              key={h.id}
+              src={url}
+              alt=""
+              className="h-full w-full object-contain"
+            />
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function DisplayPage() {
   const { isCW, session, blueName, whiteName, blueLogo, whiteLogo, loading: modeLoading } = useAppMode();
   const [scene, setScene] = useState("camp");
@@ -78,9 +159,6 @@ export default function DisplayPage() {
   const [autoRotate, setAutoRotate] = useState(true);
   const [autoRefresh, setAutoRefresh] = useState(true);
 
-  const [now, setNow] = useState(Date.now());
-
-  
   const [avgLeaders, setAvgLeaders] = useState({ seniors: [], juniors: [], sophomores: [] });
   const [awards, setAwards] = useState([]);
   const [avgPage, setAvgPage] = useState(0);
@@ -88,54 +166,257 @@ export default function DisplayPage() {
 
   const wrapRef = useRef(null);
 
+  // leaders — fetch ALL THREE leagues independently. Each league's stat
+  // leaders is its own dedicated scene now, so all three need their own
+  // data on every load, not just whichever league happens to be selected.
+  async function fetchLeadersForLeague(lid, session) {
+    const { data: leaderPool } = await supabase
+      .from("player_totals")
+      .select("*")
+      .eq("league_id", lid)
+      .eq("season", "league")
+      .eq("session", session)
+      .order("value", { ascending: false })
+      .limit(500);
+
+    // Hide departed players (kept in DB, just not shown on the board).
+    let pool = leaderPool || [];
+    const ids = Array.from(new Set(pool.map((r) => String(r.player_id))));
+    if (ids.length) {
+      const { data: deps } = await supabase.from("players").select("id").in("id", ids).eq("departed", true);
+      const departedSet = new Set((deps || []).map((d) => String(d.id)));
+      if (departedSet.size) pool = pool.filter((r) => !departedSet.has(String(r.player_id)));
+    }
+
+    const bestPerCategory = new Map();
+    for (const row of pool) {
+      if (Number(row.value || 0) <= 0) continue; // never show a 0 as a "leader"
+      const key = `${String(row.sport || "").toLowerCase()}:${String(row.stat_key || "").toLowerCase()}`;
+      const existing = bestPerCategory.get(key);
+      if (!existing || Number(row.value || 0) > Number(existing.value || 0)) {
+        bestPerCategory.set(key, row);
+      }
+    }
+
+    return Array.from(bestPerCategory.values()).sort(
+      (a, b) => Number(b.value || 0) - Number(a.value || 0)
+    );
+  }
+
+  // camper spotlight — top 3 individual performances from last 12 hours.
+  // Isolated in its own try/catch (as before) so a spotlight-only failure
+  // can never take down the rest of the board.
+  async function loadSpotlight(session, cutoff) {
+    try {
+      const { data: recentGames } = await supabase
+        .from("live_games")
+        .select("id, sport, league_key")
+        .eq("status", "final")
+        .eq("season", "league")
+        .eq("session", session)
+        .gte("updated_at", cutoff);
+
+      const recentIds = (recentGames || []).map((g) => g.id);
+      if (recentIds.length === 0) return [];
+
+      const gameMap = {};
+      for (const g of recentGames || []) gameMap[g.id] = g;
+
+      const [{ data: evts }, { data: rosters }] = await Promise.all([
+        supabase
+          .from("live_events")
+          .select("game_id, player_id, stat_key, delta")
+          .eq("event_type", "stat")
+          .in("game_id", recentIds)
+          .limit(20000),
+        supabase
+          .from("game_roster")
+          .select("game_id, player_id, player_name, team_name")
+          .in("game_id", recentIds)
+          .limit(5000),
+      ]);
+
+      const rosterMap = {};
+      for (const r of rosters || []) {
+        rosterMap[`${r.game_id}::${r.player_id}`] = r;
+      }
+
+      // Aggregate stats per player per game
+      const perPlayerGame = {};
+      for (const e of evts || []) {
+        if (!e.stat_key) continue;
+        const k = `${e.game_id}::${e.player_id}`;
+        if (!perPlayerGame[k]) {
+          perPlayerGame[k] = { game_id: e.game_id, player_id: e.player_id, stats: {} };
+        }
+        perPlayerGame[k].stats[e.stat_key] = (perPlayerGame[k].stats[e.stat_key] || 0) + Number(e.delta || 0);
+      }
+
+      function eff(sport, stats) {
+        const s = String(sport || "").toLowerCase();
+        const v = (k) => Number(stats[k] || 0);
+        if (s === "hoop") return v("pts") - v("foul");
+        if (s === "softball") return v("h") + v("hr") * 2;
+        if (["euro", "soccer", "hockey", "speedball"].includes(s)) return v("g") * 2 + v("a");
+        if (s === "football") return v("td") * 6;
+        if (s === "volleyball") return v("ace") + v("kill");
+        return 0;
+      }
+
+      const allScored = Object.values(perPlayerGame)
+        .map((entry) => {
+          const g = gameMap[entry.game_id];
+          const r = rosterMap[`${entry.game_id}::${entry.player_id}`];
+          const score = eff(g?.sport, entry.stats);
+          if (score <= 0) return null;
+          return {
+            player_name: r?.player_name || entry.player_id,
+            team_name: r?.team_name || "",
+            sport: g?.sport || "",
+            game_id: entry.game_id,
+            stats: entry.stats,
+            score,
+          };
+        })
+        .filter(Boolean)
+        .sort((a, b) => b.score - a.score);
+
+      // Enforce variety: one player per game, one per sport
+      const usedGames = new Set();
+      const usedSports = new Set();
+      const scored = [];
+
+      for (const p of allScored) {
+        if (scored.length >= 3) break;
+        if (usedGames.has(p.game_id)) continue;
+        if (usedSports.has(String(p.sport).toLowerCase())) continue;
+        usedGames.add(p.game_id);
+        usedSports.add(String(p.sport).toLowerCase());
+        scored.push(p);
+      }
+
+      // Fallback: relax sport constraint if we don't have 3 yet
+      if (scored.length < 3) {
+        for (const p of allScored) {
+          if (scored.length >= 3) break;
+          if (usedGames.has(p.game_id)) continue;
+          if (scored.find((s) => s.player_name === p.player_name)) continue;
+          usedGames.add(p.game_id);
+          scored.push(p);
+        }
+      }
+
+      return scored;
+    } catch {
+      return [];
+    }
+  }
+
   async function loadAll() {
-   // camp standings — aggregate points across all leagues per team, INCLUDING non-game points
-   const { data: allStandings } = await supabase
-  .from("standings")
-  .select("team_name, league_points")
-  .eq("sport", "overall")
-  .eq("season", "league")
-  .eq("session", session);
+    const cutoff = new Date(Date.now() - 12 * 60 * 60 * 1000).toISOString();
 
- // Sum league_points per team_name across all leagues
- const totalsMap = {};
- (allStandings || []).forEach((row) => {
-  const name = String(row.team_name || "").trim().toLowerCase();
-  if (!name) return;
-  totalsMap[name] = (totalsMap[name] || 0) + Number(row.league_points || 0);
- });
+    // ---- Round 1: every query below is independent of every other one —
+    // none of them need another query's result to run — so they all fire
+    // together instead of one-after-another. This is the single biggest
+    // lever on load time: this used to be ~15 sequential round trips to
+    // Supabase on every 15s poll, which is what made the board (and the
+    // rest of the app, same pattern) feel slow all season. ----
+    const [
+      standingsRes,
+      ngStandingsRes,
+      liveRes,
+      finalsRes,
+      seniorsLeaders,
+      juniorsLeaders,
+      sophomoresLeaders,
+      avgTotalsRes,
+      avgGamesRes,
+      awardsRes,
+      spotlightScored,
+      highlightsRes,
+    ] = await Promise.all([
+      // Same "standings" rows drive both camp-wide totals AND per-league
+      // champions below — used to be fetched twice, now just once.
+      supabase
+        .from("standings")
+        .select("league_id, team_name, wins, losses, league_points")
+        .eq("sport", "overall")
+        .eq("season", "league")
+        .eq("session", session),
+      supabase
+        .from("non_game_points")
+        .select("team_name, points")
+        .eq("deleted", false)
+        .eq("status", "final")
+        .eq("season", "league")
+        .eq("session", session)
+        .limit(5000),
+      supabase
+        .from("live_games")
+        .select("*")
+        .eq("status", "active")
+        .eq("season", "league")
+        .eq("session", session)
+        .is("played_on", null)
+        .order("updated_at", { ascending: false }),
+      supabase
+        .from("live_games")
+        .select("*")
+        .eq("status", "final")
+        .eq("season", "league")
+        .eq("session", session)
+        .order("updated_at", { ascending: false })
+        .limit(12),
+      fetchLeadersForLeague("seniors", session),
+      fetchLeadersForLeague("juniors", session),
+      fetchLeadersForLeague("sophomores", session),
+      supabase
+        .from("player_totals")
+        .select("league_id, sport, player_id, player_name, team_name, stat_key, value")
+        .eq("season", "league")
+        .eq("session", session)
+        .limit(20000),
+      supabase
+        .from("live_games")
+        .select("id, sport")
+        .eq("status", "final")
+        .eq("season", "league")
+        .eq("session", session)
+        .limit(5000),
+      supabase.rpc("get_awards", { p_session: session }),
+      loadSpotlight(session, cutoff),
+      supabase
+        .from("highlights")
+        .select("*")
+        .eq("show_on_board", true)
+        .order("created_at", { ascending: false }),
+    ]);
 
- // Add non-game points on top, same as the public Standings "Overall" tab
- const { data: ngStandingsData } = await supabase
-  .from("non_game_points")
-  .select("team_name, points")
-  .eq("deleted", false)
-  .eq("status", "final")
-  .eq("season", "league")
-  .eq("session", session)
-  .limit(5000);
+    // camp standings — aggregate points across all leagues per team, INCLUDING non-game points
+    const standingsRows = standingsRes.data || [];
+    const totalsMap = {};
+    standingsRows.forEach((row) => {
+      const name = String(row.team_name || "").trim().toLowerCase();
+      if (!name) return;
+      totalsMap[name] = (totalsMap[name] || 0) + Number(row.league_points || 0);
+    });
 
- (ngStandingsData || []).forEach((row) => {
-  const name = String(row.team_name || "").trim().toLowerCase();
-  if (!name) return;
-  totalsMap[name] = (totalsMap[name] || 0) + Number(row.points || 0);
- });
+    // Add non-game points on top, same as the public Standings "Overall" tab
+    (ngStandingsRes.data || []).forEach((row) => {
+      const name = String(row.team_name || "").trim().toLowerCase();
+      if (!name) return;
+      totalsMap[name] = (totalsMap[name] || 0) + Number(row.points || 0);
+    });
 
- const aggregated = Object.entries(totalsMap)
-  .map(([team_name, league_points]) => ({ team_name, league_points }))
-  .sort((a, b) => b.league_points - a.league_points);
+    const aggregated = Object.entries(totalsMap)
+      .map(([team_name, league_points]) => ({ team_name, league_points }))
+      .sort((a, b) => b.league_points - a.league_points);
 
- setCampStandings(aggregated);
+    setCampStandings(aggregated);
 
     // ---- LEAGUE CHAMPIONS (per league winner for banquet) ----
-    const { data: leagueStandings } = await supabase
-      .from("standings")
-      .select("league_id, team_name, wins, losses, league_points")
-      .eq("sport", "overall")
-      .eq("season", "league")
-      .eq("session", session);
     const champByLeague = {};
-    for (const row of leagueStandings || []) {
+    for (const row of standingsRows) {
       const lg = String(row.league_id || "").toLowerCase();
       if (!lg) continue;
       const pts = Number(row.league_points || 0);
@@ -144,72 +425,9 @@ export default function DisplayPage() {
       }
     }
     setChampions(champByLeague);
-    // live games
-    const { data: live } = await supabase
-      .from("live_games")
-      .select("*")
-      .eq("status", "active")
-      .eq("season", "league")
-      .eq("session", session)
-      .is("played_on", null)
-      .order("updated_at", { ascending: false });
 
-    setLiveGames(live || []);
-
-    // finals
-    const { data: finals } = await supabase
-      .from("live_games")
-      .select("*")
-      .eq("status", "final")
-      .eq("season", "league")
-      .eq("session", session)
-      .order("updated_at", { ascending: false })
-      .limit(12);
-
-    setFinalGames(finals || []);
-
-    // leaders — fetch ALL THREE leagues independently. Each league's stat
-    // leaders is its own dedicated scene now, so all three need their own
-    // data on every load, not just whichever league happens to be selected.
-    async function fetchLeadersForLeague(lid) {
-      const { data: leaderPool } = await supabase
-        .from("player_totals")
-        .select("*")
-        .eq("league_id", lid)
-        .eq("season", "league")
-        .eq("session", session)
-        .order("value", { ascending: false })
-        .limit(500);
-
-      // Hide departed players (kept in DB, just not shown on the board).
-      let pool = leaderPool || [];
-      const ids = Array.from(new Set(pool.map((r) => String(r.player_id))));
-      if (ids.length) {
-        const { data: deps } = await supabase.from("players").select("id").in("id", ids).eq("departed", true);
-        const departedSet = new Set((deps || []).map((d) => String(d.id)));
-        if (departedSet.size) pool = pool.filter((r) => !departedSet.has(String(r.player_id)));
-      }
-
-      const bestPerCategory = new Map();
-      for (const row of pool) {
-        if (Number(row.value || 0) <= 0) continue; // never show a 0 as a "leader"
-        const key = `${String(row.sport || "").toLowerCase()}:${String(row.stat_key || "").toLowerCase()}`;
-        const existing = bestPerCategory.get(key);
-        if (!existing || Number(row.value || 0) > Number(existing.value || 0)) {
-          bestPerCategory.set(key, row);
-        }
-      }
-
-      return Array.from(bestPerCategory.values()).sort(
-        (a, b) => Number(b.value || 0) - Number(a.value || 0)
-      );
-    }
-
-    const [seniorsLeaders, juniorsLeaders, sophomoresLeaders] = await Promise.all([
-      fetchLeadersForLeague("seniors"),
-      fetchLeadersForLeague("juniors"),
-      fetchLeadersForLeague("sophomores"),
-    ]);
+    setLiveGames(liveRes.data || []);
+    setFinalGames(finalsRes.data || []);
 
     setLeadersByLeague({
       seniors: seniorsLeaders,
@@ -223,56 +441,42 @@ export default function DisplayPage() {
     // kid with 10 goals across 5 games shows 2.0, not 10.0.
     const MIN_GAMES = 2; // raise this to require more games to qualify
 
-    // stat totals for the current session
-    const { data: avgTotals } = await supabase
-      .from("player_totals")
-      .select("league_id, sport, player_id, player_name, team_name, stat_key, value")
-      .eq("season", "league")
-      .eq("session", session)
-      .limit(20000);
-
-    // finalized games, so we know each game's sport
-    const { data: avgGames } = await supabase
-      .from("live_games")
-      .select("id, sport")
-      .eq("status", "final")
-      .eq("season", "league")
-      .eq("session", session)
-      .limit(5000);
+    const avgTotals = avgTotalsRes.data || [];
+    const avgGames = avgGamesRes.data || [];
 
     const sportByGame = {};
-    for (const g of avgGames || []) sportByGame[g.id] = String(g.sport || "").toLowerCase();
+    for (const g of avgGames) sportByGame[g.id] = String(g.sport || "").toLowerCase();
+    const gameIds = Object.keys(sportByGame);
+    const avgIds = Array.from(new Set(avgTotals.map((t) => String(t.player_id))));
+
+    // ---- Round 2: these two depend on round 1's results (the game ids /
+    // player ids above), so they can't start until round 1 resolves — but
+    // they don't depend on EACH OTHER, so they still run together. ----
+    const [rosterRes, departedRes] = await Promise.all([
+      gameIds.length
+        ? supabase.from("game_roster").select("game_id, player_id").in("game_id", gameIds).limit(50000)
+        : Promise.resolve({ data: [] }),
+      avgIds.length
+        ? supabase.from("players").select("id").in("id", avgIds).eq("departed", true)
+        : Promise.resolve({ data: [] }),
+    ]);
 
     // rosters -> games played per player per sport
-    const gameIds = Object.keys(sportByGame);
-    let played = {};
-    if (gameIds.length) {
-      const { data: avgRoster } = await supabase
-        .from("game_roster")
-        .select("game_id, player_id")
-        .in("game_id", gameIds)
-        .limit(50000);
-      for (const row of avgRoster || []) {
-        const sp = sportByGame[row.game_id];
-        if (!sp) continue;
-        const pid = String(row.player_id);
-        played[pid] = played[pid] || {};
-        played[pid][sp] = (played[pid][sp] || 0) + 1;
-      }
+    const played = {};
+    for (const row of rosterRes.data || []) {
+      const sp = sportByGame[row.game_id];
+      if (!sp) continue;
+      const pid = String(row.player_id);
+      played[pid] = played[pid] || {};
+      played[pid][sp] = (played[pid][sp] || 0) + 1;
     }
 
     // departed players never appear on the board
-    const avgIds = Array.from(new Set((avgTotals || []).map((t) => String(t.player_id))));
-    let avgDeparted = new Set();
-    if (avgIds.length) {
-      const { data: deps } = await supabase
-        .from("players").select("id").in("id", avgIds).eq("departed", true);
-      avgDeparted = new Set((deps || []).map((d) => String(d.id)));
-    }
+    const avgDeparted = new Set((departedRes.data || []).map((d) => String(d.id)));
 
     // best average per sport + stat
     const bestAvg = new Map();
-    for (const t of avgTotals || []) {
+    for (const t of avgTotals) {
       const pid = String(t.player_id);
       if (avgDeparted.has(pid)) continue;
       const value = Number(t.value || 0);
@@ -313,138 +517,15 @@ export default function DisplayPage() {
     setAvgLeaders(byLeague);
 
     // ---- AWARDS (top 3 per award) ----
-    const { data: awardRows } = await supabase.rpc("get_awards", { p_session: session });
-    setAwards(awardRows || []);
+    setAwards(awardsRes.data || []);
 
-    // camper spotlight — top 3 individual performances from last 12 hours
-    try {
-      const cutoff = new Date(Date.now() - 12 * 60 * 60 * 1000).toISOString();
+    setSpotlight(spotlightScored);
 
-      const { data: recentGames } = await supabase
-        .from("live_games")
-        .select("id, sport, league_key")
-        .eq("status", "final")
-        .eq("season", "league")
-        .eq("session", session)
-        .gte("updated_at", cutoff);
-
-      const recentIds = (recentGames || []).map((g) => g.id);
-
-      if (recentIds.length === 0) {
-        setSpotlight([]);
-      } else {
-        const gameMap = {};
-        for (const g of recentGames || []) gameMap[g.id] = g;
-
-        const { data: evts } = await supabase
-          .from("live_events")
-          .select("game_id, player_id, stat_key, delta")
-          .eq("event_type", "stat")
-          .in("game_id", recentIds)
-          .limit(20000);
-
-        const { data: rosters } = await supabase
-          .from("game_roster")
-          .select("game_id, player_id, player_name, team_name")
-          .in("game_id", recentIds)
-          .limit(5000);
-
-        const rosterMap = {};
-        for (const r of rosters || []) {
-          rosterMap[`${r.game_id}::${r.player_id}`] = r;
-        }
-
-        // Aggregate stats per player per game
-        const perPlayerGame = {};
-        for (const e of evts || []) {
-          if (!e.stat_key) continue;
-          const k = `${e.game_id}::${e.player_id}`;
-          if (!perPlayerGame[k]) {
-            perPlayerGame[k] = { game_id: e.game_id, player_id: e.player_id, stats: {} };
-          }
-          perPlayerGame[k].stats[e.stat_key] = (perPlayerGame[k].stats[e.stat_key] || 0) + Number(e.delta || 0);
-        }
-
-        function eff(sport, stats) {
-          const s = String(sport || "").toLowerCase();
-          const v = (k) => Number(stats[k] || 0);
-          if (s === "hoop") return v("pts") - v("foul");
-          if (s === "softball") return v("h") + v("hr") * 2;
-          if (["euro", "soccer", "hockey", "speedball"].includes(s)) return v("g") * 2 + v("a");
-          if (s === "football") return v("td") * 6;
-          if (s === "volleyball") return v("ace") + v("kill");
-          return 0;
-        }
-
-        const allScored = Object.values(perPlayerGame)
-          .map((entry) => {
-            const g = gameMap[entry.game_id];
-            const r = rosterMap[`${entry.game_id}::${entry.player_id}`];
-            const score = eff(g?.sport, entry.stats);
-            if (score <= 0) return null;
-            return {
-              player_name: r?.player_name || entry.player_id,
-              team_name: r?.team_name || "",
-              sport: g?.sport || "",
-              game_id: entry.game_id,
-              stats: entry.stats,
-              score,
-            };
-          })
-          .filter(Boolean)
-          .sort((a, b) => b.score - a.score);
-
-        // Enforce variety: one player per game, one per sport
-        const usedGames = new Set();
-        const usedSports = new Set();
-        const scored = [];
-
-        for (const p of allScored) {
-          if (scored.length >= 3) break;
-          if (usedGames.has(p.game_id)) continue;
-          if (usedSports.has(String(p.sport).toLowerCase())) continue;
-          usedGames.add(p.game_id);
-          usedSports.add(String(p.sport).toLowerCase());
-          scored.push(p);
-        }
-
-        // Fallback: relax sport constraint if we don't have 3 yet
-        if (scored.length < 3) {
-          for (const p of allScored) {
-            if (scored.length >= 3) break;
-            if (usedGames.has(p.game_id)) continue;
-            if (scored.find((s) => s.player_name === p.player_name)) continue;
-            usedGames.add(p.game_id);
-            scored.push(p);
-          }
-        }
-
-        setSpotlight(scored);
-      }
-    } catch {
-      setSpotlight([]);
-    }
-
-    // highlights
-    const { data: h } = await supabase
-      .from("highlights")
-      .select("*")
-      .eq("show_on_board", true)
-      .order("created_at", { ascending: false });
-
-    setHighlights(h || []);
+    setHighlights(highlightsRes.data || []);
   }
 
   useEffect(() => {
     loadAll();
-  }, []);
-
-  useEffect(() => {
-    const t = setInterval(() => {
-      setNow(Date.now());
-    }, 1000);
-
-    return () => clearInterval(t);
   }, []);
 
   useEffect(() => {
@@ -891,66 +972,6 @@ export default function DisplayPage() {
     );
   }
 
- function renderHighlights() {
-    if (!highlights.length) return (
-      <div className="flex h-full items-center justify-center text-white/40 text-2xl font-black">
-        No highlights yet.
-      </div>
-    );
-
-    // Time-derived index: advances every 8s since page load, immune to
-    // re-renders, data refreshes, and remounts. `now` already ticks every
-    // second in this component, keeping this fresh.
-    const safeIndex = Math.floor(Date.now() / 8000) % highlights.length;
-    const h = highlights[safeIndex];
-
-    const { data } = supabase.storage
-      .from("highlights")
-      .getPublicUrl(h.file_path);
-
-    const url = data?.publicUrl;
-
-    return (
-      <div className="grid grid-cols-1 gap-8 h-full">
-        <div className="overflow-hidden rounded-[40px] border border-white/10 bg-black">
-          <div className="border-b px-8 py-4 flex items-center justify-between" style={{ borderColor: "rgba(245,196,81,0.3)", background: "linear-gradient(90deg, #0b1f3b, #08172c)" }}>
-            <div>
-              <div className="text-sm font-black uppercase tracking-[0.3em] text-white/70">
-                FEATURED HIGHLIGHT
-              </div>
-              <div className="mt-1 text-4xl font-black text-white">
-                {h.title || "Camp Highlight"}
-              </div>
-            </div>
-            <div className="text-sm font-black text-white/50">
-              {safeIndex + 1} / {highlights.length}
-            </div>
-          </div>
-
-          <div className="h-[calc(100%-96px)] bg-black">
-            {h.file_type === "video" ? (
-              <video
-                key={h.id}
-                src={url}
-                autoPlay
-                muted
-                playsInline
-                className="h-full w-full object-contain"
-              />
-            ) : (
-              <img
-                key={h.id}
-                src={url}
-                alt=""
-                className="h-full w-full object-contain"
-              />
-            )}
-          </div>
-        </div>
-      </div>
-    );
-  }
-
   /* ===== MAIN RETURN ===== */
     if (isCW) {
       return <ColorWarBoard session={session} blueName={blueName} whiteName={whiteName} blueLogo={blueLogo} whiteLogo={whiteLogo} />;
@@ -1018,7 +1039,7 @@ export default function DisplayPage() {
           </button>
 
           <div className="hidden h-10 items-center rounded-xl border border-white/15 bg-white/10 px-4 text-sm font-black tabular-nums text-white/80 lg:flex">
-            {fmtClock(now)}
+            <LiveClock />
           </div>
         </div>
       </header>
@@ -1127,7 +1148,7 @@ export default function DisplayPage() {
           {scene === "leaders_seniors" && renderLeaders("seniors")}
           {scene === "leaders_juniors" && renderLeaders("juniors")}
           {scene === "leaders_sophomores" && renderLeaders("sophomores")}
-          {scene === "highlights" && renderHighlights()}
+          {scene === "highlights" && <HighlightsScene highlights={highlights} />}
         </div>
       </section>
 
