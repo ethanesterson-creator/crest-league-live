@@ -1,0 +1,31 @@
+name: Build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - run: npm ci
+
+      # Real secrets are never available to CI (and shouldn't be, for a PR
+      # from an unreviewed branch) -- NEXT_PUBLIC_ vars only need to be
+      # present and URL/JWT-shaped for the build to succeed, since Next.js
+      # inlines them at build time. This proves the code compiles, not that
+      # it behaves correctly against real data.
+      - name: Build
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: https://placeholder.supabase.co
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.placeholder.placeholder
+        run: npm run build
