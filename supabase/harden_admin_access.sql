@@ -32,8 +32,11 @@
 -- HOW TO RUN THIS:
 --   1. Supabase dashboard → Authentication → Users → Add user.
 --      Email:    admin@crest-league.internal
---      Password: pick one (Hyaffa26 works fine if you want zero UX change,
---                 or pick something new — up to you).
+--      Password: pick a new one. (Do not reuse the old NEXT_PUBLIC_ADMIN_PASSWORD
+--                 value from before this fix — it was shipped in the public JS
+--                 bundle for as long as this app was deployed with it, so treat
+--                 it as burned, not a real secret, even after this file stops
+--                 referencing it.)
 --      Auto-confirm the user (no real inbox exists at that address).
 --   2. Supabase dashboard → SQL Editor → paste STEP 1 below, run it, and
 --      read the output. It lists every existing policy on the tables this

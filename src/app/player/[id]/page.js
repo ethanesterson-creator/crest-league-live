@@ -35,7 +35,16 @@ export default function PlayerProfilePage() {
         // These four only need `id`, not each other's result, so they run
         // together instead of one-after-another.
         const [{ data: p }, { data: t }, { data: rosters }, { data: evts }] = await Promise.all([
-          supabase.from("players").select("*").eq("id", id).maybeSingle(),
+          // This page has no login -- anyone with the link gets this
+          // response. Only fetch the fields actually rendered below, not
+          // every players column (previously select("*"), which also
+          // shipped `role` and `departed` to fully anonymous requests for
+          // no reason).
+          supabase
+            .from("players")
+            .select("id, first_name, last_name, league_id, team_name, s1_team, active_session, bunk")
+            .eq("id", id)
+            .maybeSingle(),
           // All stat totals across sessions
           supabase
             .from("player_totals")
