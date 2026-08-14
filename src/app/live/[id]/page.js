@@ -540,13 +540,17 @@ export default function LiveGamePage() {
 
   useEffect(() => {
     if (!game?.id) return;
+    // None of these three depends on another's result -- all they need is
+    // already on `game` -- so they run together instead of one-after-
+    // another. This gated how soon a counselor could start scoring.
     (async () => {
-      await ensureRoster(game);
-      await loadEventTotals(game);
-      try {
-        const teamNames = uniqNonEmpty([game.team_a1 || game.team_a, game.team_b1 || game.team_b]);
-        setCaptainIds(await fetchCaptainIds({ leagueId: norm(game.league_key), teamNames }));
-      } catch {}
+      const teamNames = uniqNonEmpty([game.team_a1 || game.team_a, game.team_b1 || game.team_b]);
+      const [, , caps] = await Promise.all([
+        ensureRoster(game),
+        loadEventTotals(game),
+        fetchCaptainIds({ leagueId: norm(game.league_key), teamNames }).catch(() => new Set()),
+      ]);
+      setCaptainIds(caps);
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [game?.id]);
