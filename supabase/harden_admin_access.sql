@@ -74,16 +74,32 @@ where routine_schema = 'public'
 -- note above. Live scoring is untouched.
 -- ============================================================================
 
--- ---- RPCs that only admin/page.js ever calls. ----
-revoke execute on function public.rebuild_leaderboards        from anon, public;
-revoke execute on function public.admin_clear_snapshots       from anon, public;
-revoke execute on function public.admin_reset_season           from anon, public;
-revoke execute on function public.admin_delete_finalized_game from anon, public;
-
-grant execute on function public.rebuild_leaderboards        to authenticated;
-grant execute on function public.admin_clear_snapshots       to authenticated;
-grant execute on function public.admin_reset_season           to authenticated;
-grant execute on function public.admin_delete_finalized_game to authenticated;
+-- ---- RPCs that only admin/page.js ever calls. Some of these (e.g.
+-- rebuild_leaderboards) have more than one overload with different
+-- argument lists -- the bare function name is ambiguous to REVOKE/GRANT,
+-- so this loops over every actual overload by OID instead of guessing
+-- signatures by hand. ----
+do $$
+declare
+  r record;
+  fn_names text[] := array[
+    'rebuild_leaderboards', 'admin_clear_snapshots',
+    'admin_reset_season', 'admin_delete_finalized_game'
+  ];
+  fn text;
+begin
+  foreach fn in array fn_names loop
+    for r in
+      select p.oid::regprocedure as sig
+      from pg_proc p
+      join pg_namespace n on n.oid = p.pronamespace
+      where n.nspname = 'public' and p.proname = fn
+    loop
+      execute format('revoke execute on function %s from anon, public;', r.sig);
+      execute format('grant execute on function %s to authenticated;', r.sig);
+    end loop;
+  end loop;
+end $$;
 
 -- ---- Tables that only admin/page.js writes to (or that nothing in the app
 -- writes to at all). Reads stay open to anon — public pages need those.
