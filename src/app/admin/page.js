@@ -122,26 +122,26 @@ export default function AdminPage() {
     setAdminStandingsLoading(true);
     try {
       const curSession = cwSettings?.current_session || "s2";
-      const { data, error } = await supabase
-        .from("standings")
-        .select("league_id, sport, team_name, wins, losses, league_points, updated_at")
-        .eq("sport", "overall")
-        .eq("league_id", lid)
-        .eq("season", "league")
-        .eq("session", curSession);
+      const [{ data, error }, { data: ngData, error: ngErr }] = await Promise.all([
+        supabase
+          .from("standings")
+          .select("league_id, sport, team_name, wins, losses, league_points, updated_at")
+          .eq("sport", "overall")
+          .eq("league_id", lid)
+          .eq("season", "league")
+          .eq("session", curSession),
+        supabase
+          .from("non_game_points")
+          .select("team_name, points")
+          .eq("league_id", lid)
+          .eq("season", "league")
+          .eq("session", curSession)
+          .eq("deleted", false)
+          .eq("status", "final")
+          .limit(5000),
+      ]);
 
       if (error) throw error;
-
-      const { data: ngData, error: ngErr } = await supabase
-        .from("non_game_points")
-        .select("team_name, points")
-        .eq("league_id", lid)
-        .eq("season", "league")
-        .eq("session", cwSettings?.current_session || "s2")
-        .eq("deleted", false)
-        .eq("status", "final")
-        .limit(5000);
-
       if (ngErr) throw ngErr;
 
       const ngMap = new Map();
@@ -339,7 +339,7 @@ export default function AdminPage() {
 
       // Keep stat leaderboards in sync — without this, traded players show
       // their old team on the Leaders pages until manually fixed in SQL.
-      await supabase
+      const { error: totalsErr } = await supabase
         .from("player_totals")
         .update({ team_name: tradeToTeam })
         .eq("player_id", String(player.id))
@@ -348,11 +348,25 @@ export default function AdminPage() {
       // Also retag their historical stat events. If old events keep the old
       // team name, rebuild_leaderboards hits a duplicate-key collision and
       // every rebuild fails until it's fixed manually in SQL.
-      await supabase
+      const { error: eventsErr } = await supabase
         .from("live_events")
         .update({ team_name: tradeToTeam })
         .eq("player_id", String(player.id))
         .eq("team_name", tradeFromTeam);
+
+      if (totalsErr || eventsErr) {
+        // players.team_name already changed at this point — there's no
+        // transaction tying these three writes together, so a failure here
+        // means a real partial trade, not a clean rollback. Say so plainly
+        // instead of a false "✅ Traded" — this needs manual SQL cleanup,
+        // exactly like the comments above warn about.
+        setErr(
+          `⚠️ Partial trade: ${fullName}'s team changed to ${tradeToTeam}, but ` +
+          `${[totalsErr && "player_totals", eventsErr && "live_events"].filter(Boolean).join(" and ")} ` +
+          `did NOT update (${(totalsErr || eventsErr)?.message}). Fix this in SQL before the next leaderboard rebuild, or it will fail.`
+        );
+        return;
+      }
 
       setMsg(`✅ Traded ${fullName}: ${tradeFromTeam} → ${tradeToTeam} (${updated.league_id}).`);
       setConfirmText("");
@@ -674,25 +688,38 @@ export default function AdminPage() {
   async function loadArchive(lid) {
     setArchiveLoading(true);
     try {
-      // Frozen Session 1 standings for this league (season league, session s1).
-      const { data: st } = await supabase
-        .from("standings")
-        .select("league_id, team_name, wins, losses, league_points")
-        .eq("sport", "overall")
-        .eq("season", "league")
-        .eq("session", "s1")
-        .eq("league_id", lid);
+      // These three queries are independent of each other, so they run
+      // together instead of one-after-another.
+      const [{ data: st }, { data: ng }, { data: lead }] = await Promise.all([
+        // Frozen Session 1 standings for this league (season league, session s1).
+        supabase
+          .from("standings")
+          .select("league_id, team_name, wins, losses, league_points")
+          .eq("sport", "overall")
+          .eq("season", "league")
+          .eq("session", "s1")
+          .eq("league_id", lid),
+        // Add S1 non-game points on top.
+        supabase
+          .from("non_game_points")
+          .select("team_name, points")
+          .eq("season", "league")
+          .eq("session", "s1")
+          .eq("league_id", lid)
+          .eq("deleted", false)
+          .eq("status", "final")
+          .limit(5000),
+        // Frozen S1 stat leaders (top values across sports) for this league.
+        supabase
+          .from("player_totals")
+          .select("player_name, team_name, sport, stat_key, value")
+          .eq("season", "league")
+          .eq("session", "s1")
+          .eq("league_id", lid)
+          .order("value", { ascending: false })
+          .limit(40),
+      ]);
 
-      // Add S1 non-game points on top.
-      const { data: ng } = await supabase
-        .from("non_game_points")
-        .select("team_name, points")
-        .eq("season", "league")
-        .eq("session", "s1")
-        .eq("league_id", lid)
-        .eq("deleted", false)
-        .eq("status", "final")
-        .limit(5000);
       const ngMap = {};
       for (const r of ng || []) {
         const k = String(r.team_name || "").toLowerCase();
@@ -703,16 +730,6 @@ export default function AdminPage() {
         total: Number(r.league_points || 0) + (ngMap[String(r.team_name || "").toLowerCase()] || 0),
       })).sort((a, b) => b.total - a.total || Number(b.wins||0) - Number(a.wins||0));
       setArchiveStandings(merged);
-
-      // Frozen S1 stat leaders (top values across sports) for this league.
-      const { data: lead } = await supabase
-        .from("player_totals")
-        .select("player_name, team_name, sport, stat_key, value")
-        .eq("season", "league")
-        .eq("session", "s1")
-        .eq("league_id", lid)
-        .order("value", { ascending: false })
-        .limit(40);
       setArchiveLeaders((lead || []).filter((r) => Number(r.value) > 0).slice(0, 20));
     } catch (e) {
       setErr(e?.message ?? String(e));
@@ -803,40 +820,49 @@ export default function AdminPage() {
   async function exportPlayerCards() {
     setErr(""); setMsg("Building player card data…"); setExportingCards(true);
     try {
-      // 1) Every player who ever came (any session). Include departed — cards
-      //    are for everyone who attended.
-      const { data: players } = await supabase
-        .from("players")
-        .select("id, first_name, last_name, league_id, team_name, s1_team, bunk, active_session, departed")
-        .order("id", { ascending: true });
+      // These five are all independent full-table pulls — none depends on
+      // another's result — so they run together instead of one-after-another.
+      const [
+        { data: players },
+        { data: totals },
+        { data: rosters },
+        { data: games },
+        { data: events },
+      ] = await Promise.all([
+        // 1) Every player who ever came (any session). Include departed —
+        //    cards are for everyone who attended.
+        supabase
+          .from("players")
+          .select("id, first_name, last_name, league_id, team_name, s1_team, bunk, active_session, departed")
+          .order("id", { ascending: true }),
+        // 2) All stat totals across both sessions.
+        supabase
+          .from("player_totals")
+          .select("player_id, session, sport, stat_key, value")
+          .limit(20000),
+        // 3) Win records: count finalized games each player's team won, per
+        //    session. We compute from standings-independent game log via
+        //    game_roster.
+        supabase
+          .from("game_roster")
+          .select("game_id, player_id, team_side")
+          .limit(50000),
+        supabase
+          .from("live_games")
+          .select("id, score_a, score_b, session, status")
+          .eq("status", "final")
+          .limit(5000),
+        // 4) Best single games: per player, the game where they logged the
+        //    most of a single stat (e.g. 5 goals in one game).
+        supabase
+          .from("live_events")
+          .select("game_id, player_id, sport, stat_key, delta")
+          .eq("event_type", "stat")
+          .limit(100000),
+      ]);
 
-      // 2) All stat totals across both sessions.
-      const { data: totals } = await supabase
-        .from("player_totals")
-        .select("player_id, session, sport, stat_key, value")
-        .limit(20000);
-
-      // 3) Win records: count finalized games each player's team won, per session.
-      //    We compute from standings-independent game log via game_roster.
-      const { data: rosters } = await supabase
-        .from("game_roster")
-        .select("game_id, player_id, team_side")
-        .limit(50000);
-      const { data: games } = await supabase
-        .from("live_games")
-        .select("id, score_a, score_b, session, status")
-        .eq("status", "final")
-        .limit(5000);
       const gameById = {};
       for (const g of games || []) gameById[g.id] = g;
-
-      // 4) Best single games: per player, the game where they logged the most
-      //    of a single stat (e.g. 5 goals in one game).
-      const { data: events } = await supabase
-        .from("live_events")
-        .select("game_id, player_id, sport, stat_key, delta")
-        .eq("event_type", "stat")
-        .limit(100000);
 
       // ---- aggregate ----
       // combined totals per player: {pid: {"sport stat": value}}
@@ -928,24 +954,28 @@ export default function AdminPage() {
 
       const norm2 = (s) => String(s ?? "").trim().toLowerCase();
 
-      // 1) Players (source of truth for names/teams)
-      const { data: players, error: pErr } = await supabase
-        .from("players")
-        .select("id, league_id, team_name, first_name, last_name")
-        .order("league_id", { ascending: true })
-        .order("team_name", { ascending: true })
-        .order("last_name", { ascending: true });
+      // These three are independent of each other, so they run together
+      // instead of one-after-another.
+      const [
+        { data: players, error: pErr },
+        { data: rules, error: rErr },
+        { data: totals, error: tErr },
+      ] = await Promise.all([
+        // 1) Players (source of truth for names/teams)
+        supabase
+          .from("players")
+          .select("id, league_id, team_name, first_name, last_name")
+          .order("league_id", { ascending: true })
+          .order("team_name", { ascending: true })
+          .order("last_name", { ascending: true }),
+        // 2) Rules: stat keys per sport (to build columns even if empty)
+        supabase.from("points_rules").select("league_id, sport, stat_keys"),
+        // 3) Totals: actual values
+        supabase.from("player_totals").select("league_id, sport, player_id, stat_key, value"),
+      ]);
 
       if (pErr) throw pErr;
-
-      // 2) Rules: stat keys per sport (to build columns even if empty)
-      const { data: rules, error: rErr } = await supabase.from("points_rules").select("league_id, sport, stat_keys");
       if (rErr) throw rErr;
-
-      // 3) Totals: actual values
-      const { data: totals, error: tErr } = await supabase
-        .from("player_totals")
-        .select("league_id, sport, player_id, stat_key, value");
       if (tErr) throw tErr;
 
       const statColSet = new Set();
