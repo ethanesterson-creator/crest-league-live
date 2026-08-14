@@ -20,7 +20,6 @@ export default function ColorWarBoard({ session = "s1", blueName, whiteName, blu
   const [byLeague, setByLeague] = useState({ seniors: { blue: 0, white: 0 }, juniors: { blue: 0, white: 0 }, sophomores: { blue: 0, white: 0 } });
   const [leaders, setLeaders] = useState({ seniors: [], juniors: [], sophomores: [] });
   const [liveGames, setLiveGames] = useState([]);
-  const [now, setNow] = useState(Date.now());
 
   function logoUrl(path) {
     if (!path) return null;
@@ -31,13 +30,62 @@ export default function ColorWarBoard({ session = "s1", blueName, whiteName, blu
   }
 
   async function loadAll() {
-    // Standings for CW: rows keyed (league, blue/white). Sum per color.
-    const { data: st } = await supabase
-      .from("standings")
-      .select("league_id, team_name, league_points")
-      .eq("sport", "overall")
-      .eq("season", "cw")
-      .eq("session", session);
+    // Round 1: none of these four depend on each other's result, so they
+    // fire together instead of one-after-another. This used to be a chain
+    // of 6+ sequential round trips (including 3 separate player_totals
+    // queries, one per league) running on a 15s poll all day — same
+    // pattern already fixed on the league display board.
+    const [
+      { data: st, error: stErr },
+      { data: ng, error: ngErr },
+      { data: totals, error: totalsErr },
+      { data: live, error: liveErr },
+    ] = await Promise.all([
+      // Standings for CW: rows keyed (league, blue/white). Sum per color.
+      supabase
+        .from("standings")
+        .select("league_id, team_name, league_points")
+        .eq("sport", "overall")
+        .eq("season", "cw")
+        .eq("session", session),
+      // Non-game CW points (tugs, spirit, etc.) add to the camp-wide totals.
+      supabase
+        .from("non_game_points")
+        .select("team_name, points")
+        .eq("season", "cw")
+        .eq("session", session)
+        .eq("deleted", false)
+        .eq("status", "final")
+        .limit(5000),
+      // Stat totals for all three leagues in one query instead of three.
+      supabase
+        .from("player_totals")
+        .select("player_id, player_name, team_name, league_id, sport, stat_key, value")
+        .eq("season", "cw")
+        .eq("session", session)
+        .in("league_id", ["seniors", "juniors", "sophomores"])
+        .order("value", { ascending: false })
+        .limit(500),
+      // Live CW games
+      supabase
+        .from("live_games")
+        .select("*")
+        .eq("season", "cw")
+        .eq("session", session)
+        .eq("status", "active")
+        .is("played_on", null)
+        .order("updated_at", { ascending: false }),
+    ]);
+
+    // A failed fetch used to silently fall through to `|| []`, wiping the
+    // board to zeroes/blank in front of the whole camp with no indication
+    // anything went wrong. Now it just keeps whatever was already on screen
+    // and tries again on the next 15s poll instead.
+    const loadErr = stErr || ngErr || totalsErr || liveErr;
+    if (loadErr) {
+      console.error("ColorWarBoard loadAll failed, keeping last good state:", loadErr);
+      return;
+    }
 
     const per = { seniors: { blue: 0, white: 0 }, juniors: { blue: 0, white: 0 }, sophomores: { blue: 0, white: 0 } };
     let b = 0, w = 0;
@@ -49,16 +97,6 @@ export default function ColorWarBoard({ session = "s1", blueName, whiteName, blu
       if (color === "blue") b += pts;
       if (color === "white") w += pts;
     }
-
-    // Non-game CW points (tugs, spirit, etc.) add to the camp-wide totals.
-    const { data: ng } = await supabase
-      .from("non_game_points")
-      .select("team_name, points")
-      .eq("season", "cw")
-      .eq("session", session)
-      .eq("deleted", false)
-      .eq("status", "final")
-      .limit(5000);
     for (const row of ng || []) {
       const color = norm(row.team_name);
       const pts = Number(row.points || 0);
@@ -68,21 +106,14 @@ export default function ColorWarBoard({ session = "s1", blueName, whiteName, blu
 
     setBlueTotal(b); setWhiteTotal(w); setByLeague(per);
 
-    // Stat leaders per league (season cw), top by value.
+    // Split the combined stat totals back out per league, top performers
+    // across sports, one line each.
     const leaguesOut = { seniors: [], juniors: [], sophomores: [] };
     for (const lg of ["seniors", "juniors", "sophomores"]) {
-      const { data } = await supabase
-        .from("player_totals")
-        .select("player_id, player_name, team_name, sport, stat_key, value")
-        .eq("season", "cw")
-        .eq("session", session)
-        .eq("league_id", lg)
-        .order("value", { ascending: false })
-        .limit(60);
-      // pick top performers across sports, dedribute to one line each
       const seen = new Set();
       const rows = [];
-      for (const r of data || []) {
+      for (const r of totals || []) {
+        if (norm(r.league_id) !== lg) continue;
         if (Number(r.value) <= 0) continue;
         const key = `${r.player_id}:${r.sport}:${r.stat_key}`;
         if (seen.has(key)) continue;
@@ -92,7 +123,9 @@ export default function ColorWarBoard({ session = "s1", blueName, whiteName, blu
       }
       leaguesOut[lg] = rows;
     }
-    // Hide departed players from the board (stats kept in DB).
+
+    // Round 2: depends on round 1's leader ids, so it has to come after —
+    // hide departed players from the board (stats kept in DB).
     const allIds = Array.from(new Set(Object.values(leaguesOut).flat().map((r) => String(r.player_id))));
     if (allIds.length) {
       const { data: deps } = await supabase.from("players").select("id").in("id", allIds).eq("departed", true);
@@ -104,16 +137,6 @@ export default function ColorWarBoard({ session = "s1", blueName, whiteName, blu
       }
     }
     setLeaders(leaguesOut);
-
-    // Live CW games
-    const { data: live } = await supabase
-      .from("live_games")
-      .select("*")
-      .eq("season", "cw")
-      .eq("session", session)
-      .eq("status", "active")
-      .is("played_on", null)
-      .order("updated_at", { ascending: false });
     setLiveGames(live || []);
   }
 
@@ -121,11 +144,6 @@ export default function ColorWarBoard({ session = "s1", blueName, whiteName, blu
     loadAll();
     const r = setInterval(loadAll, 15000);
     return () => clearInterval(r);
-  }, []);
-
-  useEffect(() => {
-    const t = setInterval(() => setNow(Date.now()), 1000);
-    return () => clearInterval(t);
   }, []);
 
   // Scene rotation every 18s. Skip empty leaders scenes so it never dwells on
