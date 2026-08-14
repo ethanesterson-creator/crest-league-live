@@ -108,10 +108,10 @@ export default function LeadersPage() {
   }
 
   useEffect(() => {
-    (async () => {
-      await loadLeagues();
-      await loadLeaders();
-    })();
+    // Independent of each other -- loadLeaders uses leagueId's default
+    // state value, not loadLeagues' result -- so they run together.
+    loadLeagues();
+    loadLeaders();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 

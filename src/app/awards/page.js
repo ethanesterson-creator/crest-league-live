@@ -41,13 +41,14 @@ export default function AwardsPage() {
     (async () => {
       setLoading(true);
       try {
-        const { data } = await supabase.rpc("get_awards", { p_session: session });
+        // Independent of each other, so they run together.
+        const [{ data }, { data: st }] = await Promise.all([
+          supabase.rpc("get_awards", { p_session: session }),
+          // "Season over" = current session's league mode has ended. We infer
+          // it from app_settings.league_ended if present; otherwise always "race".
+          supabase.from("app_settings").select("league_ended").eq("id", 1).maybeSingle(),
+        ]);
         setRows(data || []);
-
-        // "Season over" = current session's league mode has ended. We infer it
-        // from app_settings.league_ended if present; otherwise always "race".
-        const { data: st } = await supabase
-          .from("app_settings").select("league_ended").eq("id", 1).maybeSingle();
         setSeasonOver(Boolean(st?.league_ended));
       } finally {
         setLoading(false);
