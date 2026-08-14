@@ -32,15 +32,32 @@ export default function PlayerProfilePage() {
     (async () => {
       setLoading(true); setErr("");
       try {
-        const { data: p } = await supabase
-          .from("players").select("*").eq("id", id).maybeSingle();
+        // These four only need `id`, not each other's result, so they run
+        // together instead of one-after-another.
+        const [{ data: p }, { data: t }, { data: rosters }, { data: evts }] = await Promise.all([
+          supabase.from("players").select("*").eq("id", id).maybeSingle(),
+          // All stat totals across sessions
+          supabase
+            .from("player_totals")
+            .select("session, sport, stat_key, value")
+            .eq("player_id", id),
+          // Wins + games via roster
+          supabase
+            .from("game_roster")
+            .select("game_id, team_side")
+            .eq("player_id", id)
+            .eq("is_playing", true)
+            .limit(2000),
+          // Best single game
+          supabase
+            .from("live_events")
+            .select("game_id, sport, stat_key, delta")
+            .eq("event_type", "stat")
+            .eq("player_id", id)
+            .limit(5000),
+        ]);
         setPlayer(p);
 
-        // All stat totals across sessions
-        const { data: t } = await supabase
-          .from("player_totals")
-          .select("session, sport, stat_key, value")
-          .eq("player_id", id);
         const rows = (t || []).filter((r) => Number(r.value) > 0);
 
         // Combined (sum across sessions by sport+stat)
@@ -56,9 +73,8 @@ export default function PlayerProfilePage() {
           s2: rows.filter((r) => r.session === "s2"),
         });
 
-        // Wins + games via roster
-        const { data: rosters } = await supabase
-          .from("game_roster").select("game_id, team_side").eq("player_id", id).eq("is_playing", true).limit(2000);
+        // Round 2: depends on round 1's roster result (game ids), so it has
+        // to come after.
         const gids = (rosters || []).map((r) => r.game_id);
         if (gids.length) {
           const { data: gm } = await supabase
@@ -75,10 +91,6 @@ export default function PlayerProfilePage() {
           setWins(w); setGames(played);
         }
 
-        // Best single game
-        const { data: evts } = await supabase
-          .from("live_events").select("game_id, sport, stat_key, delta")
-          .eq("event_type", "stat").eq("player_id", id).limit(5000);
         const perGame = {};
         for (const e of evts || []) {
           perGame[e.game_id] = perGame[e.game_id] || { sport: e.sport, stats: {} };

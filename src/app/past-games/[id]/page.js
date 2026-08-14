@@ -60,34 +60,37 @@ export default function PastGameDetailPage() {
       setLoading(true);
       setErr("");
       try {
-        const { data: g, error: gErr } = await supabase
-          .from("live_games")
-          .select("*")
-          .eq("id", gameId)
-          .single();
+        // None of these three depend on each other's result -- all they
+        // need is gameId, which we already have -- so they run together
+        // instead of one-after-another.
+        const [
+          { data: g, error: gErr },
+          { data: roster, error: rErr },
+          { data: events, error: eErr },
+        ] = await Promise.all([
+          supabase.from("live_games").select("*").eq("id", gameId).single(),
+          supabase
+            .from("game_roster")
+            .select("game_id, player_id, player_name, team_side, team_name, sort_order")
+            .eq("game_id", gameId)
+            .order("team_side", { ascending: true })
+            .order("sort_order", { ascending: true })
+            .limit(5000),
+          supabase
+            .from("live_events")
+            .select("player_id, stat_key, delta, event_type")
+            .eq("game_id", gameId)
+            .eq("event_type", "stat")
+            .limit(10000),
+        ]);
         if (gErr) throw gErr;
         setGame(g);
 
-        const { data: roster, error: rErr } = await supabase
-          .from("game_roster")
-          .select("game_id, player_id, player_name, team_side, team_name, sort_order")
-          .eq("game_id", gameId)
-          .order("team_side", { ascending: true })
-          .order("sort_order", { ascending: true })
-          .limit(5000);
         if (rErr) throw rErr;
-
         setRosterA((roster || []).filter((r) => r.team_side === "A"));
         setRosterB((roster || []).filter((r) => r.team_side === "B"));
 
-        const { data: events, error: eErr } = await supabase
-          .from("live_events")
-          .select("player_id, stat_key, delta, event_type")
-          .eq("game_id", gameId)
-          .eq("event_type", "stat")
-          .limit(10000);
         if (eErr) throw eErr;
-
         const totals = {};
         for (const row of events || []) {
           const key = `${row.player_id}:${row.stat_key}`;
