@@ -442,9 +442,18 @@ export default function LiveGamePage() {
 
   async function ensureRoster(g) {
     try {
-    const { data: r1 } = await supabase.from("game_roster")
+    const { data: r1, error: r1Err } = await supabase.from("game_roster")
       .select("game_id, player_id, player_name, team_side, team_name, is_playing, sort_order")
       .eq("game_id", g.id).order("team_side").order("sort_order").limit(5000);
+
+    // A failed check here must NOT fall through to the "no roster yet"
+    // build-from-scratch path below -- that path INSERTS a synthesized
+    // roster, and if a real roster already exists but this query just
+    // failed to fetch it, that insert would duplicate every row.
+    if (r1Err) {
+      setErr("⚠️ Couldn't load the roster — check WiFi and refresh.");
+      return;
+    }
 
     if (r1 && r1.length) {
       setRosterA(r1.filter((x) => x.team_side === "A"));
@@ -467,24 +476,29 @@ export default function LiveGamePage() {
 
     const isCwGame = String(g.season || "league") === "cw";
 
-    let players;
+    let players, playersErr;
     if (isCwGame) {
       // Color War: teams are blue/white camp-wide. Match players by cw_team,
       // filtered to this game's age league so a Senior game only pulls seniors.
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from("players")
         .select("id, first_name, last_name, cw_team, league_id, team_name")
         .eq("league_id", lk)
         .in("cw_team", ["blue", "white"])
         .eq("departed", false)
         .limit(5000);
-      players = data;
+      players = data; playersErr = error;
     } else {
       const pq = mt === "crest_cup"
         ? supabase.from("players").select("id, first_name, last_name, team_name, league_id").in("team_name", allTeams).eq("departed", false).limit(5000)
         : supabase.from("players").select("id, first_name, last_name, team_name, league_id").eq("league_id", lk).in("team_name", allTeams).eq("departed", false).limit(5000);
-      const { data } = await pq;
-      players = data;
+      const { data, error } = await pq;
+      players = data; playersErr = error;
+    }
+
+    if (playersErr) {
+      setErr("⚠️ Couldn't build the roster — check WiFi and refresh.");
+      return;
     }
 
     const oA = { v: 0 }, oB = { v: 0 };
@@ -498,13 +512,22 @@ export default function LiveGamePage() {
     if (rows.length) {
       const chunk = 250;
       for (let i = 0; i < rows.length; i += chunk) {
-        await supabase.from("game_roster").insert(rows.slice(i, i + chunk));
+        const { error: insErr } = await supabase.from("game_roster").insert(rows.slice(i, i + chunk));
+        if (insErr) {
+          setErr("⚠️ Roster only partly saved — check WiFi and refresh before scoring.");
+          break;
+        }
       }
     }
 
-    const { data: r2 } = await supabase.from("game_roster")
+    const { data: r2, error: r2Err } = await supabase.from("game_roster")
       .select("game_id, player_id, player_name, team_side, team_name, is_playing, sort_order")
       .eq("game_id", g.id).order("team_side").order("sort_order").limit(5000);
+
+    if (r2Err) {
+      setErr("⚠️ Couldn't reload the roster after building it — refresh to see it.");
+      return;
+    }
 
     setRosterA((r2 || []).filter((x) => x.team_side === "A"));
     setRosterB((r2 || []).filter((x) => x.team_side === "B"));

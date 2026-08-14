@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
@@ -84,6 +84,19 @@ export default function PostDraftEditorPage() {
 
   // Captains (season-long)
   const [captainIds, setCaptainIds] = useState(new Set());
+
+  // Trailing-debounced reload after stat taps: a burst of quick taps used to
+  // each trigger their own full `load()`, and whichever one resolved LAST
+  // won -- an in-flight reload from an earlier tap could resolve after a
+  // newer tap's optimistic update and silently stomp it back out. Same fix
+  // already used on the live scoring page: one reload, 800ms after the
+  // burst ends, instead of one per tap.
+  const reloadTimer = useRef(null);
+  function scheduleReload() {
+    clearTimeout(reloadTimer.current);
+    reloadTimer.current = setTimeout(load, 800);
+  }
+  useEffect(() => () => clearTimeout(reloadTimer.current), []);
 
   function getTotal(playerId, statKey) {
     const pid = String(playerId ?? "");
@@ -300,7 +313,7 @@ export default function PostDraftEditorPage() {
     });
 
     setMsg(`✅ +${statKey} recorded`);
-    await load();
+    scheduleReload();
   }
 
   async function buildRosterIfMissing() {
