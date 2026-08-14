@@ -645,6 +645,18 @@ export default function LiveGamePage() {
     addStatEvent(player, statKey, -1);
   }
 
+  // NOTE: bumpHoopPoints/bumpGoalWithScore (and their undo counterparts,
+  // below) each fire two independent RPCs -- addStatEvent's rpc_add_stat
+  // and this function's own rpc_add_score -- with separate 3-try retries
+  // and no shared transaction. If one permanently fails after retries and
+  // the other succeeds, the team score and the player's individual stat
+  // total go out of sync (an error IS surfaced via setErr when a retry
+  // exhausts, so it's not silent, but it doesn't say which side failed or
+  // attempt to reconcile the other). A real fix needs a single combined
+  // server-side RPC doing both writes in one transaction -- that requires
+  // Supabase dashboard/SQL access this session doesn't have. Left as-is
+  // deliberately rather than risk a client-side compensating-write change
+  // to live scoring without being able to test it in a real browser.
   function bumpHoopPoints(player, side, delta) {
     if (!game) return;
     const d = Math.floor(Number(delta));

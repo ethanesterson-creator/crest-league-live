@@ -97,12 +97,30 @@ as-is: readable for reference, never modified or deleted, even though the
 app itself is closed. Before any schema change or bulk-write script, take an
 explicit export first.
 
-## Known architectural pattern to watch for
+## Known architectural pattern (mostly fixed)
 
-Several pages (`/display`, `/admin` exports, likely others) load data via
-long chains of **sequential `await supabase.from(...)`** calls plus
-client-side aggregation in JS, rather than parallelizing independent queries
-or aggregating in SQL. `display/page.js`'s `loadAll()` is the clearest
-example — ~15 round trips, mostly sequential, re-run every 15s on a screen
-that runs all day. This is a likely root cause of the performance complaints
-from this season and should be addressed page-by-page (see project memory).
+Several pages used to load data via long chains of **sequential
+`await supabase.from(...)`** calls instead of parallelizing independent
+queries with `Promise.all`. This was the main cause of the performance
+complaints from this season. Fixed as of Aug 2026 in `display/page.js`,
+`ColorWarBoard.jsx`, `admin/page.js` (the export/archive functions),
+`past-games/[id]/page.js`, `player/[id]/page.js`, `awards/page.js`, and
+`leaders/page.js`. If you find another instance, same fix applies: group
+the genuinely-independent queries into one `Promise.all`, keep only the
+truly dependent ones (needs another query's result, e.g. an id list)
+sequential after that.
+
+## Known open issue: non-atomic dual-RPC writes in hoop/goal scoring
+
+`live/[id]/page.js`'s `bumpHoopPoints` / `bumpGoalWithScore` (and their
+undo counterparts) each fire two independent RPCs for one tap —
+`rpc_add_stat` (via `addStatEvent`) and `rpc_add_score` — each with its own
+3-try retry, no shared transaction. If one permanently fails after retries
+while the other succeeds, the team score and the player's stat total go
+out of sync. Not silent (an error does surface via `setErr`), but it
+doesn't say which side failed or attempt to reconcile. A real fix needs a
+single combined server-side RPC doing both writes in one transaction,
+which needs Supabase dashboard/SQL access. Left alone deliberately rather
+than risk a client-side compensating-write change to the live-scoring path
+without being able to test it in a real browser — see the comment at
+`live/[id]/page.js` above `bumpHoopPoints`.
