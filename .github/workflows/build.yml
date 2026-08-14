@@ -19,6 +19,9 @@ jobs:
 
       - run: npm ci
 
+      - name: Test
+        run: npm test
+
       # Real secrets are never available to CI (and shouldn't be, for a PR
       # from an unreviewed branch) -- NEXT_PUBLIC_ vars only need to be
       # present and URL/JWT-shaped for the build to succeed, since Next.js
