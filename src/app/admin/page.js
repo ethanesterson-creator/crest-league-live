@@ -67,7 +67,7 @@ export default function AdminPage() {
   const [fromPlayers, setFromPlayers] = useState([]); // players on from team
 
   // Fixed internal Supabase Auth account for the admin panel — see
-  // supabase/harden_admin_access.sql. There's no real inbox at this address;
+  // supabase/migrations/0001_harden_admin_access.sql. There's no real inbox at this address;
   // it exists only so Supabase Auth has a username to sign in with. The
   // actual secret is the password on that account (set in the Supabase
   // dashboard), never shipped to the client the way NEXT_PUBLIC_* vars are.

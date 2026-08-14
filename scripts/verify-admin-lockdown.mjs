@@ -1,5 +1,6 @@
 // Run this AFTER you've done both manual Supabase steps (created the
-// admin@crest-league.internal auth user, and run supabase/harden_admin_access.sql).
+// admin@crest-league.internal auth user, and run
+// supabase/migrations/0001_harden_admin_access.sql).
 // Confirms the lockdown actually works.
 //
 // Tests with a real INSERT into `points_rules` (a small, low-traffic table

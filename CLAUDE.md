@@ -81,12 +81,25 @@ There is no Supabase Auth for regular use — `/live/[id]`, `/post`,
 write with no login, by design (counselors just use a link). Only `/admin`
 requires signing in, via `supabase.auth.signInWithPassword` against a fixed
 account (`admin@crest-league.internal` — see `src/app/admin/page.js`).
-`supabase/harden_admin_access.sql` restricts the admin-exclusive RPCs
-(`rebuild_leaderboards`, `admin_reset_season`, `admin_clear_snapshots`,
-`admin_delete_finalized_game`) and table writes (`players`, `player_totals`,
-`app_settings`, `standings`, `points_rules`, `leagues`, `games`) to that
-authenticated session. Everything else stays anon-writable on purpose —
-don't "fix" that without re-checking which pages depend on it staying open.
+`supabase/migrations/0001_harden_admin_access.sql` restricts the
+admin-exclusive RPCs (`rebuild_leaderboards`, `admin_reset_season`,
+`admin_clear_snapshots`, `admin_delete_finalized_game`) and table writes
+(`players`, `player_totals`, `app_settings`, `standings`, `points_rules`,
+`leagues`, `games`) to that authenticated session. Everything else stays
+anon-writable on purpose — don't "fix" that without re-checking which
+pages depend on it staying open. Confirmed working as of Aug 2026 via
+`scripts/verify-admin-lockdown.mjs`.
+
+## Schema changes
+
+As of Aug 2026, schema/policy changes are tracked as numbered files in
+`supabase/migrations/`, applied by hand via the Supabase SQL editor (no
+service-role key or CLI link exists yet — see `supabase/README.md` for how
+to set that up). Before this, changes happened directly in the dashboard
+with no record anywhere. Going forward: write the SQL as a new
+`NNNN_description.sql` file here first, then run it in the dashboard —
+that gives every schema change a reviewable diff instead of vanishing
+after being clicked through once.
 
 ## Data safety
 
