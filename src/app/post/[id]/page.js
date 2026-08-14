@@ -135,7 +135,16 @@ export default function PostDraftEditorPage() {
       .eq("game_id", id)
       .eq("player_id", b.player_id);
     if (e2) {
-      setErr(e2.message);
+      // a's row already moved to b's old sort_order but b's row didn't move
+      // off it -- both would now share a sort_order in the DB. Roll a back
+      // so at least the DB stays internally consistent even though the
+      // swap didn't go through.
+      const { error: rollbackErr } = await supabase
+        .from("game_roster")
+        .update({ sort_order: a.sort_order })
+        .eq("game_id", id)
+        .eq("player_id", a.player_id);
+      setErr(rollbackErr ? `Batting order may be out of sync — refresh before continuing. (${e2.message})` : e2.message);
       return;
     }
 

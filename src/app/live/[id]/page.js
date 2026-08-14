@@ -753,11 +753,27 @@ export default function LiveGamePage() {
     next[j]   = { ...b, sort_order: a.sort_order };
     next.sort((x, y) => Number(x.sort_order || 0) - Number(y.sort_order || 0));
     if (side === "A") setRosterA(next); else setRosterB(next);
-    try {
-      await supabase.from("game_roster").update({ sort_order: b.sort_order }).eq("game_id", a.game_id).eq("player_id", a.player_id);
-      await supabase.from("game_roster").update({ sort_order: a.sort_order }).eq("game_id", b.game_id).eq("player_id", b.player_id);
-    } catch {
-      // order saved locally; server order reconciles on next load
+
+    const { error: aErr } = await supabase.from("game_roster").update({ sort_order: b.sort_order }).eq("game_id", a.game_id).eq("player_id", a.player_id);
+    if (aErr) {
+      // Nothing persisted yet -- just revert the optimistic UI change.
+      if (side === "A") setRosterA(list); else setRosterB(list);
+      setErr("⚠️ Couldn't reorder batting lineup — check WiFi and try again.");
+      return;
+    }
+
+    const { error: bErr } = await supabase.from("game_roster").update({ sort_order: a.sort_order }).eq("game_id", b.game_id).eq("player_id", b.player_id);
+    if (bErr) {
+      // a's row is now at b's old sort_order in the DB, but b's row never
+      // moved off it -- both would share a sort_order (this is NOT
+      // self-healing on next load, despite what the old comment here
+      // claimed). Roll a back so the DB stays internally consistent even
+      // though the swap didn't go through.
+      const { error: rollbackErr } = await supabase.from("game_roster").update({ sort_order: a.sort_order }).eq("game_id", a.game_id).eq("player_id", a.player_id);
+      if (side === "A") setRosterA(list); else setRosterB(list);
+      setErr(rollbackErr
+        ? "⚠️ Batting order may be out of sync — refresh before continuing."
+        : "⚠️ Couldn't reorder batting lineup — check WiFi and try again.");
     }
   }
 

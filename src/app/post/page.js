@@ -202,9 +202,16 @@ export default function PostGamesPage() {
   async function deleteDraft(id, label) {
     if (!confirm(`Delete this draft?\n\n${label}\n\nThis cannot be undone.`)) return;
     try {
-      // Remove child rows first, then the game.
-      await supabase.from("live_events").delete().eq("game_id", id);
-      await supabase.from("game_roster").delete().eq("game_id", id);
+      // Remove child rows first, then the game. If a child delete fails we
+      // stop here instead of deleting the parent anyway -- otherwise those
+      // rows are orphaned, silently pointing at a game_id that no longer
+      // exists, with a false "deleted" success message on top.
+      const { error: evErr } = await supabase.from("live_events").delete().eq("game_id", id);
+      if (evErr) { setErr(`Couldn't delete draft: ${evErr.message}`); return; }
+
+      const { error: rosterErr } = await supabase.from("game_roster").delete().eq("game_id", id);
+      if (rosterErr) { setErr(`Couldn't delete draft: ${rosterErr.message}`); return; }
+
       const { error } = await supabase.from("live_games").delete().eq("id", id);
       if (error) { setErr(error.message); return; }
       setMsg("🗑️ Draft deleted.");
