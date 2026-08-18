@@ -425,8 +425,9 @@ export default function LiveGamePage() {
 
   async function loadEventTotals(g) {
     try {
-      const { data } = await supabase.from("live_events").select("player_id, stat_key, delta")
+      const { data, error } = await supabase.from("live_events").select("player_id, stat_key, delta")
         .eq("game_id", g.id).eq("event_type", "stat").limit(10000);
+      if (error) throw error;
       const totals = {};
       for (const row of data || []) {
         const k = `${row.player_id}:${row.stat_key}`;
