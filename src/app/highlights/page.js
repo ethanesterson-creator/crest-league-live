@@ -11,10 +11,11 @@ export default function HighlightsAdminPage() {
   const fileInputRef = useRef(null);
 
   async function load() {
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from("highlights")
       .select("*")
       .order("created_at", { ascending: false });
+    if (error) { setErr(error.message); return; }
     setItems(data || []);
   }
 
