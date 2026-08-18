@@ -160,7 +160,29 @@ export default function PostDraftEditorPage() {
     setErr("");
     setMsg("");
 
-    const { data: g, error: gErr } = await supabase.from("live_games").select("*").eq("id", id).single();
+    // Game, roster, and stat events all only need `id`, not each other's
+    // result, so they run together instead of one-after-another -- this
+    // reruns after every stat tap during live post-game entry (same fix
+    // already applied to past-games/[id] and player/[id]).
+    const [
+      { data: g, error: gErr },
+      { data: r0, error: rErr },
+      { data: ev, error: evErr },
+    ] = await Promise.all([
+      supabase.from("live_games").select("*").eq("id", id).single(),
+      supabase
+        .from("game_roster")
+        .select("game_id, player_id, player_name, team_side, team_name, sort_order")
+        .eq("game_id", id)
+        .order("team_side", { ascending: true })
+        .order("sort_order", { ascending: true }),
+      supabase
+        .from("live_events")
+        .select("player_id, stat_key, delta")
+        .eq("game_id", id)
+        .eq("event_type", "stat"),
+    ]);
+
     if (gErr) {
       setErr(gErr.message);
       return;
@@ -169,18 +191,12 @@ export default function PostDraftEditorPage() {
     setScoreAInput(String(Number(g.score_a || 0)));
     setScoreBInput(String(Number(g.score_b || 0)));
 
-    let { data: r, error: rErr } = await supabase
-      .from("game_roster")
-      .select("game_id, player_id, player_name, team_side, team_name, sort_order")
-      .eq("game_id", id)
-      .order("team_side", { ascending: true })
-      .order("sort_order", { ascending: true });
-
     if (rErr) {
       setRosterA([]);
       setRosterB([]);
       return;
     }
+    let r = r0;
 
     // Backfill missing sort_order for older rosters (only matters for batting sports,
     // but harmless to store for all)
@@ -222,7 +238,8 @@ export default function PostDraftEditorPage() {
     setRosterA(a);
     setRosterB(b);
 
-    // Load captains for these teams in this league (season-long)
+    // Load captains for these teams in this league (season-long) -- this
+    // genuinely depends on `g`'s result, so it stays after the round above.
     try {
       const leagueId = norm(g.league_key);
       const teamNames = uniqNonEmpty([g.team_a1 || g.team_a, g.team_b1 || g.team_b]);
@@ -231,12 +248,6 @@ export default function PostDraftEditorPage() {
     } catch {
       setCaptainIds(new Set());
     }
-
-    const { data: ev, error: evErr } = await supabase
-      .from("live_events")
-      .select("player_id, stat_key, delta")
-      .eq("game_id", id)
-      .eq("event_type", "stat");
 
     if (evErr) {
       setErr(evErr.message);
