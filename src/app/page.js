@@ -316,9 +316,14 @@ export default function HomePage() {
 
   async function loadGames() {
     setErr("");
+    // This page has no login -- anyone can load it and inspect the
+    // response. Only fetch the fields actually rendered below (previously
+    // select("*"), which also shipped `notes` (raw game-state JSON),
+    // `timer_running`, `win_points_override`, and `is_staff_game` to any
+    // anonymous visitor).
     const { data, error } = await supabase
       .from("live_games")
-      .select("*")
+      .select("id, matchup_type, team_a1, team_a2, team_b1, team_b2, is_bowl_game, bowl_name, bowl_counts, created_at, league_key, sport, level, mode, status, score_a, score_b")
       .eq("season", season)
       .eq("session", session)
       .neq("status", "draft")
