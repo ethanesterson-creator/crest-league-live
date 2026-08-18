@@ -170,7 +170,7 @@ export default function DisplayPage() {
   // leaders is its own dedicated scene now, so all three need their own
   // data on every load, not just whichever league happens to be selected.
   async function fetchLeadersForLeague(lid, session) {
-    const { data: leaderPool } = await supabase
+    const { data: leaderPool, error } = await supabase
       .from("player_totals")
       .select("*")
       .eq("league_id", lid)
@@ -178,12 +178,14 @@ export default function DisplayPage() {
       .eq("session", session)
       .order("value", { ascending: false })
       .limit(500);
+    if (error) throw error;
 
     // Hide departed players (kept in DB, just not shown on the board).
     let pool = leaderPool || [];
     const ids = Array.from(new Set(pool.map((r) => String(r.player_id))));
     if (ids.length) {
-      const { data: deps } = await supabase.from("players").select("id").in("id", ids).eq("departed", true);
+      const { data: deps, error: depsErr } = await supabase.from("players").select("id").in("id", ids).eq("departed", true);
+      if (depsErr) throw depsErr;
       const departedSet = new Set((deps || []).map((d) => String(d.id)));
       if (departedSet.size) pool = pool.filter((r) => !departedSet.has(String(r.player_id)));
     }
@@ -315,6 +317,13 @@ export default function DisplayPage() {
   async function loadAll() {
     const cutoff = new Date(Date.now() - 12 * 60 * 60 * 1000).toISOString();
 
+    // A failed fetch used to silently fall through to `|| []`, wiping
+    // sections of the board to zero/blank in front of the whole camp with
+    // no indication anything went wrong (same bug already fixed in
+    // ColorWarBoard's loadAll, commit 755cd49). Now it just keeps whatever
+    // was already on screen and tries again on the next 15s poll instead.
+    try {
+
     // ---- Round 1: every query below is independent of every other one —
     // none of them need another query's result to run — so they all fire
     // together instead of one-after-another. This is the single biggest
@@ -392,6 +401,11 @@ export default function DisplayPage() {
         .order("created_at", { ascending: false }),
     ]);
 
+    const round1Err =
+      standingsRes.error || ngStandingsRes.error || liveRes.error || finalsRes.error ||
+      avgTotalsRes.error || avgGamesRes.error || awardsRes.error || highlightsRes.error;
+    if (round1Err) throw round1Err;
+
     // camp standings — aggregate points across all leagues per team, INCLUDING non-game points
     const standingsRows = standingsRes.data || [];
     const totalsMap = {};
@@ -461,6 +475,8 @@ export default function DisplayPage() {
         : Promise.resolve({ data: [] }),
     ]);
 
+    if (rosterRes.error || departedRes.error) throw rosterRes.error || departedRes.error;
+
     // rosters -> games played per player per sport
     const played = {};
     for (const row of rosterRes.data || []) {
@@ -522,6 +538,9 @@ export default function DisplayPage() {
     setSpotlight(spotlightScored);
 
     setHighlights(highlightsRes.data || []);
+    } catch (e) {
+      console.error("display loadAll failed, keeping last good state:", e);
+    }
   }
 
   useEffect(() => {
