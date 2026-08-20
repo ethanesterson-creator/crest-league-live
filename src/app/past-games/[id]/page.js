@@ -68,7 +68,17 @@ export default function PastGameDetailPage() {
           { data: roster, error: rErr },
           { data: events, error: eErr },
         ] = await Promise.all([
-          supabase.from("live_games").select("*").eq("id", gameId).single(),
+          // This page has no login -- anyone can load it and inspect the
+          // response. Only fetch the fields actually rendered below
+          // (previously select("*"), which also shipped `notes` (raw
+          // game-state JSON), `timer_running`, `win_points_override`, and
+          // `is_staff_game` to any anonymous visitor -- same overfetch bug
+          // already fixed on the home page in 10ac85a).
+          supabase
+            .from("live_games")
+            .select("matchup_type, team_a1, team_a2, team_b1, team_b2, score_a, score_b, league_key, sport, level, mode, is_bowl_game, bowl_name, created_at")
+            .eq("id", gameId)
+            .single(),
           supabase
             .from("game_roster")
             .select("game_id, player_id, player_name, team_side, team_name, sort_order")
