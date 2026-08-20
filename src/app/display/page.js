@@ -360,9 +360,13 @@ export default function DisplayPage() {
         .eq("season", "league")
         .eq("session", session)
         .limit(5000),
+      // This board has no login -- anyone can load it and inspect the
+      // response. Only fetch fields actually rendered in the ticker/finals
+      // panels below (previously select("*"), same overfetch bug already
+      // fixed on the home page in 10ac85a).
       supabase
         .from("live_games")
-        .select("*")
+        .select("id, sport, league_key, team_a, team_a1, team_a2, team_b, team_b1, team_b2, score_a, score_b")
         .eq("status", "active")
         .eq("season", "league")
         .eq("session", session)
@@ -370,7 +374,7 @@ export default function DisplayPage() {
         .order("updated_at", { ascending: false }),
       supabase
         .from("live_games")
-        .select("*")
+        .select("id, sport, league_key, team_a, team_a1, team_a2, team_b, team_b1, team_b2, score_a, score_b")
         .eq("status", "final")
         .eq("season", "league")
         .eq("session", session)

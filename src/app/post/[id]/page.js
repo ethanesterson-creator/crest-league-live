@@ -169,7 +169,14 @@ export default function PostDraftEditorPage() {
       { data: r0, error: rErr },
       { data: ev, error: evErr },
     ] = await Promise.all([
-      supabase.from("live_games").select("*").eq("id", id).single(),
+      // This editor has no login -- only fetch fields actually rendered
+      // below (previously select("*"), same overfetch bug already fixed on
+      // the home page in 10ac85a).
+      supabase
+        .from("live_games")
+        .select("score_a, score_b, league_key, team_a, team_a1, team_a2, team_b, team_b1, team_b2, is_staff_game, level, matchup_type, played_on, sport, season")
+        .eq("id", id)
+        .single(),
       supabase
         .from("game_roster")
         .select("game_id, player_id, player_name, team_side, team_name, sort_order")

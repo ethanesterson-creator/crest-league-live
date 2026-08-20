@@ -68,8 +68,12 @@ export default function ColorWarBoard({ session = "s1", blueName, whiteName, blu
         .limit(500),
       // Live CW games
       supabase
+        // Live CW games -- no login on this board, so only fetch fields
+        // actually rendered in the "live" scene below (previously
+        // select("*"), same overfetch bug already fixed on the home page
+        // in 10ac85a).
         .from("live_games")
-        .select("*")
+        .select("id, team_a1, league_key, sport, level, score_a, score_b")
         .eq("season", "cw")
         .eq("session", session)
         .eq("status", "active")
