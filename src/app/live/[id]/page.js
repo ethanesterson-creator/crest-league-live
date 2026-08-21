@@ -101,10 +101,14 @@ async function fetchCaptainIds({ leagueId, teamNames }) {
   return ids;
 }
 
-function hoopShortName(n) {
-  const parts = String(n || "").trim().split(/\s+/);
-  if (parts.length < 2) return n || "";
-  return `${parts[0].charAt(0)}. ${parts.slice(1).join(" ")}`;
+// Full-word captions for stat abbreviations — display only, never touches
+// the stored stat_key. Falls back to the abbreviation itself if unlisted.
+const STAT_CAPTIONS = {
+  g: "Goal", a: "Assist", pts: "Points", foul: "Foul",
+  td: "Touchdown", h: "Hit", hr: "Home Run",
+};
+function statCaption(key, fallbackLabel) {
+  return STAT_CAPTIONS[norm(key)] || fallbackLabel || key;
 }
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -136,44 +140,51 @@ function ClockButton({ game, onOpen, big }) {
 // ────────────────────────────────────────────────────────────────────────────
 const BTN = "touch-manipulation select-none";
 
-function StatChip({ p, sd, side, value, chipPad, chipText, onBump, onUndo }) {
+// Every stat gets its own full-width card: real word caption, big count,
+// -1 plus each configured delta, all buttons min-h-11 (44px) for reliable
+// thumb taps. Replaces the old thin abbreviation-only chip row.
+function StatChip({ p, sd, side, value, onBump, onUndo }) {
   const deltas = sd?.deltas?.length ? sd.deltas : [1];
   return (
-    <div className="flex flex-1 items-center gap-1.5 rounded-lg border border-white/10 bg-white/5 px-2 py-1.5">
-      <span className="text-[10px] font-black uppercase tracking-wider text-white/50">{sd.label}</span>
-      <span className="min-w-[18px] text-center text-sm font-black tabular-nums text-white">{value}</span>
-      <button onClick={() => onUndo(p, sd, side)} disabled={value <= 0}
-        className={`${BTN} flex-1 rounded border border-red-500/30 bg-red-500/10 ${chipPad} ${chipText} font-black text-red-300 active:scale-95 disabled:opacity-20`}>-1</button>
-      {deltas.map((d) => (
-        <button key={d} onClick={() => onBump(p, sd, side, d)}
-          className={`${BTN} flex-1 rounded border border-white/10 bg-white/10 ${chipPad} ${chipText} font-black active:scale-95`}>+{d}</button>
-      ))}
+    <div className="min-w-[140px] flex-1 rounded-xl border border-white/10 bg-white/5 px-3 py-2">
+      <div className="flex items-baseline justify-between">
+        <span className="text-[11px] font-black uppercase tracking-wider text-white/50">{statCaption(sd.key, sd.label)}</span>
+        <span className="text-xl font-black tabular-nums text-white">{value}</span>
+      </div>
+      <div className="mt-2 flex gap-1.5">
+        <button onClick={() => onUndo(p, sd, side)} disabled={value <= 0}
+          className={`${BTN} min-h-11 flex-1 rounded-lg border border-red-500/30 bg-red-500/10 text-sm font-black text-red-300 active:scale-95 disabled:opacity-20`}>-1</button>
+        {deltas.map((d) => (
+          <button key={d} onClick={() => onBump(p, sd, side, d)}
+            className={`${BTN} min-h-11 flex-1 rounded-lg border border-white/10 bg-white/10 text-sm font-black active:scale-95`}>+{d}</button>
+        ))}
+      </div>
     </div>
   );
 }
 
-function PlayerRow({ p, idx, total, side, showBatting, isCap, statDefs, getVal, chipPad, chipText, onBumpChip, onUndoChip, onToggle, onMove }) {
+function PlayerRow({ p, idx, total, side, showBatting, isCap, statDefs, getVal, onBumpChip, onUndoChip, onToggle, onMove }) {
   return (
-    <div className="rounded-lg border border-white/10 bg-white/[0.04] p-2.5">
+    <div className="rounded-xl border border-white/10 bg-white/[0.04] p-3">
       <div className="flex items-center justify-between gap-2">
         {showBatting ? (
           <div className="flex shrink-0 items-center gap-1">
             <span className="w-5 text-center text-[10px] font-black opacity-60">{idx + 1}</span>
-            <button onClick={() => onMove(p, "up")} disabled={idx === 0} className={`${BTN} rounded border border-white/10 bg-white/10 px-2 py-1.5 text-[10px] font-black disabled:opacity-30`}>↑</button>
-            <button onClick={() => onMove(p, "down")} disabled={idx === total - 1} className={`${BTN} rounded border border-white/10 bg-white/10 px-2 py-1.5 text-[10px] font-black disabled:opacity-30`}>↓</button>
+            <button onClick={() => onMove(p, "up")} disabled={idx === 0} className={`${BTN} min-h-11 min-w-11 rounded-lg border border-white/10 bg-white/10 text-xs font-black disabled:opacity-30`}>↑</button>
+            <button onClick={() => onMove(p, "down")} disabled={idx === total - 1} className={`${BTN} min-h-11 min-w-11 rounded-lg border border-white/10 bg-white/10 text-xs font-black disabled:opacity-30`}>↓</button>
           </div>
         ) : null}
         <div className="min-w-0 flex-1">
-          <div className="truncate text-sm font-black text-white">{isCap ? "⭐ " : ""}{p.player_name || p.player_id}</div>
+          <div className="truncate text-base font-black text-white">{isCap ? "⭐ " : ""}{p.player_name || p.player_id}</div>
         </div>
         <button onClick={() => onToggle(p)}
-          className={`${BTN} shrink-0 rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-2 text-[11px] font-black text-red-300 active:scale-95`}>Out</button>
+          className={`${BTN} min-h-11 shrink-0 rounded-lg border border-red-500/30 bg-red-500/10 px-4 text-xs font-black text-red-300 active:scale-95`}>Out</button>
       </div>
       {statDefs.length > 0 && (
-        <div className="mt-2 flex gap-1.5">
+        <div className="mt-2.5 flex flex-wrap gap-2">
           {statDefs.map((sd) => (
             <StatChip key={`${p.player_id}-${sd.key}`} p={p} sd={sd} side={side}
-              value={getVal(p.player_id, sd.key)} chipPad={chipPad} chipText={chipText}
+              value={getVal(p.player_id, sd.key)}
               onBump={onBumpChip} onUndo={onUndoChip} />
           ))}
         </div>
@@ -184,42 +195,52 @@ function PlayerRow({ p, idx, total, side, showBatting, isCap, statDefs, getVal, 
 
 function HoopPlayerRow({ p, side, isCap, pts, fouls, onBumpPts, onUndoPts, onBumpFoul, onUndoFoul, onToggle }) {
   return (
-    <div className="flex items-end gap-1.5 rounded-lg border border-white/10 bg-white/[0.04] px-2 py-1.5">
-      <div className="min-w-0 flex-1 self-center">
-        <div className="truncate text-[13px] font-black text-white">{isCap ? "⭐ " : ""}{hoopShortName(p.player_name || p.player_id)}</div>
+    <div className="rounded-xl border border-white/10 bg-white/[0.04] p-3">
+      <div className="flex items-center justify-between gap-2">
+        <div className="min-w-0 flex-1">
+          <div className="truncate text-base font-black text-white">{isCap ? "⭐ " : ""}{p.player_name || p.player_id}</div>
+        </div>
+        <button onClick={() => onToggle(p)}
+          className={`${BTN} min-h-11 shrink-0 rounded-lg border border-red-500/30 bg-red-500/10 px-4 text-xs font-black text-red-300 active:scale-95`}>Out</button>
       </div>
-      <div className="flex flex-col items-center shrink-0">
-        <span className="text-[8px] font-black uppercase leading-tight text-white/40">PTS · {pts}</span>
-        <div className="mt-0.5 flex items-center gap-1">
-          <button onClick={() => onUndoPts(p, side)} disabled={pts <= 0}
-            className={`${BTN} rounded border border-red-500/30 bg-red-500/10 px-2 py-1.5 text-[10px] font-black text-red-300 active:scale-95 disabled:opacity-20`}>-1</button>
-          {[1, 2, 3].map((d) => (
-            <button key={d} onClick={() => onBumpPts(p, side, d)}
-              className={`${BTN} rounded border border-white/15 bg-white/10 px-2 py-1.5 text-[10px] font-black active:scale-95`}>+{d}</button>
-          ))}
+      <div className="mt-2.5 flex flex-wrap gap-2">
+        <div className="min-w-[180px] flex-[2] rounded-xl border border-white/10 bg-white/5 px-3 py-2">
+          <div className="flex items-baseline justify-between">
+            <span className="text-[11px] font-black uppercase tracking-wider text-white/50">Points</span>
+            <span className="text-xl font-black tabular-nums text-white">{pts}</span>
+          </div>
+          <div className="mt-2 flex gap-1.5">
+            <button onClick={() => onUndoPts(p, side)} disabled={pts <= 0}
+              className={`${BTN} min-h-11 flex-1 rounded-lg border border-red-500/30 bg-red-500/10 text-sm font-black text-red-300 active:scale-95 disabled:opacity-20`}>-1</button>
+            {[1, 2, 3].map((d) => (
+              <button key={d} onClick={() => onBumpPts(p, side, d)}
+                className={`${BTN} min-h-11 flex-1 rounded-lg border border-white/10 bg-white/10 text-sm font-black active:scale-95`}>+{d}</button>
+            ))}
+          </div>
+        </div>
+        <div className="min-w-[140px] flex-1 rounded-xl border border-white/10 bg-white/5 px-3 py-2">
+          <div className="flex items-baseline justify-between">
+            <span className="text-[11px] font-black uppercase tracking-wider text-white/50">Fouls</span>
+            <span className="text-xl font-black tabular-nums text-white">{fouls}</span>
+          </div>
+          <div className="mt-2 flex gap-1.5">
+            <button onClick={() => onUndoFoul(p)} disabled={fouls <= 0}
+              className={`${BTN} min-h-11 flex-1 rounded-lg border border-red-500/30 bg-red-500/10 text-sm font-black text-red-300 active:scale-95 disabled:opacity-20`}>-1</button>
+            <button onClick={() => onBumpFoul(p)}
+              className={`${BTN} min-h-11 flex-1 rounded-lg border border-white/10 bg-white/10 text-sm font-black active:scale-95`}>+1</button>
+          </div>
         </div>
       </div>
-      <div className="flex flex-col items-center shrink-0 border-l border-white/10 pl-1.5">
-        <span className="text-[8px] font-black uppercase leading-tight text-white/40">F · {fouls}</span>
-        <div className="mt-0.5 flex items-center gap-1">
-          <button onClick={() => onUndoFoul(p)} disabled={fouls <= 0}
-            className={`${BTN} rounded border border-red-500/30 bg-red-500/10 px-2 py-1.5 text-[10px] font-black text-red-300 active:scale-95 disabled:opacity-20`}>-1</button>
-          <button onClick={() => onBumpFoul(p)}
-            className={`${BTN} rounded border border-white/15 bg-white/10 px-2 py-1.5 text-[10px] font-black active:scale-95`}>+1</button>
-        </div>
-      </div>
-      <button onClick={() => onToggle(p)}
-        className={`${BTN} shrink-0 self-center rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-[10px] font-black text-red-300 active:scale-95`}>Out</button>
     </div>
   );
 }
 
 function BenchRow({ p, isCap, onToggle }) {
   return (
-    <div className="flex items-center justify-between rounded-lg border border-white/5 bg-white/[0.02] px-3 py-2">
-      <span className="truncate text-xs font-semibold text-white/70">{isCap ? "⭐ " : ""}{p.player_name || p.player_id}</span>
+    <div className="flex items-center justify-between rounded-xl border border-white/5 bg-white/[0.02] px-3 py-2.5">
+      <span className="truncate text-sm font-semibold text-white/60">{isCap ? "⭐ " : ""}{p.player_name || p.player_id}</span>
       <button onClick={() => onToggle(p)}
-        className={`${BTN} shrink-0 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-4 py-2 text-[11px] font-black text-emerald-300 active:scale-95`}>In</button>
+        className={`${BTN} min-h-11 shrink-0 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-4 text-xs font-black text-emerald-300 active:scale-95`}>In</button>
     </div>
   );
 }
@@ -244,9 +265,11 @@ export default function LiveGamePage() {
   const [finalizing, setFinalizing] = useState(false);
 
   const [clockMode, setClockMode]     = useState("");
-  const [showBenchA, setShowBenchA]   = useState(true);
-  const [showBenchB, setShowBenchB]   = useState(true);
-  const [superCompact, setSuperCompact] = useState(true);
+  const [showBenchA, setShowBenchA]   = useState(false);
+  const [showBenchB, setShowBenchB]   = useState(false);
+  // Which team's roster is showing full-width below the scoreboard —
+  // one team at a time instead of squeezing both into half-width columns.
+  const [activeRosterSide, setActiveRosterSide] = useState("A");
   const [showTopBar, setShowTopBar]   = useState(true);
   const [setTimeOpen, setSetTimeOpen] = useState(false);
   const [timeInput, setTimeInput]     = useState("00:00");
@@ -1023,8 +1046,6 @@ export default function LiveGamePage() {
   const isSoftballGame = isSoftball(game.sport);
   const noStat = !rules?.clock?.enabled && (rules?.stats?.length ?? 0) === 0;
   const clockPresets = activeClockMode?.presets ?? [300, 600, 900, 1200, 1800];
-  const chipPad = superCompact ? "px-2 py-1" : "px-3 py-2";
-  const chipText = superCompact ? "text-[11px]" : "text-sm";
 
   const battingRoster = battingTeam === "A" ? playingA : playingB;
   const activeBatterIdx = battingTeam === "A" ? batterIdxA : batterIdxB;
@@ -1044,49 +1065,49 @@ export default function LiveGamePage() {
   return (
     <div className="fixed inset-0 z-[999] overflow-y-auto bg-[#0a1628] text-white" style={{ touchAction: "manipulation" }}>
 
-      {!isOnline && (
-        <div className="sticky top-0 z-50 bg-red-600 px-4 py-2.5 text-center text-sm font-black text-white">
-          ⚠️ NO WIFI — Scores are NOT saving. Reconnect before continuing.
-        </div>
-      )}
-
-      {err && (
-        <div className="px-3 pt-2">
-          <div className="rounded-lg border border-red-700 bg-red-950/50 px-3 py-2 text-xs font-bold text-red-200">{err}</div>
-        </div>
-      )}
-
-      {/* Top bar */}
-      {showTopBar ? (
-        <div className="flex items-center justify-between border-b border-white/10 bg-[#06101f] px-3 py-2">
-          <div className="min-w-0 truncate text-[11px] font-bold uppercase tracking-widest text-white/40">
-            {game.league_key} · {game.sport} · {game.level} · {game.mode}
+      {/* Always visible, regardless of scroll position — a failed tap's
+          error must never render off-screen above where the counselor
+          is scrolled to while entering stats. */}
+      <div className="sticky top-0 z-40 flex flex-col shadow-lg shadow-black/40">
+        {!isOnline && (
+          <div className="bg-red-600 px-4 py-2.5 text-center text-sm font-black text-white">
+            ⚠️ NO WIFI — Scores are NOT saving. Reconnect before continuing.
           </div>
-          <div className="flex items-center gap-2">
-            <button onClick={() => setSuperCompact((v) => !v)}
-              className={`${BTN} rounded-lg border border-white/10 bg-white/5 px-2.5 py-1.5 text-[10px] font-bold text-white/60`}>
-              {superCompact ? "Compact" : "Large"}
-            </button>
-            <button onClick={() => router.push("/")}
-              className={`${BTN} rounded-lg border border-white/10 bg-white/5 px-2.5 py-1.5 text-[10px] font-bold text-white/60`}>Home</button>
-            <button onClick={() => setShowTopBar(false)}
-              className={`${BTN} rounded-lg border border-white/10 bg-white/5 px-2 py-1.5 text-[10px] font-bold text-white/60`}>▲</button>
-          </div>
-        </div>
-      ) : (
-        <button onClick={() => setShowTopBar(true)}
-          className={`${BTN} flex w-full items-center justify-center border-b border-white/10 bg-[#06101f] py-1 text-white/30`}>
-          <span className="text-[10px]">☰</span>
-        </button>
-      )}
+        )}
 
-      {/* ── SCOREBOARD ── */}
-      <div className="border-b border-white/10 bg-[#07112a] px-3 py-2">
+        {err && (
+          <div className="bg-[#0a1628] px-3 pt-2">
+            <div className="rounded-lg border border-red-700 bg-red-950 px-3 py-2 text-xs font-bold text-red-200">{err}</div>
+          </div>
+        )}
+
+        {/* Top bar */}
+        {showTopBar ? (
+          <div className="flex items-center justify-between border-b border-white/10 bg-[#06101f] px-3 py-2 landscape:py-1">
+            <div className="min-w-0 truncate text-[11px] font-bold uppercase tracking-widest text-white/40">
+              {game.league_key} · {game.sport} · {game.level} · {game.mode}
+            </div>
+            <div className="flex items-center gap-2">
+              <button onClick={() => router.push("/")}
+                className={`${BTN} rounded-lg border border-white/10 bg-white/5 px-2.5 py-1.5 text-[10px] font-bold text-white/60`}>Home</button>
+              <button onClick={() => setShowTopBar(false)}
+                className={`${BTN} rounded-lg border border-white/10 bg-white/5 px-2 py-1.5 text-[10px] font-bold text-white/60`}>▲</button>
+            </div>
+          </div>
+        ) : (
+          <button onClick={() => setShowTopBar(true)}
+            className={`${BTN} flex w-full items-center justify-center border-b border-white/10 bg-[#06101f] py-1 text-white/30`}>
+            <span className="text-[10px]">☰</span>
+          </button>
+        )}
+
+        {/* ── SCOREBOARD ── */}
+        <div className="border-b border-white/10 bg-[#07112a] px-3 py-2 landscape:py-1.5">
         {isHoop ? (
           <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2">
             <div>
               <div className="text-[9px] font-black uppercase tracking-widest text-blue-400/60">{leftLabel}</div>
-              <div className="text-2xl font-black tabular-nums text-white">{scoreA}</div>
+              <div className="text-2xl font-black tabular-nums text-white landscape:text-xl">{scoreA}</div>
             </div>
             <div className="flex flex-col items-center gap-1">
               {rules?.clock?.enabled ? (
@@ -1270,6 +1291,7 @@ export default function LiveGamePage() {
             </div>
           </div>
         )}
+        </div>
       </div>
 
       {/* ── BODY ── */}
@@ -1353,51 +1375,73 @@ export default function LiveGamePage() {
           </div>
         </div>
       ) : !noStat ? (
-        <div className="grid grid-cols-2 gap-2 p-3">
-          {[
-            { side: "A", label: leftLabel, playing: playingA, bench: benchA, show: showBenchA, setShow: setShowBenchA, roster: rosterA },
-            { side: "B", label: rightLabel, playing: playingB, bench: benchB, show: showBenchB, setShow: setShowBenchB, roster: rosterB },
-          ].map(({ side, label, playing, bench, show, setShow, roster }) => (
-            <div key={side} className="rounded-xl border border-white/10 bg-white/[0.03] p-2">
-              <div className="mb-2 flex items-center justify-between">
-                <div className="text-xs font-black uppercase tracking-wider text-white/60">{label}</div>
-                <button onClick={() => setShow((v) => !v)}
-                  className={`${BTN} rounded-md border border-white/10 bg-white/5 px-2 py-1 text-[10px] font-bold text-white/50`}>
-                  {show ? "Bench ▲" : `Bench (${bench.length}) ▼`}
-                </button>
+        (() => {
+          const rosterTeams = [
+            { side: "A", label: leftLabel, score: scoreA, playing: playingA, bench: benchA, show: showBenchA, setShow: setShowBenchA, roster: rosterA },
+            { side: "B", label: rightLabel, score: scoreB, playing: playingB, bench: benchB, show: showBenchB, setShow: setShowBenchB, roster: rosterB },
+          ];
+          const active = rosterTeams.find((t) => t.side === activeRosterSide) ?? rosterTeams[0];
+          return (
+            <div className="p-3">
+              {/* One team at a time, full device width — the squeezed
+                  side-by-side columns were the main source of tiny,
+                  mis-tappable buttons and forced-abbreviated names. */}
+              <div className="flex gap-1.5 rounded-2xl border border-white/10 bg-white/[0.04] p-1.5">
+                {rosterTeams.map((t) => {
+                  const isActive = t.side === activeRosterSide;
+                  return (
+                    <button key={t.side} onClick={() => setActiveRosterSide(t.side)}
+                      className={`${BTN} min-h-11 flex-1 truncate rounded-xl px-3 text-sm font-black active:scale-[0.98] ${
+                        isActive ? "text-white" : "text-white/45"}`}
+                      style={isActive ? { background: "linear-gradient(180deg,#4d80ff,#3a71ff)" } : {}}>
+                      {t.label} · {t.score}
+                    </button>
+                  );
+                })}
               </div>
-              <div className="space-y-1.5">
-                {playing.length ? (
-                  playing.map((p) => {
-                    const idx = roster.findIndex((x) => x.player_id === p.player_id);
+
+              <div className="mt-3 space-y-2">
+                {active.playing.length ? (
+                  active.playing.map((p) => {
+                    const idx = active.roster.findIndex((x) => x.player_id === p.player_id);
                     return isHoop ? (
-                      <HoopPlayerRow key={p.player_id} p={p} side={side} isCap={isCapFn(p.player_id)}
+                      <HoopPlayerRow key={p.player_id} p={p} side={active.side} isCap={isCapFn(p.player_id)}
                         pts={getVal(p.player_id, "pts")} fouls={getVal(p.player_id, "foul")}
                         onBumpPts={bumpHoopPoints} onUndoPts={undoHoopPoints}
                         onBumpFoul={(pl) => bumpStat(pl, "foul", 1)} onUndoFoul={(pl) => undoStat(pl, "foul")}
                         onToggle={togglePlaying} />
                     ) : (
-                      <PlayerRow key={p.player_id} p={p} idx={Math.max(0, idx)} total={roster.length} side={side}
+                      <PlayerRow key={p.player_id} p={p} idx={Math.max(0, idx)} total={active.roster.length} side={active.side}
                         showBatting={isBattingSport(game?.sport)} isCap={isCapFn(p.player_id)}
-                        statDefs={statDefs} getVal={getVal} chipPad={chipPad} chipText={chipText}
+                        statDefs={statDefs} getVal={getVal}
                         onBumpChip={onBumpChip} onUndoChip={onUndoChip}
                         onToggle={togglePlaying} onMove={moveInOrder} />
                     );
                   })
                 ) : (
-                  <div className="rounded-lg border border-white/5 bg-white/[0.02] p-2 text-[11px] text-white/40">
-                    No one in yet — open bench + tap In
+                  <div className="rounded-xl border border-white/5 bg-white/[0.02] p-3 text-sm text-white/40">
+                    No one in yet — open bench below and tap In.
                   </div>
                 )}
               </div>
-              {show && (
-                <div className="mt-2 space-y-1">
-                  {bench.length ? bench.map((p) => <BenchRow key={p.player_id} p={p} isCap={isCapFn(p.player_id)} onToggle={togglePlaying} />) : <div className="text-[10px] text-white/30">No bench.</div>}
-                </div>
-              )}
+
+              <div className="mt-3">
+                <button onClick={() => active.setShow((v) => !v)}
+                  className={`${BTN} min-h-11 flex w-full items-center justify-between rounded-xl border border-white/5 bg-white/[0.02] px-3 text-xs font-bold text-white/40`}>
+                  <span>Bench ({active.bench.length})</span>
+                  <span>{active.show ? "▲" : "▼"}</span>
+                </button>
+                {active.show && (
+                  <div className="mt-2 space-y-1.5">
+                    {active.bench.length
+                      ? active.bench.map((p) => <BenchRow key={p.player_id} p={p} isCap={isCapFn(p.player_id)} onToggle={togglePlaying} />)
+                      : <div className="text-xs text-white/30">No bench.</div>}
+                  </div>
+                )}
+              </div>
             </div>
-          ))}
-        </div>
+          );
+        })()
       ) : (
         <div className="px-3 pt-3 text-center text-[11px] text-white/30">
           {leftLabel} vs {rightLabel} — no stats tracked for this sport.
