@@ -9,7 +9,7 @@ import "./globals.css";
 // The database stays frozen and untouched. Set back to false next summer to
 // reopen the app exactly as it was.
 // ============================================================================
-const OFF_SEASON = false;
+const OFF_SEASON = true;
 
 const geistSans = Geist({
   variable: "--font-geist-sans",

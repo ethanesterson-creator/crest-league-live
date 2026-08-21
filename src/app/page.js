@@ -112,7 +112,7 @@ export default function HomePage() {
   const [modeDirty, setModeDirty] = useState(false);
 
   // matchup type
-  const [matchupType, setMatchupType] = useState("single"); // single | two_team
+  const [matchupType, setMatchupType] = useState("two_team"); // single | two_team
 
   // Crest Cup only ever uses Soccer — lock it automatically, and use a generic mode label
   useEffect(() => {
