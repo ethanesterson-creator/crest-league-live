@@ -73,6 +73,23 @@ function matchupLabel(a1, a2) {
   return x1 || "—";
 }
 
+// Simple stroke-based icons, one per sport -- purely decorative, no data behind them.
+function SportIcon({ sport, color }) {
+  const p = { fill: "none", stroke: color, strokeWidth: 1.6, strokeLinecap: "round", strokeLinejoin: "round" };
+  const s = norm(sport);
+  if (s === "hoop") return <svg width="24" height="24" viewBox="0 0 24 24" {...p}><circle cx="12" cy="12" r="8.5" /><path d="M12 3.5v17" /><path d="M4.5 12h15" /><path d="M6 6.2c2.6 2 2.6 9.6 0 11.6" /><path d="M18 6.2c-2.6 2-2.6 9.6 0 11.6" /></svg>;
+  if (s === "soccer") return <svg width="24" height="24" viewBox="0 0 24 24" {...p}><circle cx="12" cy="12" r="8.5" /><path d="M12 7.2l4 2.9-1.5 4.7h-5L8 10.1z" /><path d="M12 7.2V4.2" /><path d="M8 10.1L4.2 9.3" /><path d="M14.5 14.8l2.3 2.6" /><path d="M9.5 14.8l-2.3 2.6" /><path d="M16 10.1l3.8-.8" /></svg>;
+  if (s === "softball") return <svg width="24" height="24" viewBox="0 0 24 24" {...p}><circle cx="12" cy="12" r="8.5" /><path d="M6 5.5c2.3 2.6 2.3 10.4 0 13" /><path d="M18 5.5c-2.3 2.6-2.3 10.4 0 13" /></svg>;
+  if (s === "kickball") return <svg width="24" height="24" viewBox="0 0 24 24" {...p} strokeWidth="1.8"><circle cx="12" cy="12" r="8.5" /><circle cx="12" cy="8.6" r="0.9" fill={color} stroke="none" /><circle cx="9" cy="14" r="0.9" fill={color} stroke="none" /><circle cx="15" cy="14" r="0.9" fill={color} stroke="none" /></svg>;
+  if (s === "volleyball") return <svg width="24" height="24" viewBox="0 0 24 24" {...p}><circle cx="12" cy="12" r="8.5" /><path d="M12 3.5c3.6 2.2 3.6 15.3 0 17.5" /><path d="M4.6 8.5c4.6 1.6 10.2 1.6 14.8 0" /><path d="M4.6 15.5c4.6-1.6 10.2-1.6 14.8 0" /></svg>;
+  if (s === "football") return <svg width="24" height="24" viewBox="0 0 24 24" {...p}><path d="M4.5 12c0-4.5 3.5-7.5 7.5-7.5s7.5 3 7.5 7.5-3.5 7.5-7.5 7.5S4.5 16.5 4.5 12z" /><path d="M8 12h8" /><path d="M10 10v4" /><path d="M12.7 10v4" /></svg>;
+  if (s === "newcomb") return <svg width="24" height="24" viewBox="0 0 24 24" {...p}><circle cx="12" cy="9" r="4.3" /><path d="M4 19c1-2.6 3-4 4.6-4" /><path d="M20 19c-1-2.6-3-4-4.6-4" /><path d="M4 19h16" /></svg>;
+  if (s === "speedball") return <svg width="24" height="24" viewBox="0 0 24 24" {...p}><circle cx="14.5" cy="12" r="6.5" /><path d="M2.5 9h4" /><path d="M2 12.2h5" /><path d="M2.5 15.4h4" /></svg>;
+  if (s === "euro") return <svg width="24" height="24" viewBox="0 0 24 24" {...p}><rect x="3" y="4" width="6.5" height="5.5" rx="0.5" /><path d="M3 5.8h6.5M3 7.6h6.5M4.6 4v5.5M6.3 4v5.5M8 4v5.5" /><circle cx="16" cy="15" r="4.6" /></svg>;
+  if (s === "hockey") return <svg width="24" height="24" viewBox="0 0 24 24" {...p}><path d="M9 3.5l8 15" /><path d="M17 18.5c-2.4 0-3.6.9-4.4 2.2" /><ellipse cx="6" cy="18.3" rx="2.6" ry="1.5" /></svg>;
+  return <svg width="24" height="24" viewBox="0 0 24 24" {...p}><circle cx="12" cy="12" r="8.5" /></svg>;
+}
+
 export default function HomePage() {
   const { season, session, isCW, blueName, whiteName } = useAppMode();
   const [status, setStatus] = useState("Checking…");
@@ -134,6 +151,10 @@ export default function HomePage() {
   const [seriesFormatChoice, setSeriesFormatChoice] = useState(3);
   const [bowlName, setBowlName] = useState("");
   const [bowlCounts, setBowlCounts] = useState(true);
+
+  // ---- compact UI state (visual only, no effect on game data) ----
+  const [showSettings, setShowSettings] = useState(false);
+  const [showMore, setShowMore] = useState(false);
 
   // ---- points_rules helpers ----
   async function fetchRuleRow(lk, sp, lv) {
@@ -496,6 +517,16 @@ export default function HomePage() {
     }
   }
 
+  // one-line summary of the collapsed settings, purely for display
+  const settingsSummary = [
+    isCW || (matchupType !== "full_team" && matchupType !== "crest_cup") ? `Level ${String(level).toUpperCase()}` : null,
+    matchupType !== "crest_cup" ? mode : null,
+    clockEnabled ? (clockModes?.find((m) => m.id === clockStyle)?.label || "Countdown") : "No clock",
+    clockEnabled ? (timerOptions.find((p) => p.seconds === preset)?.label || FALLBACK_TIMER_PRESETS[0].label) : null,
+  ]
+    .filter(Boolean)
+    .join(" · ");
+
   return (
     <div className="min-h-screen text-slate-100">
       <div className="mx-auto max-w-4xl p-4">
@@ -523,16 +554,55 @@ export default function HomePage() {
         <div className="mt-4 rounded-2xl border border-slate-800 bg-slate-900/60 p-4 shadow">
           <div className="text-lg font-bold">Create Live Game</div>
 
-          <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
-            {matchupType !== "crest_cup" ? (
-            <label className="text-sm">
-              <div className="mb-1 text-slate-300">League (age group)</div>
+          {/* Sport — horizontally-scrolling chip strip, keeps this compact on phones */}
+          <div className="mt-3">
+            <div className="mb-1.5 text-xs font-bold uppercase tracking-wider text-slate-400">Sport</div>
+            <div className="-mx-1 flex gap-2 overflow-x-auto px-1 pb-1" style={{ scrollbarWidth: "none" }}>
+              {SPORTS.map((s) => {
+                const active = norm(sport) === norm(s);
+                return (
+                  <button
+                    key={s}
+                    type="button"
+                    disabled={matchupType === "crest_cup"}
+                    onClick={() => setSport(s)}
+                    className="flex shrink-0 flex-col items-center gap-1 rounded-2xl border px-3.5 py-2.5 disabled:opacity-60"
+                    style={
+                      active
+                        ? { borderColor: "#3a71ff", background: "rgba(58,113,255,0.18)", boxShadow: "0 0 0 3px rgba(58,113,255,0.15)" }
+                        : { borderColor: "rgba(255,255,255,0.1)", background: "rgba(255,255,255,0.04)" }
+                    }
+                  >
+                    <SportIcon sport={s} color={active ? "#bcd4ff" : "rgba(255,255,255,0.55)"} />
+                    <span className="text-[11px] font-extrabold" style={{ color: active ? "#fff" : "rgba(255,255,255,0.7)" }}>
+                      {s}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+            {matchupType === "crest_cup" ? <div className="mt-1 text-xs text-slate-400">Crest Cup is Soccer only.</div> : null}
+          </div>
 
+          {(norm(sport) === "volleyball" || norm(sport) === "newcomb") ? (
+            <label className="mt-3 block text-sm">
+              <div className="mb-1 text-slate-300">Series Format</div>
               <select
-                className="w-full rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-white outline-none focus:border-white/30"
-                value={leagueKey}
-                onChange={(e) => setLeagueKey(e.target.value)}
+                className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 outline-none focus:border-slate-500"
+                value={seriesFormatChoice}
+                onChange={(e) => setSeriesFormatChoice(Number(e.target.value))}
               >
+                <option value={3}>Best of 3</option>
+                <option value={5}>Best of 5</option>
+              </select>
+            </label>
+          ) : null}
+
+          {/* League — pill row, hidden for Crest Cup */}
+          {matchupType !== "crest_cup" ? (
+            <div className="mt-3">
+              <div className="mb-1.5 text-xs font-bold uppercase tracking-wider text-slate-400">League</div>
+              <div className="flex gap-2">
                 {(leagues?.length
                   ? leagues
                   : [
@@ -540,296 +610,300 @@ export default function HomePage() {
                       { id: "juniors", name: "Juniors" },
                       { id: "sophomores", name: "Sophomores" },
                     ]
-                ).map((l) => (
-                  <option key={l.id} value={l.id}>
-                    {l.name ?? l.id}
-                  </option>
-                ))}
-              </select>
-            </label>
-            ) : (
-              <div className="text-xs text-slate-400 flex items-end pb-2">Crest Cup — spans all leagues, no age group split.</div>
-            )}
-
-            <label className="text-sm">
-              <div className="mb-1 text-slate-300">Sport</div>
-              <select
-                className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 outline-none focus:border-slate-500 disabled:opacity-50"
-                value={sport}
-                onChange={(e) => setSport(e.target.value)}
-                disabled={matchupType === "crest_cup"}
-              >
-                {SPORTS.map((s) => (
-                  <option key={s} value={s}>
-                    {s}
-                  </option>
-                ))}
-              </select>
-              {matchupType === "crest_cup" ? (
-                <div className="mt-1 text-xs text-slate-400">Crest Cup is Soccer only.</div>
-              ) : null}
-            </label>
-
-            {(norm(sport) === "volleyball" || norm(sport) === "newcomb") ? (
-              <label className="text-sm">
-                <div className="mb-1 text-slate-300">Series Format</div>
-                <select
-                  className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 outline-none focus:border-slate-500"
-                  value={seriesFormatChoice}
-                  onChange={(e) => setSeriesFormatChoice(Number(e.target.value))}
-                >
-                  <option value={3}>Best of 3</option>
-                  <option value={5}>Best of 5</option>
-                </select>
-              </label>
-            ) : null}
-
-            {/* Matchup type — hidden in Color War (always Blue vs White, 1v1) */}
-            {!isCW ? (
-            <label className="text-sm">
-              <div className="mb-1 text-slate-300">Matchup</div>
-              <select
-                className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 outline-none focus:border-slate-500"
-                value={matchupType}
-                onChange={(e) => setMatchupType(e.target.value)}
-              >
-                <option value="single">1 team vs 1 team</option>
-                <option value="two_team">2 teams vs 2 teams</option>
-                <option value="full_team">Full Team</option>
-                <option value="crest_cup">Crest Cup (All Leagues)</option>
-              </select>
-            </label>
-            ) : null}
-
-            {isCW || (matchupType !== "full_team" && matchupType !== "crest_cup") ? (
-            <label className="text-sm">
-            <div className="mb-1 text-slate-300">Level</div>
-           <select
-              className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 outline-none focus:border-slate-500"
-              value={String(level).toUpperCase()}
-              onChange={(e) => setLevel(e.target.value)}
-               >
-               {(availableLevels?.length ? availableLevels : FALLBACK_LEVELS).map((l) => (
-                  <option key={l} value={l}>
-                  {l}
-                </option>
-                  ))}
-                  </select>
-                 </label>
-                ) : matchupType === "full_team" ? (
-                 <div className="text-xs text-slate-400 flex items-end pb-2">Full Team — no level split.</div>
-                  ) : (
-                 <div className="text-xs text-slate-400 flex items-end pb-2">Crest Cup — no level split.</div>
-                  )}
-
-            {matchupType !== "crest_cup" ? (
-            <label className="text-sm">
-              <div className="mb-1 text-slate-300">Mode</div>
-              <select
-                className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 outline-none focus:border-slate-500"
-                value={mode}
-                onChange={(e) => {
-                  setMode(e.target.value);
-                  setModeDirty(true);
-                }}
-              >
-                {MODES.map((m) => (
-                  <option key={m} value={m}>
-                    {m}
-                  </option>
-                ))}
-              </select>
-            </label>
-            ) : (
-              <div className="text-xs text-slate-400 flex items-end pb-2">Crest Cup — full camp-wide roster, no fixed mode.</div>
-            )}
-
-            {/* Bowl controls — hidden in Color War */}
-            {!isCW ? (
-            <div className="sm:col-span-2 rounded-2xl border border-white/10 bg-black/20 p-4">
-              <label className="flex items-center gap-3 text-sm font-bold">
-                <input
-                  type="checkbox"
-                  checked={isBowlGame}
-                  onChange={(e) => {
-                    const on = e.target.checked;
-                    setIsBowlGame(on);
-                    if (!on) {
-                      setBowlName("");
-                      setBowlCounts(true);
-                    }
-                  }}
-                />
-                Bowl game?
-              </label>
-
-              {isBowlGame ? (
-                <div className="mt-3 grid gap-3 sm:grid-cols-2">
-                  <label className="text-sm">
-                    <div className="mb-1 text-slate-300">Bowl name</div>
-                    <input
-                      value={bowlName}
-                      onChange={(e) => setBowlName(e.target.value)}
-                      placeholder="Session 1 Bowl"
-                      className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 outline-none focus:border-slate-500"
-                    />
-                  </label>
-
-                  <label className="text-sm">
-                    <div className="mb-1 text-slate-300">Counts for standings?</div>
-                    <select
-                      value={bowlCounts ? "yes" : "no"}
-                      onChange={(e) => setBowlCounts(e.target.value === "yes")}
-                      className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 outline-none focus:border-slate-500"
+                ).map((l) => {
+                  const active = leagueKey === l.id;
+                  return (
+                    <button
+                      key={l.id}
+                      type="button"
+                      onClick={() => setLeagueKey(l.id)}
+                      className="flex-1 rounded-xl px-2 py-2.5 text-sm font-extrabold"
+                      style={
+                        active
+                          ? { background: "linear-gradient(180deg,#4d80ff,#3a71ff)", color: "#fff" }
+                          : { background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.1)", color: "rgba(255,255,255,0.6)" }
+                      }
                     >
-                      <option value="yes">Yes (normal points)</option>
-                      <option value="no">No (exhibition)</option>
+                      {l.name ?? l.id}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          ) : (
+            <div className="mt-3 text-xs text-slate-400">Crest Cup — spans all leagues, no age group split.</div>
+          )}
+
+          {/* Team picks — in Color War these are locked to Blue vs White */}
+          {isCW ? (
+            <div className="mt-3 rounded-2xl border border-blue-400/30 bg-blue-500/5 p-4 text-center">
+              <div className="text-sm font-black tracking-widest text-blue-200">
+                {blueName} (BLUE) vs {whiteName} (WHITE)
+              </div>
+              <div className="mt-1 text-xs text-white/40">Teams are set automatically for Color War.</div>
+            </div>
+          ) : (
+            <div className="mt-3 grid grid-cols-[1fr_auto_1fr] items-start gap-2">
+              <div className="rounded-2xl border border-slate-700 bg-slate-950 p-3">
+                <div className="text-[10px] font-black uppercase tracking-wider text-slate-400">
+                  Team A{matchupType === "two_team" ? "1" : ""}
+                </div>
+                <select
+                  className="mt-1 w-full bg-transparent text-base font-extrabold text-white outline-none"
+                  value={teamA}
+                  onChange={(e) => setTeamA(e.target.value)}
+                >
+                  <option value="">Select…</option>
+                  {teams.map((t) => (
+                    <option key={t} value={t}>
+                      {t}
+                    </option>
+                  ))}
+                </select>
+                {matchupType === "two_team" ? (
+                  <select
+                    className="mt-2 w-full rounded-lg border border-slate-700 bg-slate-900 px-2 py-1.5 text-xs font-bold text-white outline-none"
+                    value={teamA2}
+                    onChange={(e) => setTeamA2(e.target.value)}
+                  >
+                    <option value="">+ Team A2…</option>
+                    {teams.map((t) => (
+                      <option key={t} value={t}>
+                        {t}
+                      </option>
+                    ))}
+                  </select>
+                ) : null}
+              </div>
+              <div className="pt-4 text-xs font-black text-slate-500">VS</div>
+              <div className="rounded-2xl border border-slate-700 bg-slate-950 p-3">
+                <div className="text-[10px] font-black uppercase tracking-wider text-slate-400">
+                  Team B{matchupType === "two_team" ? "1" : ""}
+                </div>
+                <select
+                  className="mt-1 w-full bg-transparent text-base font-extrabold text-white outline-none"
+                  value={teamB}
+                  onChange={(e) => setTeamB(e.target.value)}
+                >
+                  <option value="">Select…</option>
+                  {teams.map((t) => (
+                    <option key={t} value={t}>
+                      {t}
+                    </option>
+                  ))}
+                </select>
+                {matchupType === "two_team" ? (
+                  <select
+                    className="mt-2 w-full rounded-lg border border-slate-700 bg-slate-900 px-2 py-1.5 text-xs font-bold text-white outline-none"
+                    value={teamB2}
+                    onChange={(e) => setTeamB2(e.target.value)}
+                  >
+                    <option value="">+ Team B2…</option>
+                    {teams.map((t) => (
+                      <option key={t} value={t}>
+                        {t}
+                      </option>
+                    ))}
+                  </select>
+                ) : null}
+              </div>
+            </div>
+          )}
+
+          {/* Auto-computed settings summary — tap Edit to reveal Level / Mode / Clock controls */}
+          <button
+            type="button"
+            onClick={() => setShowSettings((v) => !v)}
+            className="mt-3 flex w-full items-center justify-between gap-2 rounded-xl border px-3.5 py-2.5 text-left"
+            style={{ borderColor: "rgba(58,113,255,0.3)", background: "rgba(58,113,255,0.1)" }}
+          >
+            <span className="truncate text-xs font-extrabold" style={{ color: "#dce8ff" }}>
+              {settingsSummary || "Game settings"}
+            </span>
+            <span className="shrink-0 text-xs font-black" style={{ color: "#8fb3ff" }}>
+              {showSettings ? "Done" : "Edit"}
+            </span>
+          </button>
+
+          {showSettings ? (
+            <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
+              {isCW || (matchupType !== "full_team" && matchupType !== "crest_cup") ? (
+                <label className="text-sm">
+                  <div className="mb-1 text-slate-300">Level</div>
+                  <select
+                    className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 outline-none focus:border-slate-500"
+                    value={String(level).toUpperCase()}
+                    onChange={(e) => setLevel(e.target.value)}
+                  >
+                    {(availableLevels?.length ? availableLevels : FALLBACK_LEVELS).map((l) => (
+                      <option key={l} value={l}>
+                        {l}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              ) : matchupType === "full_team" ? (
+                <div className="text-xs text-slate-400 flex items-end pb-2">Full Team — no level split.</div>
+              ) : (
+                <div className="text-xs text-slate-400 flex items-end pb-2">Crest Cup — no level split.</div>
+              )}
+
+              {matchupType !== "crest_cup" ? (
+                <label className="text-sm">
+                  <div className="mb-1 text-slate-300">Mode</div>
+                  <select
+                    className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 outline-none focus:border-slate-500"
+                    value={mode}
+                    onChange={(e) => {
+                      setMode(e.target.value);
+                      setModeDirty(true);
+                    }}
+                  >
+                    {MODES.map((m) => (
+                      <option key={m} value={m}>
+                        {m}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              ) : (
+                <div className="text-xs text-slate-400 flex items-end pb-2">Crest Cup — full camp-wide roster, no fixed mode.</div>
+              )}
+
+              {/* Clock Style */}
+              {clockEnabled ? (
+                <label className="text-sm sm:col-span-2">
+                  <div className="mb-1 text-slate-300">Clock Style</div>
+                  <select
+                    className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 outline-none focus:border-slate-500"
+                    value={clockStyle}
+                    onChange={(e) => {
+                      setClockStyle(e.target.value);
+                      setClockStyleDirty(true);
+                    }}
+                  >
+                    {(clockModes?.length
+                      ? clockModes
+                      : [
+                          {
+                            id: "countdown",
+                            label: "Countdown",
+                            presets: FALLBACK_TIMER_PRESETS.map((p) => p.seconds),
+                          },
+                        ]
+                    ).map((m) => (
+                      <option key={m.id} value={m.id}>
+                        {m.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              ) : (
+                <div className="text-xs text-slate-400 sm:col-span-2">This game has no clock (per points_rules).</div>
+              )}
+
+              {/* Timer Preset */}
+              {clockEnabled ? (
+                <label className="text-sm sm:col-span-2">
+                  <div className="mb-1 text-slate-300">Timer Preset</div>
+                  <select
+                    className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 outline-none focus:border-slate-500"
+                    value={preset}
+                    onChange={(e) => {
+                      setPreset(Number(e.target.value));
+                      setPresetDirty(true);
+                    }}
+                  >
+                    {(timerOptions.length ? timerOptions : FALLBACK_TIMER_PRESETS).map((p) => (
+                      <option key={p.seconds} value={p.seconds}>
+                        {p.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              ) : null}
+            </div>
+          ) : null}
+
+          {/* More options — Matchup type + Bowl game, hidden in Color War */}
+          {!isCW ? (
+            <div className="mt-1">
+              <button
+                type="button"
+                onClick={() => setShowMore((v) => !v)}
+                className="flex w-full items-center justify-between border-t border-white/5 py-2.5 text-left"
+              >
+                <span className="text-xs font-bold text-slate-400">More options</span>
+                <span className="text-xs text-slate-500">{showMore ? "▲" : "▼"}</span>
+              </button>
+
+              {showMore ? (
+                <div className="flex flex-col gap-3 pb-1">
+                  <label className="text-sm">
+                    <div className="mb-1 text-slate-300">Matchup</div>
+                    <select
+                      className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 outline-none focus:border-slate-500"
+                      value={matchupType}
+                      onChange={(e) => setMatchupType(e.target.value)}
+                    >
+                      <option value="single">1 team vs 1 team</option>
+                      <option value="two_team">2 teams vs 2 teams</option>
+                      <option value="full_team">Full Team</option>
+                      <option value="crest_cup">Crest Cup (All Leagues)</option>
                     </select>
                   </label>
 
-                  <div className="text-xs text-slate-400 sm:col-span-2">
-                    Bowl games are tagged for display. If “No,” the game finalizes normally but does not change standings.
+                  <div className="rounded-2xl border border-white/10 bg-black/20 p-4">
+                    <label className="flex items-center gap-3 text-sm font-bold">
+                      <input
+                        type="checkbox"
+                        checked={isBowlGame}
+                        onChange={(e) => {
+                          const on = e.target.checked;
+                          setIsBowlGame(on);
+                          if (!on) {
+                            setBowlName("");
+                            setBowlCounts(true);
+                          }
+                        }}
+                      />
+                      Bowl game?
+                    </label>
+
+                    {isBowlGame ? (
+                      <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                        <label className="text-sm">
+                          <div className="mb-1 text-slate-300">Bowl name</div>
+                          <input
+                            value={bowlName}
+                            onChange={(e) => setBowlName(e.target.value)}
+                            placeholder="Session 1 Bowl"
+                            className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 outline-none focus:border-slate-500"
+                          />
+                        </label>
+
+                        <label className="text-sm">
+                          <div className="mb-1 text-slate-300">Counts for standings?</div>
+                          <select
+                            value={bowlCounts ? "yes" : "no"}
+                            onChange={(e) => setBowlCounts(e.target.value === "yes")}
+                            className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 outline-none focus:border-slate-500"
+                          >
+                            <option value="yes">Yes (normal points)</option>
+                            <option value="no">No (exhibition)</option>
+                          </select>
+                        </label>
+
+                        <div className="text-xs text-slate-400 sm:col-span-2">
+                          Bowl games are tagged for display. If “No,” the game finalizes normally but does not change standings.
+                        </div>
+                      </div>
+                    ) : null}
                   </div>
                 </div>
               ) : null}
             </div>
-            ) : null}
-
-            {/* Team picks — in Color War these are locked to Blue vs White */}
-            {isCW ? (
-              <div className="sm:col-span-2 rounded-2xl border border-blue-400/30 bg-blue-500/5 p-4 text-center">
-                <div className="text-sm font-black tracking-widest text-blue-200">{blueName} (BLUE) vs {whiteName} (WHITE)</div>
-                <div className="mt-1 text-xs text-white/40">Teams are set automatically for Color War.</div>
-              </div>
-            ) : (
-            <label className="text-sm">
-              <div className="mb-1 text-slate-300">Team A1</div>
-              <select
-                className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 outline-none focus:border-slate-500"
-                value={teamA}
-                onChange={(e) => setTeamA(e.target.value)}
-              >
-                <option value="">Select…</option>
-                {teams.map((t) => (
-                  <option key={t} value={t}>
-                    {t}
-                  </option>
-                ))}
-              </select>
-            </label>
-            )}
-
-            {matchupType === "two_team" ? (
-              <>
-                <label className="text-sm">
-                  <div className="mb-1 text-slate-300">Team A2</div>
-                  <select
-                    className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 outline-none focus:border-slate-500"
-                    value={teamA2}
-                    onChange={(e) => setTeamA2(e.target.value)}
-                  >
-                    <option value="">Select…</option>
-                    {teams.map((t) => (
-                      <option key={t} value={t}>
-                        {t}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-              </>
-            ) : null}
-
-            {!isCW ? (
-            <label className="text-sm">
-              <div className="mb-1 text-slate-300">Team B1</div>
-              <select
-                className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 outline-none focus:border-slate-500"
-                value={teamB}
-                onChange={(e) => setTeamB(e.target.value)}
-              >
-                <option value="">Select…</option>
-                {teams.map((t) => (
-                  <option key={t} value={t}>
-                    {t}
-                  </option>
-                ))}
-              </select>
-            </label>
-            ) : null}
-
-            {!isCW && matchupType === "two_team" ? (
-              <>
-                <label className="text-sm">
-                  <div className="mb-1 text-slate-300">Team B2</div>
-                  <select
-                    className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 outline-none focus:border-slate-500"
-                    value={teamB2}
-                    onChange={(e) => setTeamB2(e.target.value)}
-                  >
-                    <option value="">Select…</option>
-                    {teams.map((t) => (
-                      <option key={t} value={t}>
-                        {t}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-              </>
-            ) : null}
-
-            {/* Clock Style */}
-            {clockEnabled ? (
-              <label className="text-sm sm:col-span-2">
-                <div className="mb-1 text-slate-300">Clock Style</div>
-                <select
-                  className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 outline-none focus:border-slate-500"
-                  value={clockStyle}
-                  onChange={(e) => {
-                    setClockStyle(e.target.value);
-                    setClockStyleDirty(true);
-                  }}
-                >
-                  {(clockModes?.length
-                    ? clockModes
-                    : [
-                        {
-                          id: "countdown",
-                          label: "Countdown",
-                          presets: FALLBACK_TIMER_PRESETS.map((p) => p.seconds),
-                        },
-                      ]
-                  ).map((m) => (
-                    <option key={m.id} value={m.id}>
-                      {m.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            ) : (
-              <div className="text-xs text-slate-400 sm:col-span-2">This game has no clock (per points_rules).</div>
-            )}
-
-            {/* Timer Preset */}
-            {clockEnabled ? (
-              <label className="text-sm sm:col-span-2">
-                <div className="mb-1 text-slate-300">Timer Preset</div>
-                <select
-                  className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 outline-none focus:border-slate-500"
-                  value={preset}
-                  onChange={(e) => {
-                    setPreset(Number(e.target.value));
-                    setPresetDirty(true);
-                  }}
-                >
-                  {(timerOptions.length ? timerOptions : FALLBACK_TIMER_PRESETS).map((p) => (
-                    <option key={p.seconds} value={p.seconds}>
-                      {p.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            ) : null}
-          </div>
+          ) : null}
 
           <button
             onClick={createGame}
