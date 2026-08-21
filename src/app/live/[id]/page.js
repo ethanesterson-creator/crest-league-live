@@ -126,7 +126,7 @@ function ClockButton({ game, onOpen, big }) {
   return (
     <button onClick={onOpen}
       className={big
-        ? "touch-manipulation select-none rounded-xl border border-white/10 bg-black/30 px-4 py-2 text-3xl font-black tabular-nums text-white active:scale-[0.98]"
+        ? "touch-manipulation select-none rounded-xl border border-white/10 bg-black/30 px-4 py-2 landscape:py-1 text-3xl landscape:text-2xl font-black tabular-nums text-white active:scale-[0.98]"
         : "touch-manipulation select-none rounded-lg border border-white/10 bg-black/30 px-3 py-1.5 text-xl font-black tabular-nums text-white active:scale-[0.98]"}>
       {fmtClock(computeRemaining(game))}
     </button>
@@ -140,107 +140,84 @@ function ClockButton({ game, onOpen, big }) {
 // ────────────────────────────────────────────────────────────────────────────
 const BTN = "touch-manipulation select-none";
 
-// Every stat gets its own full-width card: real word caption, big count,
-// -1 plus each configured delta, all buttons min-h-11 (44px) for reliable
-// thumb taps. Replaces the old thin abbreviation-only chip row.
+// One stat = one compact inline cluster (short caption, count, -1/+N) —
+// sits inline in the player row instead of stacking into its own card.
+// Landscape gives width, not height, so rows stay ONE line tall.
 function StatChip({ p, sd, side, value, onBump, onUndo }) {
   const deltas = sd?.deltas?.length ? sd.deltas : [1];
   return (
-    <div className="min-w-[140px] flex-1 rounded-xl border border-white/10 bg-white/5 px-3 py-2">
-      <div className="flex items-baseline justify-between">
-        <span className="text-[11px] font-black uppercase tracking-wider text-white/50">{statCaption(sd.key, sd.label)}</span>
-        <span className="text-xl font-black tabular-nums text-white">{value}</span>
-      </div>
-      <div className="mt-2 flex gap-1.5">
-        <button onClick={() => onUndo(p, sd, side)} disabled={value <= 0}
-          className={`${BTN} min-h-11 flex-1 rounded-lg border border-red-500/30 bg-red-500/10 text-sm font-black text-red-300 active:scale-95 disabled:opacity-20`}>-1</button>
-        {deltas.map((d) => (
-          <button key={d} onClick={() => onBump(p, sd, side, d)}
-            className={`${BTN} min-h-11 flex-1 rounded-lg border border-white/10 bg-white/10 text-sm font-black active:scale-95`}>+{d}</button>
-        ))}
-      </div>
+    <div className="flex shrink-0 items-center gap-1 rounded-lg border border-white/10 bg-white/5 py-1 pl-2 pr-1">
+      <span className="text-[9px] font-black uppercase tracking-wide text-white/45">{statCaption(sd.key, sd.label)}</span>
+      <span className="w-4 text-center text-sm font-black tabular-nums text-white">{value}</span>
+      <button onClick={() => onUndo(p, sd, side)} disabled={value <= 0}
+        className={`${BTN} h-9 w-9 rounded-md border border-red-500/30 bg-red-500/10 text-xs font-black text-red-300 active:scale-95 disabled:opacity-20`}>-1</button>
+      {deltas.map((d) => (
+        <button key={d} onClick={() => onBump(p, sd, side, d)}
+          className={`${BTN} h-9 w-9 rounded-md border border-white/10 bg-white/10 text-xs font-black active:scale-95`}>+{d}</button>
+      ))}
     </div>
   );
 }
 
 function PlayerRow({ p, idx, total, side, showBatting, isCap, statDefs, getVal, onBumpChip, onUndoChip, onToggle, onMove }) {
   return (
-    <div className="rounded-xl border border-white/10 bg-white/[0.04] p-3">
-      <div className="flex items-center justify-between gap-2">
-        {showBatting ? (
-          <div className="flex shrink-0 items-center gap-1">
-            <span className="w-5 text-center text-[10px] font-black opacity-60">{idx + 1}</span>
-            <button onClick={() => onMove(p, "up")} disabled={idx === 0} className={`${BTN} min-h-11 min-w-11 rounded-lg border border-white/10 bg-white/10 text-xs font-black disabled:opacity-30`}>↑</button>
-            <button onClick={() => onMove(p, "down")} disabled={idx === total - 1} className={`${BTN} min-h-11 min-w-11 rounded-lg border border-white/10 bg-white/10 text-xs font-black disabled:opacity-30`}>↓</button>
-          </div>
-        ) : null}
-        <div className="min-w-0 flex-1">
-          <div className="truncate text-base font-black text-white">{isCap ? "⭐ " : ""}{p.player_name || p.player_id}</div>
+    <div className="flex flex-wrap items-center gap-2 rounded-lg border border-white/10 bg-white/[0.04] px-2.5 py-1.5">
+      {showBatting ? (
+        <div className="flex shrink-0 items-center gap-1">
+          <span className="w-4 text-center text-[10px] font-black opacity-60">{idx + 1}</span>
+          <button onClick={() => onMove(p, "up")} disabled={idx === 0} className={`${BTN} h-9 w-9 rounded-md border border-white/10 bg-white/10 text-xs font-black disabled:opacity-30`}>↑</button>
+          <button onClick={() => onMove(p, "down")} disabled={idx === total - 1} className={`${BTN} h-9 w-9 rounded-md border border-white/10 bg-white/10 text-xs font-black disabled:opacity-30`}>↓</button>
         </div>
-        <button onClick={() => onToggle(p)}
-          className={`${BTN} min-h-11 shrink-0 rounded-lg border border-red-500/30 bg-red-500/10 px-4 text-xs font-black text-red-300 active:scale-95`}>Out</button>
-      </div>
-      {statDefs.length > 0 && (
-        <div className="mt-2.5 flex flex-wrap gap-2">
-          {statDefs.map((sd) => (
-            <StatChip key={`${p.player_id}-${sd.key}`} p={p} sd={sd} side={side}
-              value={getVal(p.player_id, sd.key)}
-              onBump={onBumpChip} onUndo={onUndoChip} />
-          ))}
-        </div>
-      )}
+      ) : null}
+      <div className="min-w-[80px] flex-1 truncate text-sm font-black text-white">{isCap ? "⭐ " : ""}{p.player_name || p.player_id}</div>
+      {statDefs.map((sd) => (
+        <StatChip key={`${p.player_id}-${sd.key}`} p={p} sd={sd} side={side}
+          value={getVal(p.player_id, sd.key)}
+          onBump={onBumpChip} onUndo={onUndoChip} />
+      ))}
+      <button onClick={() => onToggle(p)}
+        className={`${BTN} h-9 shrink-0 rounded-md border border-red-500/30 bg-red-500/10 px-3 text-[11px] font-black text-red-300 active:scale-95`}>Out</button>
     </div>
   );
 }
 
 function HoopPlayerRow({ p, side, isCap, pts, fouls, onBumpPts, onUndoPts, onBumpFoul, onUndoFoul, onToggle }) {
   return (
-    <div className="rounded-xl border border-white/10 bg-white/[0.04] p-3">
-      <div className="flex items-center justify-between gap-2">
-        <div className="min-w-0 flex-1">
-          <div className="truncate text-base font-black text-white">{isCap ? "⭐ " : ""}{p.player_name || p.player_id}</div>
-        </div>
-        <button onClick={() => onToggle(p)}
-          className={`${BTN} min-h-11 shrink-0 rounded-lg border border-red-500/30 bg-red-500/10 px-4 text-xs font-black text-red-300 active:scale-95`}>Out</button>
+    <div className="flex flex-wrap items-center gap-2 rounded-lg border border-white/10 bg-white/[0.04] px-2.5 py-1.5">
+      <div className="min-w-[80px] flex-1 truncate text-sm font-black text-white">{isCap ? "⭐ " : ""}{p.player_name || p.player_id}</div>
+
+      <div className="flex shrink-0 items-center gap-1 rounded-lg border border-white/10 bg-white/5 py-1 pl-2 pr-1">
+        <span className="text-[9px] font-black uppercase tracking-wide text-white/45">Pts</span>
+        <span className="w-4 text-center text-sm font-black tabular-nums text-white">{pts}</span>
+        <button onClick={() => onUndoPts(p, side)} disabled={pts <= 0}
+          className={`${BTN} h-9 w-9 rounded-md border border-red-500/30 bg-red-500/10 text-xs font-black text-red-300 active:scale-95 disabled:opacity-20`}>-1</button>
+        {[1, 2, 3].map((d) => (
+          <button key={d} onClick={() => onBumpPts(p, side, d)}
+            className={`${BTN} h-9 w-9 rounded-md border border-white/10 bg-white/10 text-xs font-black active:scale-95`}>+{d}</button>
+        ))}
       </div>
-      <div className="mt-2.5 flex flex-wrap gap-2">
-        <div className="min-w-[180px] flex-[2] rounded-xl border border-white/10 bg-white/5 px-3 py-2">
-          <div className="flex items-baseline justify-between">
-            <span className="text-[11px] font-black uppercase tracking-wider text-white/50">Points</span>
-            <span className="text-xl font-black tabular-nums text-white">{pts}</span>
-          </div>
-          <div className="mt-2 flex gap-1.5">
-            <button onClick={() => onUndoPts(p, side)} disabled={pts <= 0}
-              className={`${BTN} min-h-11 flex-1 rounded-lg border border-red-500/30 bg-red-500/10 text-sm font-black text-red-300 active:scale-95 disabled:opacity-20`}>-1</button>
-            {[1, 2, 3].map((d) => (
-              <button key={d} onClick={() => onBumpPts(p, side, d)}
-                className={`${BTN} min-h-11 flex-1 rounded-lg border border-white/10 bg-white/10 text-sm font-black active:scale-95`}>+{d}</button>
-            ))}
-          </div>
-        </div>
-        <div className="min-w-[140px] flex-1 rounded-xl border border-white/10 bg-white/5 px-3 py-2">
-          <div className="flex items-baseline justify-between">
-            <span className="text-[11px] font-black uppercase tracking-wider text-white/50">Fouls</span>
-            <span className="text-xl font-black tabular-nums text-white">{fouls}</span>
-          </div>
-          <div className="mt-2 flex gap-1.5">
-            <button onClick={() => onUndoFoul(p)} disabled={fouls <= 0}
-              className={`${BTN} min-h-11 flex-1 rounded-lg border border-red-500/30 bg-red-500/10 text-sm font-black text-red-300 active:scale-95 disabled:opacity-20`}>-1</button>
-            <button onClick={() => onBumpFoul(p)}
-              className={`${BTN} min-h-11 flex-1 rounded-lg border border-white/10 bg-white/10 text-sm font-black active:scale-95`}>+1</button>
-          </div>
-        </div>
+
+      <div className="flex shrink-0 items-center gap-1 rounded-lg border border-white/10 bg-white/5 py-1 pl-2 pr-1">
+        <span className="text-[9px] font-black uppercase tracking-wide text-white/45">Foul</span>
+        <span className="w-4 text-center text-sm font-black tabular-nums text-white">{fouls}</span>
+        <button onClick={() => onUndoFoul(p)} disabled={fouls <= 0}
+          className={`${BTN} h-9 w-9 rounded-md border border-red-500/30 bg-red-500/10 text-xs font-black text-red-300 active:scale-95 disabled:opacity-20`}>-1</button>
+        <button onClick={() => onBumpFoul(p)}
+          className={`${BTN} h-9 w-9 rounded-md border border-white/10 bg-white/10 text-xs font-black active:scale-95`}>+1</button>
       </div>
+
+      <button onClick={() => onToggle(p)}
+        className={`${BTN} h-9 shrink-0 rounded-md border border-red-500/30 bg-red-500/10 px-3 text-[11px] font-black text-red-300 active:scale-95`}>Out</button>
     </div>
   );
 }
 
 function BenchRow({ p, isCap, onToggle }) {
   return (
-    <div className="flex items-center justify-between rounded-xl border border-white/5 bg-white/[0.02] px-3 py-2.5">
+    <div className="flex items-center justify-between rounded-lg border border-white/5 bg-white/[0.02] px-2.5 py-1.5">
       <span className="truncate text-sm font-semibold text-white/60">{isCap ? "⭐ " : ""}{p.player_name || p.player_id}</span>
       <button onClick={() => onToggle(p)}
-        className={`${BTN} min-h-11 shrink-0 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-4 text-xs font-black text-emerald-300 active:scale-95`}>In</button>
+        className={`${BTN} h-9 shrink-0 rounded-md border border-emerald-500/30 bg-emerald-500/10 px-3 text-[11px] font-black text-emerald-300 active:scale-95`}>In</button>
     </div>
   );
 }
@@ -1147,36 +1124,36 @@ export default function LiveGamePage() {
             </div>
             <div className="text-right">
               <div className="text-[9px] font-black uppercase tracking-widest text-blue-400/60">{rightLabel}</div>
-              <div className="text-2xl font-black tabular-nums text-white">{scoreB}</div>
+              <div className="text-2xl font-black tabular-nums text-white landscape:text-xl">{scoreB}</div>
             </div>
           </div>
         ) : noStat ? (
           <div className="grid grid-cols-[1fr_auto_1fr] items-stretch gap-2">
             <button onClick={() => bumpScore("A", 1)}
-              className={`${BTN} flex min-h-[150px] flex-col items-center justify-center rounded-2xl border border-white/10 bg-white/5 px-2 py-3 active:scale-[0.98] active:bg-white/10`}>
+              className={`${BTN} flex min-h-[150px] landscape:min-h-[92px] flex-col items-center justify-center rounded-2xl border border-white/10 bg-white/5 px-2 py-3 landscape:py-1.5 active:scale-[0.98] active:bg-white/10`}>
               <div className="truncate text-sm font-black uppercase tracking-widest text-blue-400/70">{leftLabel}</div>
-              <div className="mt-1 text-8xl font-black leading-none tabular-nums text-white">{scoreA}</div>
-              <div className="mt-2 text-[10px] font-bold uppercase tracking-wider text-white/30">Tap · +1</div>
+              <div className="mt-1 text-8xl landscape:text-5xl font-black leading-none tabular-nums text-white">{scoreA}</div>
+              <div className="mt-2 landscape:mt-0.5 text-[10px] font-bold uppercase tracking-wider text-white/30">Tap · +1</div>
             </button>
-            <div className="flex flex-col items-center justify-center gap-2 px-1">
+            <div className="flex flex-col items-center justify-center gap-1.5 px-1">
               {isSeriesSport(game.sport) && (
-                <div className="flex flex-col items-center gap-1.5 rounded-xl border border-white/10 bg-white/[0.04] px-5 py-4">
+                <div className="flex flex-col items-center gap-1 rounded-xl border border-white/10 bg-white/[0.04] px-5 py-2 landscape:py-1.5">
                   <div className="text-[10px] font-black uppercase tracking-widest text-white/40">Series (Bo{seriesFormat})</div>
-                  <div className="text-5xl font-black tabular-nums text-white">{seriesA} - {seriesB}</div>
+                  <div className="text-5xl landscape:text-2xl font-black tabular-nums text-white">{seriesA} - {seriesB}</div>
                   <button onClick={endSet} disabled={scoreA === scoreB}
-                    className={`${BTN} mt-1 rounded-xl border border-amber-400/40 bg-amber-500/15 px-6 py-3 text-base font-black text-amber-200 active:scale-95 disabled:opacity-30`}>End Set</button>
+                    className={`${BTN} mt-1 rounded-xl border border-amber-400/40 bg-amber-500/15 px-6 py-3 landscape:py-1.5 text-base font-black text-amber-200 active:scale-95 disabled:opacity-30`}>End Set</button>
                 </div>
               )}
               {norm(game.sport) === "kickball" && (
-                <div className="flex flex-col items-center gap-1 rounded-xl border border-white/10 bg-white/[0.04] px-4 py-2.5">
+                <div className="flex flex-col items-center gap-1 rounded-xl border border-white/10 bg-white/[0.04] px-4 py-2 landscape:py-1">
                   <div className="text-[9px] font-black uppercase tracking-widest text-white/40">{inningHalf === "top" ? "▲ TOP" : "▼ BOT"}</div>
-                  <div className="text-4xl font-black tabular-nums text-white">{inning}</div>
+                  <div className="text-4xl landscape:text-2xl font-black tabular-nums text-white">{inning}</div>
                   <button onClick={nextHalfKickball}
-                    className={`${BTN} mt-1 rounded-xl border border-white/15 bg-white/10 px-4 py-2 text-xs font-black active:scale-95`}>Next Half</button>
+                    className={`${BTN} mt-1 rounded-xl border border-white/15 bg-white/10 px-4 py-2 landscape:py-1 text-xs font-black active:scale-95`}>Next Half</button>
                 </div>
               )}
               <button onClick={() => setConfirmFinalizeOpen(true)}
-                className={`${BTN} rounded-xl border border-emerald-500/40 bg-emerald-500/15 px-6 py-3 text-base font-black text-emerald-200 active:scale-95`}>Finalize</button>
+                className={`${BTN} rounded-xl border border-emerald-500/40 bg-emerald-500/15 px-6 py-3 landscape:py-1.5 text-base font-black text-emerald-200 active:scale-95`}>Finalize</button>
               <div className="flex items-center gap-2">
                 <button onClick={() => undoScore("A")} disabled={scoreA <= 0}
                   className={`${BTN} rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-1.5 text-[10px] font-black text-red-300 active:scale-95 disabled:opacity-20`}>{leftLabel} -1</button>
@@ -1185,10 +1162,10 @@ export default function LiveGamePage() {
               </div>
             </div>
             <button onClick={() => bumpScore("B", 1)}
-              className={`${BTN} flex min-h-[150px] flex-col items-center justify-center rounded-2xl border border-white/10 bg-white/5 px-2 py-3 active:scale-[0.98] active:bg-white/10`}>
+              className={`${BTN} flex min-h-[150px] landscape:min-h-[92px] flex-col items-center justify-center rounded-2xl border border-white/10 bg-white/5 px-2 py-3 landscape:py-1.5 active:scale-[0.98] active:bg-white/10`}>
               <div className="truncate text-sm font-black uppercase tracking-widest text-blue-400/70">{rightLabel}</div>
-              <div className="mt-1 text-8xl font-black leading-none tabular-nums text-white">{scoreB}</div>
-              <div className="mt-2 text-[10px] font-bold uppercase tracking-wider text-white/30">Tap · +1</div>
+              <div className="mt-1 text-8xl landscape:text-5xl font-black leading-none tabular-nums text-white">{scoreB}</div>
+              <div className="mt-2 landscape:mt-0.5 text-[10px] font-bold uppercase tracking-wider text-white/30">Tap · +1</div>
             </button>
           </div>
         ) : (
@@ -1196,28 +1173,28 @@ export default function LiveGamePage() {
             <div>
               <div className="text-[10px] font-black uppercase tracking-widest text-blue-400/60">Home</div>
               <div className="mt-0.5 truncate text-base font-black text-white">{leftLabel}</div>
-              <div className="mt-1 text-5xl font-black tabular-nums text-white">{scoreA}</div>
-              <div className="mt-2 flex flex-wrap gap-1.5">
+              <div className="mt-1 text-5xl landscape:text-3xl font-black tabular-nums text-white">{scoreA}</div>
+              <div className="mt-2 landscape:mt-1 flex flex-wrap gap-1.5">
                 <button onClick={() => undoScore("A")} disabled={scoreA <= 0}
-                  className={`${BTN} flex-1 rounded-lg border border-red-500/30 bg-red-500/10 py-2.5 text-sm font-black text-red-300 active:scale-95 disabled:opacity-20`}>-1</button>
+                  className={`${BTN} flex-1 rounded-lg border border-red-500/30 bg-red-500/10 py-2.5 landscape:py-1.5 text-sm font-black text-red-300 active:scale-95 disabled:opacity-20`}>-1</button>
                 {scoreButtons.map((d) => (
                   <button key={`A-${d}`} onClick={() => bumpScore("A", d)}
-                    className={`${BTN} flex-1 rounded-lg border border-white/15 bg-white/10 py-2.5 text-sm font-black active:scale-95`}>+{d}</button>
+                    className={`${BTN} flex-1 rounded-lg border border-white/15 bg-white/10 py-2.5 landscape:py-1.5 text-sm font-black active:scale-95`}>+{d}</button>
                 ))}
               </div>
             </div>
             <div className="flex flex-col items-center gap-1 px-2">
               {rules?.clock?.enabled ? (
                 <>
-                  <ClockButton game={game} onOpen={openSetTimeModal} big />
                   <div className="flex items-center gap-1.5">
+                    <ClockButton game={game} onOpen={openSetTimeModal} big />
                     {game.timer_running
-                      ? <button onClick={onPause} className={`${BTN} rounded-lg bg-white px-3 py-1.5 text-xs font-black text-black active:scale-95`}>Pause</button>
-                      : <button onClick={onStart} className={`${BTN} rounded-lg bg-white px-3 py-1.5 text-xs font-black text-black active:scale-95`}>Start</button>}
+                      ? <button onClick={onPause} className={`${BTN} rounded-lg bg-white px-3 py-1.5 landscape:py-1 text-xs font-black text-black active:scale-95`}>Pause</button>
+                      : <button onClick={onStart} className={`${BTN} rounded-lg bg-white px-3 py-1.5 landscape:py-1 text-xs font-black text-black active:scale-95`}>Start</button>}
                     <button onClick={() => onReset(game.duration_seconds || clockPresets[clockPresets.length - 1] || 1800)}
-                      className={`${BTN} rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-black active:scale-95`}>Reset</button>
+                      className={`${BTN} rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 landscape:py-1 text-xs font-black active:scale-95`}>Reset</button>
                   </div>
-                  <div className="flex gap-1 overflow-x-auto pb-0.5 max-w-[120px]">
+                  <div className="flex gap-1 overflow-x-auto pb-0.5 max-w-[160px] landscape:hidden">
                     {clockPresets.map((s) => (
                       <button key={`preset-${s}`} onClick={() => onReset(s)}
                         className={`${BTN} shrink-0 rounded border border-white/10 bg-white/5 px-1.5 py-1 text-[10px] font-bold active:scale-95`}>
@@ -1227,38 +1204,36 @@ export default function LiveGamePage() {
                   </div>
                   {rules?.clock?.modes?.length > 1 && (
                     <select value={clockMode} onChange={(e) => setClockMode(e.target.value)}
-                      className="rounded-lg border border-white/10 bg-[#0a1628] px-2 py-1 text-[10px] font-bold text-white outline-none">
+                      className="rounded-lg border border-white/10 bg-[#0a1628] px-2 py-1 text-[10px] font-bold text-white outline-none landscape:hidden">
                       {rules.clock.modes.map((m) => <option key={m.id} value={m.id}>{m.label}</option>)}
                     </select>
                   )}
                 </>
               ) : (
-                <div className="rounded-xl border border-white/10 bg-black/20 px-4 py-3 text-center">
+                <div className="rounded-xl border border-white/10 bg-black/20 px-4 py-3 landscape:py-1.5 text-center">
                   <div className="text-[10px] font-black uppercase tracking-widest text-white/40">No Clock</div>
                 </div>
               )}
               {isSeriesSport(game.sport) && (
-                <div className="flex flex-col items-center gap-1 rounded-lg border border-white/10 bg-white/[0.04] px-3 py-2">
-                  <div className="text-[10px] font-black uppercase tracking-widest text-white/40">Series (Bo{seriesFormat})</div>
-                  <div className="text-2xl font-black tabular-nums text-white">{seriesA} - {seriesB}</div>
+                <div className="flex items-center gap-2 rounded-lg border border-white/10 bg-white/[0.04] px-3 py-1">
+                  <span className="text-[9px] font-black uppercase tracking-widest text-white/40">Bo{seriesFormat}</span>
+                  <span className="text-lg font-black tabular-nums text-white">{seriesA}-{seriesB}</span>
                   <button onClick={endSet} disabled={scoreA === scoreB}
-                    className={`${BTN} rounded-lg border border-amber-400/40 bg-amber-500/15 px-3 py-1.5 text-xs font-black text-amber-200 active:scale-95 disabled:opacity-30`}>End Set</button>
+                    className={`${BTN} rounded-md border border-amber-400/40 bg-amber-500/15 px-2.5 py-1 text-[10px] font-black text-amber-200 active:scale-95 disabled:opacity-30`}>End Set</button>
                 </div>
               )}
               {showPeriods && (
-                <div className="flex flex-col items-center gap-1 rounded-lg border border-white/10 bg-white/[0.04] px-3 py-2">
-                  <div className="text-[10px] font-black uppercase tracking-widest text-white/40">{periodLabel}</div>
-                  <div className="text-2xl font-black tabular-nums text-white">{periodPrefix}{period}<span className="text-sm text-white/30">/{periodMax}</span></div>
-                  <div className="flex items-center gap-1.5">
-                    <button onClick={() => setPeriod((v) => Math.max(1, v - 1))} disabled={period <= 1}
-                      className={`${BTN} rounded-lg border border-white/10 bg-white/10 px-3 py-1.5 text-sm font-black active:scale-95 disabled:opacity-20`}>-1</button>
-                    <button onClick={() => setPeriod((v) => Math.min(periodMax, v + 1))} disabled={period >= periodMax}
-                      className={`${BTN} rounded-lg border border-white/10 bg-white/10 px-3 py-1.5 text-sm font-black active:scale-95 disabled:opacity-20`}>+1</button>
-                  </div>
+                <div className="flex items-center gap-2 rounded-lg border border-white/10 bg-white/[0.04] px-3 py-1">
+                  <span className="text-[9px] font-black uppercase tracking-widest text-white/40">{periodLabel}</span>
+                  <span className="text-lg font-black tabular-nums text-white">{periodPrefix}{period}<span className="text-xs text-white/30">/{periodMax}</span></span>
+                  <button onClick={() => setPeriod((v) => Math.max(1, v - 1))} disabled={period <= 1}
+                    className={`${BTN} h-7 w-7 rounded-md border border-white/10 bg-white/10 text-xs font-black active:scale-95 disabled:opacity-20`}>-1</button>
+                  <button onClick={() => setPeriod((v) => Math.min(periodMax, v + 1))} disabled={period >= periodMax}
+                    className={`${BTN} h-7 w-7 rounded-md border border-white/10 bg-white/10 text-xs font-black active:scale-95 disabled:opacity-20`}>+1</button>
                   {!periodIsFixed && (
                     <select value={periodFmt}
                       onChange={(e) => { setPeriodFmt(e.target.value); setPeriod(1); }}
-                      className="rounded-lg border border-white/10 bg-[#0a1628] px-2 py-1 text-[10px] font-bold text-white outline-none">
+                      className="rounded-md border border-white/10 bg-[#0a1628] px-1.5 py-1 text-[9px] font-bold text-white outline-none">
                       <option value="halves">Halves</option>
                       <option value="quarters">Quarters</option>
                     </select>
@@ -1266,27 +1241,27 @@ export default function LiveGamePage() {
                 </div>
               )}
               {isSoftballGame && (
-                <div className="flex flex-col items-center gap-1 rounded-lg border border-white/10 bg-white/[0.04] px-3 py-2">
-                  <div className="text-[9px] font-black uppercase tracking-widest text-white/40">{inningHalf === "top" ? "▲ TOP" : "▼ BOT"}</div>
-                  <div className="text-2xl font-black tabular-nums text-white">{inning}</div>
+                <div className="flex items-center gap-2 rounded-lg border border-white/10 bg-white/[0.04] px-3 py-1">
+                  <span className="text-[9px] font-black uppercase tracking-widest text-white/40">{inningHalf === "top" ? "▲ TOP" : "▼ BOT"}</span>
+                  <span className="text-lg font-black tabular-nums text-white">{inning}</span>
                   <button onClick={nextHalfSoftball}
-                    className={`${BTN} rounded-lg border border-white/15 bg-white/10 px-3 py-1.5 text-[10px] font-black active:scale-95`}>Next Half</button>
+                    className={`${BTN} rounded-md border border-white/15 bg-white/10 px-2.5 py-1 text-[10px] font-black active:scale-95`}>Next Half</button>
                 </div>
               )}
               <button onClick={() => setConfirmFinalizeOpen(true)}
-                className={`${BTN} mt-1 rounded-lg border border-emerald-500/40 bg-emerald-500/15 px-4 py-2 text-xs font-black text-emerald-200 active:scale-95`}>Finalize</button>
+                className={`${BTN} rounded-lg border border-emerald-500/40 bg-emerald-500/15 px-4 py-1.5 text-xs font-black text-emerald-200 active:scale-95`}>Finalize</button>
             </div>
             <div className="text-right">
               <div className="text-[10px] font-black uppercase tracking-widest text-blue-400/60">Away</div>
               <div className="mt-0.5 truncate text-base font-black text-white">{rightLabel}</div>
-              <div className="mt-1 text-5xl font-black tabular-nums text-white">{scoreB}</div>
-              <div className="mt-2 flex flex-wrap justify-end gap-1.5">
+              <div className="mt-1 text-5xl landscape:text-3xl font-black tabular-nums text-white">{scoreB}</div>
+              <div className="mt-2 landscape:mt-1 flex flex-wrap justify-end gap-1.5">
                 {scoreButtons.map((d) => (
                   <button key={`B-${d}`} onClick={() => bumpScore("B", d)}
-                    className={`${BTN} flex-1 rounded-lg border border-white/15 bg-white/10 py-2.5 text-sm font-black active:scale-95`}>+{d}</button>
+                    className={`${BTN} flex-1 rounded-lg border border-white/15 bg-white/10 py-2.5 landscape:py-1.5 text-sm font-black active:scale-95`}>+{d}</button>
                 ))}
                 <button onClick={() => undoScore("B")} disabled={scoreB <= 0}
-                  className={`${BTN} flex-1 rounded-lg border border-red-500/30 bg-red-500/10 py-2.5 text-sm font-black text-red-300 active:scale-95 disabled:opacity-20`}>-1</button>
+                  className={`${BTN} flex-1 rounded-lg border border-red-500/30 bg-red-500/10 py-2.5 landscape:py-1.5 text-sm font-black text-red-300 active:scale-95 disabled:opacity-20`}>-1</button>
               </div>
             </div>
           </div>
@@ -1382,16 +1357,16 @@ export default function LiveGamePage() {
           ];
           const active = rosterTeams.find((t) => t.side === activeRosterSide) ?? rosterTeams[0];
           return (
-            <div className="p-3">
+            <div className="p-2">
               {/* One team at a time, full device width — the squeezed
                   side-by-side columns were the main source of tiny,
                   mis-tappable buttons and forced-abbreviated names. */}
-              <div className="flex gap-1.5 rounded-2xl border border-white/10 bg-white/[0.04] p-1.5">
+              <div className="flex gap-1.5 rounded-xl border border-white/10 bg-white/[0.04] p-1">
                 {rosterTeams.map((t) => {
                   const isActive = t.side === activeRosterSide;
                   return (
                     <button key={t.side} onClick={() => setActiveRosterSide(t.side)}
-                      className={`${BTN} min-h-11 flex-1 truncate rounded-xl px-3 text-sm font-black active:scale-[0.98] ${
+                      className={`${BTN} h-9 flex-1 truncate rounded-lg px-3 text-sm font-black active:scale-[0.98] ${
                         isActive ? "text-white" : "text-white/45"}`}
                       style={isActive ? { background: "linear-gradient(180deg,#4d80ff,#3a71ff)" } : {}}>
                       {t.label} · {t.score}
@@ -1400,7 +1375,7 @@ export default function LiveGamePage() {
                 })}
               </div>
 
-              <div className="mt-3 space-y-2">
+              <div className="mt-2 space-y-1.5">
                 {active.playing.length ? (
                   active.playing.map((p) => {
                     const idx = active.roster.findIndex((x) => x.player_id === p.player_id);
@@ -1425,9 +1400,9 @@ export default function LiveGamePage() {
                 )}
               </div>
 
-              <div className="mt-3">
+              <div className="mt-2">
                 <button onClick={() => active.setShow((v) => !v)}
-                  className={`${BTN} min-h-11 flex w-full items-center justify-between rounded-xl border border-white/5 bg-white/[0.02] px-3 text-xs font-bold text-white/40`}>
+                  className={`${BTN} h-9 flex w-full items-center justify-between rounded-lg border border-white/5 bg-white/[0.02] px-3 text-xs font-bold text-white/40`}>
                   <span>Bench ({active.bench.length})</span>
                   <span>{active.show ? "▲" : "▼"}</span>
                 </button>
