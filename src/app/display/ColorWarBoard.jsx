@@ -148,7 +148,7 @@ export default function ColorWarBoard({ session = "s1", blueName, whiteName, blu
     loadAll();
     const r = setInterval(loadAll, 15000);
     return () => clearInterval(r);
-  }, []);
+  }, [session]);
 
   // Scene rotation every 18s. Skip empty leaders scenes so it never dwells on
   // a blank board.
