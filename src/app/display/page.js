@@ -559,7 +559,7 @@ export default function DisplayPage() {
     }, 15000);
 
     return () => clearInterval(t);
-  }, [autoRefresh]);
+  }, [autoRefresh, session]);
 
  useEffect(() => {
     if (!autoRotate) return;
