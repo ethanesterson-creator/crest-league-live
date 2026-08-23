@@ -34,7 +34,12 @@ export default function PlayerProfilePage() {
       try {
         // These four only need `id`, not each other's result, so they run
         // together instead of one-after-another.
-        const [{ data: p }, { data: t }, { data: rosters }, { data: evts }] = await Promise.all([
+        const [
+          { data: p, error: pErr },
+          { data: t, error: tErr },
+          { data: rosters, error: rErr },
+          { data: evts, error: eErr },
+        ] = await Promise.all([
           // This page has no login -- anyone with the link gets this
           // response. Only fetch the fields actually rendered below, not
           // every players column (previously select("*"), which also
@@ -65,6 +70,10 @@ export default function PlayerProfilePage() {
             .eq("player_id", id)
             .limit(5000),
         ]);
+        if (pErr) throw pErr;
+        if (tErr) throw tErr;
+        if (rErr) throw rErr;
+        if (eErr) throw eErr;
         setPlayer(p);
 
         const rows = (t || []).filter((r) => Number(r.value) > 0);
@@ -86,8 +95,9 @@ export default function PlayerProfilePage() {
         // to come after.
         const gids = (rosters || []).map((r) => r.game_id);
         if (gids.length) {
-          const { data: gm } = await supabase
+          const { data: gm, error: gmErr } = await supabase
             .from("live_games").select("id, score_a, score_b").eq("status", "final").in("id", gids);
+          if (gmErr) throw gmErr;
           const byId = {}; for (const g of gm || []) byId[g.id] = g;
           let w = 0, played = 0;
           for (const r of rosters || []) {

@@ -89,13 +89,17 @@ export default function StandingsPage() {
     setNonGameRows(arr);
   }
 
-  async function refreshActiveTab() {
+  // Takes the target tab explicitly rather than reading `tab` state, because
+  // the tab-switch buttons below call this in the same click that changes
+  // `tab` — a stale closure captured before that state update used to reload
+  // the OLD tab's data on the first click after a switch.
+  async function refreshTab(activeTab) {
     setErr("");
     setLoading(true);
     try {
-      if (tab === "overall") {
+      if (activeTab === "overall") {
         await loadOverallCamp();
-      } else if (tab === "non_game") {
+      } else if (activeTab === "non_game") {
         await loadNonGamePoints();
       }
     } catch (e) {
@@ -106,17 +110,11 @@ export default function StandingsPage() {
   }
 
   useEffect(() => {
-    (async () => {
-      setErr("");
-      setLoading(true);
-      try {
-        await loadOverallCamp();
-      } catch (e) {
-        setErr(e?.message ?? String(e));
-      } finally {
-        setLoading(false);
-      }
-    })();
+    // Reload whichever tab is actually active — this used to always reload
+    // "overall" regardless of tab, so flipping session/mode while on the
+    // Non-Game tab left it showing the previous session's totals with no
+    // indication they were stale.
+    refreshTab(tab);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [season, session]);
 
@@ -149,9 +147,9 @@ export default function StandingsPage() {
           {/* Tabs */}
           <div className="flex items-center gap-2">
             <button
-              onClick={async () => {
+              onClick={() => {
                 setTab("overall");
-                setTimeout(() => refreshActiveTab(), 0);
+                refreshTab("overall");
               }}
               className={`rounded-xl border px-3 py-2 text-sm font-black ${
                 tab === "overall" ? "border-emerald-400/30 bg-emerald-500/10" : "border-white/15 bg-white/5 hover:bg-white/10"
@@ -159,11 +157,11 @@ export default function StandingsPage() {
             >
               Overall
             </button>
-            
+
             <button
-              onClick={async () => {
+              onClick={() => {
                 setTab("non_game");
-                setTimeout(() => refreshActiveTab(), 0);
+                refreshTab("non_game");
               }}
               className={`rounded-xl border px-3 py-2 text-sm font-black ${
                 tab === "non_game" ? "border-emerald-400/30 bg-emerald-500/10" : "border-white/15 bg-white/5 hover:bg-white/10"
@@ -175,7 +173,7 @@ export default function StandingsPage() {
 
           <button
             className="rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm font-bold hover:bg-white/10"
-            onClick={refreshActiveTab}
+            onClick={() => refreshTab(tab)}
           >
             Refresh
           </button>
