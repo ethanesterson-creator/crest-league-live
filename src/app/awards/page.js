@@ -36,20 +36,30 @@ export default function AwardsPage() {
   const [rows, setRows] = useState([]);
   const [seasonOver, setSeasonOver] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [err, setErr] = useState("");
 
   useEffect(() => {
     (async () => {
       setLoading(true);
+      setErr("");
       try {
         // Independent of each other, so they run together.
-        const [{ data }, { data: st }] = await Promise.all([
+        const [{ data, error: awErr }, { data: st, error: stErr }] = await Promise.all([
           supabase.rpc("get_awards", { p_session: session }),
           // "Season over" = current session's league mode has ended. We infer
           // it from app_settings.league_ended if present; otherwise always "race".
           supabase.from("app_settings").select("league_ended").eq("id", 1).maybeSingle(),
         ]);
+        if (awErr) throw awErr;
+        if (stErr) throw stErr;
         setRows(data || []);
         setSeasonOver(Boolean(st?.league_ended));
+      } catch (e) {
+        // A failed get_awards() used to fall through to an empty rows array,
+        // which renders identically to "no games logged yet" on this public
+        // trophy-ceremony page — indistinguishable from a real early-season
+        // empty state.
+        setErr(e?.message ?? String(e));
       } finally {
         setLoading(false);
       }
@@ -78,6 +88,12 @@ export default function AwardsPage() {
             : "Who's leading each award right now. It's not over yet."}
         </div>
       </div>
+
+      {err ? (
+        <div className="mt-4 rounded-xl border border-red-700 bg-red-950/40 p-3 text-sm text-red-200">
+          {err}
+        </div>
+      ) : null}
 
       {loading ? (
         <div className="aw-loading">Tallying the votes…</div>

@@ -229,7 +229,8 @@ export default function PostGamesPage() {
       .order("created_at", { ascending: false })
       .limit(200);
 
-    if (!error) setDrafts(data || []);
+    if (error) { setErr(`Couldn't load drafts: ${error.message}`); return; }
+    setDrafts(data || []);
   }
 
   // league changes -> reload teams
