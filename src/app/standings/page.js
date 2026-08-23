@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import { useAppMode } from "@/lib/useAppMode";
 const STAFF_SPORT_KEY = "staff";    // staff standings should live under standings.sport='staff'
@@ -118,9 +118,14 @@ export default function StandingsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [season, session]);
 
-  // When toggles change, refresh overall tab automatically (only if on that tab)
+  // Refresh when the Non-Game toggle changes. The checkbox only renders
+  // inside the Overall tab, so this can't fire from another tab. `tab`
+  // itself is deliberately NOT a dep -- the tab buttons already call
+  // refreshTab explicitly, and including it here made switching to Overall
+  // fire loadOverallCamp twice on every click.
+  const skipFirstToggleLoad = useRef(true);
   useEffect(() => {
-    if (tab !== "overall") return;
+    if (skipFirstToggleLoad.current) { skipFirstToggleLoad.current = false; return; }
     (async () => {
       setErr("");
       try {
@@ -130,7 +135,7 @@ export default function StandingsPage() {
       }
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [includeNonGame, tab]);
+  }, [includeNonGame]);
 
   return (
     <div className="pb-10">

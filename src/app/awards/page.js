@@ -97,7 +97,7 @@ export default function AwardsPage() {
 
       {loading ? (
         <div className="aw-loading">Tallying the votes…</div>
-      ) : !rows.length ? (
+      ) : err ? null : !rows.length ? (
         <div className="aw-loading">No games logged yet. Awards appear once play begins.</div>
       ) : (
         <div className="aw-grid">

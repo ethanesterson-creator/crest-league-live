@@ -133,6 +133,12 @@ export default function PlayerProfilePage() {
   }, [id]);
 
   if (loading) return <div className="mt-10 text-white/70">Loading…</div>;
+  // A fetch error also leaves `player` null, same as a genuinely missing
+  // player -- check `err` first so a transient failure doesn't render as
+  // "Player not found" for a real player.
+  if (err) return (
+    <div className="mt-10 rounded-xl border border-red-700 bg-red-950/40 p-3 text-sm text-red-200">{err}</div>
+  );
   if (!player) return (
     <div className="mt-10">
       <div className="text-lg font-black">Player not found.</div>
