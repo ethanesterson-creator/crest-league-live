@@ -85,8 +85,15 @@ export default function AdminPage() {
     setMsg("");
   }
 
+  // One shared confirm box gates several unrelated destructive actions below
+  // (trade, stuck-game removal, win-points override, clear/reset, two kinds
+  // of delete). Consuming the typed word on every check — match or not —
+  // means clicking the wrong action right after a real one always requires
+  // a fresh, deliberate retype instead of silently reusing a leftover word.
   function requireConfirm(word) {
-    return confirmText.trim().toUpperCase() === word;
+    const ok = confirmText.trim().toUpperCase() === word;
+    setConfirmText("");
+    return ok;
   }
 
   function norm(s) {
@@ -397,6 +404,16 @@ export default function AdminPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [adminStandingsLeague]);
 
+  // The mount-time load above can fire before loadCwSettings() resolves, in
+  // which case it falls back to a hardcoded "s2" and can show the wrong
+  // session's standings until this reloads once the real session is known.
+  useEffect(() => {
+    if (!authed) return;
+    if (!cwSettings) return;
+    loadAdminStandingsForLeague(adminStandingsLeague);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cwSettings?.current_session]);
+
   useEffect(() => {
     if (!authed) return;
     if (!tradeLeague) return;
@@ -490,7 +507,14 @@ export default function AdminPage() {
 
       // Rebuild standings so the new value takes effect
       const { error: rebuildErr } = await supabase.rpc("rebuild_leaderboards");
-      if (rebuildErr) throw rebuildErr;
+      if (rebuildErr) {
+        setErr(`Win points saved, but standings rebuild failed: ${rebuildErr.message}. Re-run rebuild manually — standings are now stale.`);
+        setOverrideGameId(null);
+        setOverridePoints("");
+        setConfirmText("");
+        await loadFinalGames();
+        return;
+      }
 
       setMsg(`✅ Win points updated to ${pts} and standings rebuilt.`);
       setOverrideGameId(null);
@@ -739,7 +763,11 @@ export default function AdminPage() {
   }
 
   async function loadCwSettings() {
-    const { data } = await supabase.from("app_settings").select("*").eq("id", 1).maybeSingle();
+    const { data, error } = await supabase.from("app_settings").select("*").eq("id", 1).maybeSingle();
+    if (error) {
+      setErr(`Failed to load Session/Color War settings: ${error.message}. Values below may be stale — refresh before switching.`);
+      return;
+    }
     if (data) {
       setCwSettings(data);
       setCwBlueNameInput(data.cw_blue_name || "Blue");
@@ -999,7 +1027,7 @@ export default function AdminPage() {
       const totalsMap = new Map();
       for (const t of totals || []) {
         const key = `${norm2(t.league_id)}|${String(t.player_id)}|${norm2(t.sport)}|${norm2(t.stat_key)}`;
-        totalsMap.set(key, Number(t.value || 0));
+        totalsMap.set(key, (totalsMap.get(key) || 0) + Number(t.value || 0));
       }
 
       const header = ["league_id", "team_name", "player_id", "player_name", ...statCols];
