@@ -95,7 +95,8 @@ async function fetchCaptainIds({ leagueId, teamNames }) {
   const query = isCrestCup
     ? supabase.from("players").select("id, role, team_name").in("team_name", teamNames).eq("departed", false)
     : supabase.from("players").select("id, role, team_name").eq("league_id", leagueId).in("team_name", teamNames).eq("departed", false);
-  const { data } = await query;
+  const { data, error } = await query;
+  if (error) throw error;
   const ids = new Set();
   for (const p of data || []) if (String(p.role || "").toLowerCase().includes("captain")) ids.add(String(p.id));
   return ids;
@@ -549,7 +550,13 @@ export default function LiveGamePage() {
       const [, , caps] = await Promise.all([
         ensureRoster(game),
         loadEventTotals(game),
-        fetchCaptainIds({ leagueId: norm(game.league_key), teamNames }).catch(() => new Set()),
+        // Non-fatal: captain (⭐) markers are a nice-to-have, not scoring-
+        // critical, so a failure here shouldn't block roster/stats loading —
+        // but it used to fail completely silently with no trace at all.
+        fetchCaptainIds({ leagueId: norm(game.league_key), teamNames }).catch((e) => {
+          console.error("Failed to load captain markers:", e);
+          return new Set();
+        }),
       ]);
       setCaptainIds(caps);
     })();
@@ -562,7 +569,20 @@ export default function LiveGamePage() {
         .update({ ...patch, updated_at: new Date().toISOString() })
         .eq("id", game.id).select("*").single();
       if (error) { setErr(error.message); return null; }
-      setGame(data);
+      // Most callers here only patch clock fields, never score_a/score_b —
+      // but a bumpScore/undoScore RPC can still be in flight when one runs,
+      // and this read can land before that write commits. Overwriting the
+      // whole row in that case used to make a just-tapped score visibly
+      // revert until the score's own trailing sync caught back up. Keep
+      // whatever score is on screen unless this patch is the one caller
+      // (series finalize) that's intentionally setting it.
+      setGame((prev) => {
+        if (!prev) return data;
+        const merged = { ...data };
+        if (!("score_a" in patch)) merged.score_a = prev.score_a;
+        if (!("score_b" in patch)) merged.score_b = prev.score_b;
+        return merged;
+      });
       return data;
     } catch {
       setErr("⚠️ WiFi dropped — that didn't save. Try again.");
@@ -756,7 +776,11 @@ export default function LiveGamePage() {
     }
   });
 
-  async function moveInOrder(player, dir) {
+  // Single-shot guarded like the other discrete actions above: a rapid
+  // double-tap on the same arrow used to fire twice against the same
+  // pre-swap roster snapshot, so the second call would swap the pair right
+  // back and could race its writes against the first call's in-flight ones.
+  const moveInOrder = singleShot(async (player, dir) => {
     if (!isBattingSport(game?.sport)) return;
     const side = player.team_side;
     const list = side === "A" ? rosterA : rosterB;
@@ -792,7 +816,7 @@ export default function LiveGamePage() {
         ? "⚠️ Batting order may be out of sync — refresh before continuing."
         : "⚠️ Couldn't reorder batting lineup — check WiFi and try again.");
     }
-  }
+  });
 
   // ── Softball at-bat (single-shot guarded — advancing twice is harmful) ───
   const recordAtBat = singleShot(async (outcome) => {
