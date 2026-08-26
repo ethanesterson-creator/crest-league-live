@@ -172,7 +172,7 @@ export default function DisplayPage() {
   async function fetchLeadersForLeague(lid, session) {
     const { data: leaderPool, error } = await supabase
       .from("player_totals")
-      .select("*")
+      .select("player_id, sport, stat_key, value, player_name, team_name")
       .eq("league_id", lid)
       .eq("season", "league")
       .eq("session", session)
