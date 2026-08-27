@@ -152,24 +152,38 @@ export default function ColorWarBoard({ session = "s1", blueName, whiteName, blu
 
   // Scene rotation every 18s. Skip empty leaders scenes so it never dwells on
   // a blank board.
+  //
+  // leaders/liveGames are read from refs, not effect deps: loadAll() (15s
+  // poll above) calls setLeaders/setLiveGames with a fresh object/array every
+  // time, even when the underlying data is unchanged. Depending on them
+  // directly tore this interval down and recreated it every ~15s — always
+  // before the 18s rotation could fire — so the board never advanced scenes
+  // on its own.
+  const leadersRef = useRef(leaders);
+  const liveGamesRef = useRef(liveGames);
+  useEffect(() => { leadersRef.current = leaders; }, [leaders]);
+  useEffect(() => { liveGamesRef.current = liveGames; }, [liveGames]);
+
   useEffect(() => {
     const t = setInterval(() => {
       setScene((prev) => {
+        const curLeaders = leadersRef.current;
+        const curLiveGames = liveGamesRef.current;
         let idx = CW_SCENES.indexOf(prev);
         for (let i = 0; i < CW_SCENES.length; i++) {
           idx = (idx + 1) % CW_SCENES.length;
           const s = CW_SCENES[idx];
-          if (s === "leaders_seniors" && !leaders.seniors.length) continue;
-          if (s === "leaders_juniors" && !leaders.juniors.length) continue;
-          if (s === "leaders_sophomores" && !leaders.sophomores.length) continue;
-          if (s === "live" && !liveGames.length) continue;
+          if (s === "leaders_seniors" && !curLeaders.seniors.length) continue;
+          if (s === "leaders_juniors" && !curLeaders.juniors.length) continue;
+          if (s === "leaders_sophomores" && !curLeaders.sophomores.length) continue;
+          if (s === "live" && !curLiveGames.length) continue;
           return s;
         }
         return "scoreboard";
       });
     }, 18000);
     return () => clearInterval(t);
-  }, [leaders, liveGames]);
+  }, []);
 
   const blueLead = blueTotal >= whiteTotal;
   const blueUrl = logoUrl(blueLogo);
