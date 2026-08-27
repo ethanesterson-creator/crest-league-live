@@ -852,10 +852,10 @@ export default function AdminPage() {
       // another's result — so they run together instead of one-after-another.
       const [
         { data: players, error: pErr },
-        { data: totals, error: totErr },
-        { data: rosters, error: rosErr },
+        { data: totals, error: tErr },
+        { data: rosters, error: rErr },
         { data: games, error: gErr },
-        { data: events, error: evErr },
+        { data: events, error: eErr },
       ] = await Promise.all([
         // 1) Every player who ever came (any session). Include departed —
         //    cards are for everyone who attended.
@@ -870,10 +870,13 @@ export default function AdminPage() {
           .limit(20000),
         // 3) Win records: count finalized games each player's team won, per
         //    session. We compute from standings-independent game log via
-        //    game_roster.
+        //    game_roster. Only rows where the player actually played — a
+        //    bench player added to the roster pool but never toggled "In"
+        //    shouldn't be credited with the team's win.
         supabase
           .from("game_roster")
           .select("game_id, player_id, team_side")
+          .eq("is_playing", true)
           .limit(50000),
         supabase
           .from("live_games")
@@ -890,10 +893,10 @@ export default function AdminPage() {
       ]);
 
       if (pErr) throw pErr;
-      if (totErr) throw totErr;
-      if (rosErr) throw rosErr;
+      if (tErr) throw tErr;
+      if (rErr) throw rErr;
       if (gErr) throw gErr;
-      if (evErr) throw evErr;
+      if (eErr) throw eErr;
 
       const gameById = {};
       for (const g of games || []) gameById[g.id] = g;
