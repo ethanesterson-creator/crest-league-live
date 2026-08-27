@@ -22,7 +22,9 @@ export default function HighlightsAdminPage() {
   useEffect(() => { load(); }, []);
 
   async function handleFiles(fileList) {
-    const files = Array.from(fileList || []).filter((f) => f.type.startsWith("image/"));
+    const files = Array.from(fileList || []).filter(
+      (f) => f.type.startsWith("image/") || f.type.startsWith("video/")
+    );
     if (!files.length) return;
 
     setErr("");
@@ -32,7 +34,8 @@ export default function HighlightsAdminPage() {
     for (const file of files) {
       setProgress(`Uploading ${done + 1} of ${files.length}…`);
       try {
-        const ext = file.name.split(".").pop() || "jpg";
+        const isVideo = file.type.startsWith("video/");
+        const ext = file.name.split(".").pop() || (isVideo ? "mp4" : "jpg");
         const path = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
 
         const { error: upErr } = await supabase.storage
@@ -43,7 +46,7 @@ export default function HighlightsAdminPage() {
 
         const { error: insErr } = await supabase.from("highlights").insert({
           file_path: path,
-          file_type: "image",
+          file_type: isVideo ? "video" : "image",
           title: "",
           show_on_board: true,
         });
@@ -55,7 +58,7 @@ export default function HighlightsAdminPage() {
       }
     }
 
-    setProgress(done ? `Uploaded ${done} photo${done === 1 ? "" : "s"} ✓` : "");
+    setProgress(done ? `Uploaded ${done} file${done === 1 ? "" : "s"} ✓` : "");
     setUploading(false);
     if (fileInputRef.current) fileInputRef.current.value = "";
     await load();
@@ -112,7 +115,7 @@ export default function HighlightsAdminPage() {
           <input
             ref={fileInputRef}
             type="file"
-            accept="image/*"
+            accept="image/*,video/*"
             multiple
             className="hidden"
             disabled={uploading}
@@ -120,10 +123,10 @@ export default function HighlightsAdminPage() {
           />
           <div className="text-5xl">📸</div>
           <div className="mt-3 text-lg font-black">
-            {uploading ? progress : "Tap to upload photos"}
+            {uploading ? progress : "Tap to upload photos or videos"}
           </div>
           <div className="mt-1 text-xs text-white/40">
-            Select multiple at once. Photos go live on the board immediately.
+            Select multiple at once. They go live on the board immediately.
           </div>
         </label>
 
@@ -136,7 +139,11 @@ export default function HighlightsAdminPage() {
           {items.map((item) => (
             <div key={item.id} className={`overflow-hidden rounded-2xl border ${item.show_on_board ? "border-emerald-500/40" : "border-white/10 opacity-50"} bg-white/[0.03]`}>
               <div className="aspect-video bg-black">
-                <img src={publicUrl(item.file_path)} alt="" className="h-full w-full object-cover" loading="lazy" />
+                {item.file_type === "video" ? (
+                  <video src={publicUrl(item.file_path)} className="h-full w-full object-cover" muted playsInline />
+                ) : (
+                  <img src={publicUrl(item.file_path)} alt="" className="h-full w-full object-cover" loading="lazy" />
+                )}
               </div>
               <div className="space-y-2 p-3">
                 <input
@@ -145,16 +152,16 @@ export default function HighlightsAdminPage() {
                   onBlur={(e) => { if (e.target.value !== (item.title || "")) updateTitle(item, e.target.value); }}
                   className="w-full rounded-lg border border-white/10 bg-white/5 px-2 py-1.5 text-xs text-white outline-none placeholder:text-white/25 focus:border-white/30"
                 />
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-3">
                   <button
                     onClick={() => toggleBoard(item)}
-                    className={`flex-1 rounded-lg border px-2 py-1.5 text-[11px] font-black ${item.show_on_board ? "border-emerald-500/40 bg-emerald-500/15 text-emerald-200" : "border-white/10 bg-white/5 text-white/40"}`}
+                    className={`h-10 flex-1 rounded-lg border px-2 text-xs font-black ${item.show_on_board ? "border-emerald-500/40 bg-emerald-500/15 text-emerald-200" : "border-white/10 bg-white/5 text-white/40"}`}
                   >
                     {item.show_on_board ? "On Board ✓" : "Hidden"}
                   </button>
                   <button
                     onClick={() => deleteItem(item)}
-                    className="rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-1.5 text-[11px] font-black text-red-300"
+                    className="h-10 shrink-0 rounded-lg border border-red-500/30 bg-red-500/10 px-3 text-xs font-black text-red-300"
                   >
                     Delete
                   </button>

@@ -178,7 +178,10 @@ const awardsCSS = `
 
 .aw-grid {
   margin-top: 22px; display: grid; gap: 20px;
-  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  /* min(280px, 100%) instead of a bare 280px -- on a 320px-wide phone the
+     16px .bc-container padding leaves only 288px of content, and a bare
+     320px minimum column was wider than that, forcing horizontal overflow. */
+  grid-template-columns: repeat(auto-fill, minmax(min(280px, 100%), 1fr));
 }
 @media (min-width: 900px) { .aw-grid { gap: 24px; } }
 
@@ -233,7 +236,10 @@ const awardsCSS = `
 
 /* Runners up */
 .aw-rest { margin-top: 12px; display: grid; gap: 8px; }
-.aw-card-mvp .aw-rest { grid-template-columns: 1fr 1fr; }
+/* Single column below 480px -- a forced 2-up split left each runner-up
+   card (medal + name + rating) too narrow to fit, overflowing the page
+   horizontally on a phone-width screen. */
+@media (min-width: 480px) { .aw-card-mvp .aw-rest { grid-template-columns: 1fr 1fr; } }
 .aw-runner {
   display:flex; align-items:center; gap: 12px;
   padding: 12px 14px; border-radius: 16px; text-decoration: none; color: inherit;

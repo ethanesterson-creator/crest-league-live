@@ -101,7 +101,7 @@ export default function RootLayout({ children }) {
         >
           <div
             className="bc-container"
-            style={{ display: "flex", alignItems: "center", gap: 12 }}
+            style={{ display: "flex", flexWrap: "wrap", rowGap: 6, alignItems: "center", gap: 12, paddingTop: 10, paddingBottom: 10 }}
           >
             <div style={{ fontWeight: 900, letterSpacing: 0.5 }}>
               Crest League Live
@@ -111,11 +111,14 @@ export default function RootLayout({ children }) {
               Created By Ethan Esterson
             </div>
 
-            {/* Nav links */}
+            {/* Nav links — wraps instead of overflowing on narrow phones,
+                where 9 links don't fit in one row. */}
             <div
               style={{
                 marginLeft: "auto",
                 display: "flex",
+                flexWrap: "wrap",
+                rowGap: 6,
                 gap: 14,
                 alignItems: "center",
               }}

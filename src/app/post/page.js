@@ -831,7 +831,7 @@ export default function PostGamesPage() {
                     </Link>
                     <button
                       onClick={(e) => { e.preventDefault(); e.stopPropagation(); deleteDraft(g.id, `${left} vs ${right}`); }}
-                      className="absolute right-3 top-3 rounded-lg border border-red-500/40 bg-red-500/10 px-3 py-1.5 text-xs font-black text-red-200 hover:bg-red-500/20"
+                      className="absolute right-3 top-3 h-9 rounded-lg border border-red-500/40 bg-red-500/10 px-3 text-xs font-black text-red-200 hover:bg-red-500/20"
                     >
                       Delete
                     </button>

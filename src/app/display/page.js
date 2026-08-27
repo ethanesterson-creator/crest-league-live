@@ -1029,6 +1029,12 @@ export default function DisplayPage() {
           <div className="hidden text-sm font-black uppercase tracking-[0.25em] text-white/50 md:block">
             Camp Bauercrest Sports Network
           </div>
+
+          {BANQUET ? (
+            <div className="rounded-lg border border-amber-400/40 bg-amber-500/10 px-2.5 py-1 text-[10px] font-black uppercase tracking-widest text-amber-300">
+              Banquet Mode
+            </div>
+          ) : null}
         </div>
 
         <div className="flex items-center gap-3">

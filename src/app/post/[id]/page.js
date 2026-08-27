@@ -30,6 +30,17 @@ function getStatKeysForSport(sport) {
   return [];
 }
 
+// Full-word captions for stat abbreviations — display only. Same lookup as
+// the live scoring page, so a counselor filling this in after the fact
+// isn't left guessing what "F" or "TD" means.
+const STAT_CAPTIONS = {
+  PTS: "Points", F: "Fouls", G: "Goals", A: "Assists",
+  H: "Hits", HR: "Home Runs", TD: "Touchdowns",
+};
+function statCaption(key) {
+  return STAT_CAPTIONS[key] || key;
+}
+
 function uniqNonEmpty(arr) {
   return Array.from(new Set((arr || []).map((x) => norm(x)).filter(Boolean)));
 }
@@ -174,7 +185,7 @@ export default function PostDraftEditorPage() {
       // the home page in 10ac85a).
       supabase
         .from("live_games")
-        .select("score_a, score_b, league_key, team_a, team_a1, team_a2, team_b, team_b1, team_b2, is_staff_game, level, matchup_type, played_on, sport, season")
+        .select("score_a, score_b, league_key, team_a1, team_a2, team_b1, team_b2, is_staff_game, level, matchup_type, played_on, sport, season")
         .eq("id", id)
         .single(),
       supabase
@@ -249,7 +260,7 @@ export default function PostDraftEditorPage() {
     // genuinely depends on `g`'s result, so it stays after the round above.
     try {
       const leagueId = norm(g.league_key);
-      const teamNames = uniqNonEmpty([g.team_a1 || g.team_a, g.team_b1 || g.team_b]);
+      const teamNames = uniqNonEmpty([g.team_a1, g.team_b1]);
       const caps = await fetchCaptainIds({ leagueId, teamNames });
       setCaptainIds(caps);
     } catch {
@@ -339,13 +350,22 @@ export default function PostDraftEditorPage() {
       return next;
     });
 
-    setMsg(`✅ +${statKey} recorded`);
+    setMsg(`✅ +${statCaption(String(statKey).toUpperCase())} recorded`);
     scheduleReload();
   }
 
   async function buildRosterIfMissing() {
     setErr("");
     setMsg("");
+
+    // Guard against a double-tap (or a re-render racing the first click)
+    // inserting a second full roster for this game — the button below is
+    // also hidden once a roster exists, but this is the last line of
+    // defense against duplicating every player's roster row.
+    if (rosterA.length || rosterB.length) {
+      setErr("Roster already exists for this game — refresh instead of building again.");
+      return;
+    }
 
     const lk = norm(game?.league_key);
     const matchupType = String(game?.matchup_type || "single");
@@ -512,19 +532,19 @@ export default function PostDraftEditorPage() {
     if (!showBatting) return null;
     const idx = list.findIndex((x) => x.player_id === p.player_id);
     return (
-      <div className="shrink-0 flex items-center gap-1">
-        <div className="w-6 text-center text-xs font-black opacity-70">{idx + 1}</div>
+      <div className="shrink-0 flex items-center gap-1.5">
+        <div className="w-5 text-center text-xs font-black opacity-70">{idx + 1}</div>
         <button
           onClick={() => moveInOrder(p, "up")}
           disabled={idx === 0}
-          className="rounded-lg border border-white/10 bg-white/10 px-2 py-1 text-xs font-black disabled:opacity-40"
+          className="h-9 w-9 rounded-lg border border-white/10 bg-white/10 text-sm font-black disabled:opacity-40"
         >
           ↑
         </button>
         <button
           onClick={() => moveInOrder(p, "down")}
           disabled={idx === list.length - 1}
-          className="rounded-lg border border-white/10 bg-white/10 px-2 py-1 text-xs font-black disabled:opacity-40"
+          className="h-9 w-9 rounded-lg border border-white/10 bg-white/10 text-sm font-black disabled:opacity-40"
         >
           ↓
         </button>
@@ -630,12 +650,14 @@ export default function PostDraftEditorPage() {
               <div className="text-sm text-white/70">If you don’t need stats, finalize with score only.</div>
             </div>
 
-            <button
-              onClick={buildRosterIfMissing}
-              className="rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-sm font-semibold hover:bg-white/10"
-            >
-              Build Roster
-            </button>
+            {!rosterA.length && !rosterB.length ? (
+              <button
+                onClick={buildRosterIfMissing}
+                className="rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-sm font-semibold hover:bg-white/10"
+              >
+                Build Roster
+              </button>
+            ) : null}
           </div>
 
           {!statKeys.length ? (
@@ -653,7 +675,7 @@ export default function PostDraftEditorPage() {
                     {rosterA.map((p) => (
                       <div key={`A-${p.player_id}`} className="rounded-2xl border border-white/10 bg-black/20 p-4">
                         <div className="flex items-center justify-between gap-2">
-                          <div className="min-w-0 truncate font-black">
+                          <div className="min-w-0 flex-1 truncate font-black">
                             {isCap(p.player_id) ? "⭐ " : ""}
                             {p.player_name}
                           </div>
@@ -666,7 +688,7 @@ export default function PostDraftEditorPage() {
                         <div className="mt-2 flex flex-wrap gap-2 text-xs text-white/80">
                           {statKeys.map((k) => (
                             <div key={`A-${p.player_id}-${k}`} className="rounded-lg border border-white/10 bg-white/5 px-2 py-1">
-                              <span className="font-extrabold">{k}</span>{" "}
+                              <span className="font-extrabold">{statCaption(k)}</span>{" "}
                               <span className="tabular-nums">{getTotal(p.player_id, k)}</span>
                             </div>
                           ))}
@@ -677,9 +699,9 @@ export default function PostDraftEditorPage() {
                             <button
                               key={`A-btn-${p.player_id}-${k}`}
                               onClick={() => addStat(p, k, 1)}
-                              className="rounded-xl border border-white/10 bg-white/10 px-3 py-2 text-sm font-extrabold hover:bg-white/15"
+                              className="h-11 rounded-xl border border-white/10 bg-white/10 px-3 text-sm font-extrabold hover:bg-white/15"
                             >
-                              +{k}
+                              +{statCaption(k)}
                             </button>
                           ))}
                         </div>
@@ -700,7 +722,7 @@ export default function PostDraftEditorPage() {
                     {rosterB.map((p) => (
                       <div key={`B-${p.player_id}`} className="rounded-2xl border border-white/10 bg-black/20 p-4">
                         <div className="flex items-center justify-between gap-2">
-                          <div className="min-w-0 truncate font-black">
+                          <div className="min-w-0 flex-1 truncate font-black">
                             {isCap(p.player_id) ? "⭐ " : ""}
                             {p.player_name}
                           </div>
@@ -713,7 +735,7 @@ export default function PostDraftEditorPage() {
                         <div className="mt-2 flex flex-wrap gap-2 text-xs text-white/80">
                           {statKeys.map((k) => (
                             <div key={`B-${p.player_id}-${k}`} className="rounded-lg border border-white/10 bg-white/5 px-2 py-1">
-                              <span className="font-extrabold">{k}</span>{" "}
+                              <span className="font-extrabold">{statCaption(k)}</span>{" "}
                               <span className="tabular-nums">{getTotal(p.player_id, k)}</span>
                             </div>
                           ))}
@@ -724,9 +746,9 @@ export default function PostDraftEditorPage() {
                             <button
                               key={`B-btn-${p.player_id}-${k}`}
                               onClick={() => addStat(p, k, 1)}
-                              className="rounded-xl border border-white/10 bg-white/10 px-3 py-2 text-sm font-extrabold hover:bg-white/15"
+                              className="h-11 rounded-xl border border-white/10 bg-white/10 px-3 text-sm font-extrabold hover:bg-white/15"
                             >
-                              +{k}
+                              +{statCaption(k)}
                             </button>
                           ))}
                         </div>
