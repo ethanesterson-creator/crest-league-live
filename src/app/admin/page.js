@@ -851,11 +851,11 @@ export default function AdminPage() {
       // These five are all independent full-table pulls — none depends on
       // another's result — so they run together instead of one-after-another.
       const [
-        { data: players },
-        { data: totals },
-        { data: rosters },
-        { data: games },
-        { data: events },
+        { data: players, error: pErr },
+        { data: totals, error: totErr },
+        { data: rosters, error: rosErr },
+        { data: games, error: gErr },
+        { data: events, error: evErr },
       ] = await Promise.all([
         // 1) Every player who ever came (any session). Include departed —
         //    cards are for everyone who attended.
@@ -888,6 +888,12 @@ export default function AdminPage() {
           .eq("event_type", "stat")
           .limit(100000),
       ]);
+
+      if (pErr) throw pErr;
+      if (totErr) throw totErr;
+      if (rosErr) throw rosErr;
+      if (gErr) throw gErr;
+      if (evErr) throw evErr;
 
       const gameById = {};
       for (const g of games || []) gameById[g.id] = g;
