@@ -714,7 +714,11 @@ export default function AdminPage() {
     try {
       // These three queries are independent of each other, so they run
       // together instead of one-after-another.
-      const [{ data: st }, { data: ng }, { data: lead }] = await Promise.all([
+      const [
+        { data: st, error: stErr },
+        { data: ng, error: ngErr },
+        { data: lead, error: leadErr },
+      ] = await Promise.all([
         // Frozen Session 1 standings for this league (season league, session s1).
         supabase
           .from("standings")
@@ -743,6 +747,13 @@ export default function AdminPage() {
           .order("value", { ascending: false })
           .limit(40),
       ]);
+
+      // Frozen S1 data is display-only reference data that must never look
+      // like it's gone missing -- an unchecked error here would render as
+      // "No data." indistinguishable from a genuinely empty archive.
+      if (stErr) throw stErr;
+      if (ngErr) throw ngErr;
+      if (leadErr) throw leadErr;
 
       const ngMap = {};
       for (const r of ng || []) {
