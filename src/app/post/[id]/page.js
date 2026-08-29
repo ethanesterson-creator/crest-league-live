@@ -217,34 +217,52 @@ export default function PostDraftEditorPage() {
     let r = r0;
 
     // Backfill missing sort_order for older rosters (only matters for batting sports,
-    // but harmless to store for all)
+    // but harmless to store for all). load() re-runs after every stat tap
+    // (scheduleReload) and on mount, so on a legacy game this used to fire a
+    // fresh sequential round trip per player, per reload, with every write's
+    // error silently discarded -- a single failed write left that row's
+    // sort_order still null, which re-triggered the whole backfill (and its
+    // ignored errors) again on the very next reload. Batched into one
+    // Promise.all with the errors actually checked, same fix as the roster
+    // insert chunking on live/[id]/page.js.
     if ((r || []).some((x) => x.sort_order === null || x.sort_order === undefined)) {
       const bySide = { A: [], B: [] };
       for (const rr of r || []) {
         const s = rr.team_side === "A" ? "A" : "B";
         bySide[s].push(rr);
       }
+      const updates = [];
       for (const side of ["A", "B"]) {
         const list = bySide[side]
           .slice()
           .sort((x, y) => String(x.player_name || "").localeCompare(String(y.player_name || "")));
         for (let i = 0; i < list.length; i++) {
-          const rr = list[i];
-          await supabase
-            .from("game_roster")
-            .update({ sort_order: i })
-            .eq("game_id", id)
-            .eq("player_id", rr.player_id);
+          updates.push(
+            supabase
+              .from("game_roster")
+              .update({ sort_order: i })
+              .eq("game_id", id)
+              .eq("player_id", list[i].player_id)
+          );
         }
       }
-      // reload ordered roster
-      const { data: r2 } = await supabase
-        .from("game_roster")
-        .select("game_id, player_id, player_name, team_side, team_name, sort_order")
-        .eq("game_id", id)
-        .order("team_side", { ascending: true })
-        .order("sort_order", { ascending: true });
-      r = r2 || r;
+      const backfillErr = (await Promise.all(updates)).find((res) => res.error)?.error;
+      if (backfillErr) {
+        setErr(`Couldn't fix batting order on this older roster: ${backfillErr.message}`);
+      } else {
+        // reload ordered roster
+        const { data: r2, error: r2Err } = await supabase
+          .from("game_roster")
+          .select("game_id, player_id, player_name, team_side, team_name, sort_order")
+          .eq("game_id", id)
+          .order("team_side", { ascending: true })
+          .order("sort_order", { ascending: true });
+        if (r2Err) {
+          setErr(`Couldn't reload roster after fixing batting order: ${r2Err.message}`);
+        } else {
+          r = r2 || r;
+        }
+      }
     }
 
     const a = [];
