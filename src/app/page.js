@@ -320,9 +320,12 @@ export default function HomePage() {
       ? supabase.from("players").select("team_name, league_id").eq("departed", false).limit(5000)
       : supabase.from("players").select("team_name, league_id").eq("league_id", lk).eq("departed", false).limit(5000);
     const { data, error } = await query;
- 
-    if (error) return;
- 
+
+    if (error) {
+      setErr(error.message);
+      return;
+    }
+
     const unique = Array.from(new Set((data || []).map((r) => norm(r.team_name)).filter(Boolean))).sort();
  
     setTeams(unique);
