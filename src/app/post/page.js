@@ -149,7 +149,11 @@ export default function PostGamesPage() {
     const { data, error } = await query;
 
     if (error) {
+      // Used to just clear the list with no indication anything failed --
+      // a counselor on flaky camp WiFi would see empty Team A/B pickers and
+      // no way to tell it was a fetch error vs. a league with no teams.
       setTeams([]);
+      setErr(`Couldn't load teams: ${error.message}`);
       return;
     }
 
@@ -185,6 +189,7 @@ export default function PostGamesPage() {
 
     if (error) {
       setNgAllTeams([]);
+      setErr(`Couldn't load teams: ${error.message}`);
       return;
     }
 
