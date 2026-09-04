@@ -714,7 +714,7 @@ export default function AdminPage() {
     try {
       // These three queries are independent of each other, so they run
       // together instead of one-after-another.
-      const [{ data: st }, { data: ng }, { data: lead }] = await Promise.all([
+      const [{ data: st, error: stErr }, { data: ng, error: ngErr }, { data: lead, error: leadErr }] = await Promise.all([
         // Frozen Session 1 standings for this league (season league, session s1).
         supabase
           .from("standings")
@@ -743,6 +743,13 @@ export default function AdminPage() {
           .order("value", { ascending: false })
           .limit(40),
       ]);
+
+      // A failed query here used to fall through to `|| []`, which renders
+      // identically to "no games this session" on a page whose whole job is
+      // showing that Session 1 data is still intact — the one place a
+      // silent empty state is most likely to be mistaken for data loss.
+      const loadErr = stErr || ngErr || leadErr;
+      if (loadErr) throw loadErr;
 
       const ngMap = {};
       for (const r of ng || []) {
