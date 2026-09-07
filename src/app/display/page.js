@@ -455,7 +455,7 @@ export default function DisplayPage() {
 
     // ---- PER GAME LEADERS -------------------------------------------------
     // For each sport + stat, who averages the most per game played. The
-    // denominator is games the player was ROSTERED for in that sport, so a
+    // denominator is games the player actually PLAYED in that sport, so a
     // kid with 10 goals across 5 games shows 2.0, not 10.0.
     const MIN_GAMES = 2; // raise this to require more games to qualify
 
@@ -472,7 +472,7 @@ export default function DisplayPage() {
     // they don't depend on EACH OTHER, so they still run together. ----
     const [rosterRes, departedRes] = await Promise.all([
       gameIds.length
-        ? supabase.from("game_roster").select("game_id, player_id").in("game_id", gameIds).limit(50000)
+        ? supabase.from("game_roster").select("game_id, player_id").eq("is_playing", true).in("game_id", gameIds).limit(50000)
         : Promise.resolve({ data: [] }),
       avgIds.length
         ? supabase.from("players").select("id").in("id", avgIds).eq("departed", true)
