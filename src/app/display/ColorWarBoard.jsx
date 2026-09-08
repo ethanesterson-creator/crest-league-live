@@ -132,7 +132,13 @@ export default function ColorWarBoard({ session = "s1", blueName, whiteName, blu
     // hide departed players from the board (stats kept in DB).
     const allIds = Array.from(new Set(Object.values(leaguesOut).flat().map((r) => String(r.player_id))));
     if (allIds.length) {
-      const { data: deps } = await supabase.from("players").select("id").in("id", allIds).eq("departed", true);
+      const { data: deps, error: depsErr } = await supabase.from("players").select("id").in("id", allIds).eq("departed", true);
+      if (depsErr) {
+        // Same failure mode as Round 1 above: don't let a failed departed-check
+        // push a departed camper's name onto the board in front of the whole camp.
+        console.error("ColorWarBoard loadAll (departed check) failed, keeping last good state:", depsErr);
+        return;
+      }
       const departedSet = new Set((deps || []).map((d) => String(d.id)));
       if (departedSet.size) {
         for (const lg of ["seniors", "juniors", "sophomores"]) {
