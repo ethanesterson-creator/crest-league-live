@@ -115,7 +115,21 @@ export default function PostDraftEditorPage() {
     return Number(statTotals?.[pid]?.[key] ?? 0);
   }
 
-  async function moveInOrder(player, dir) {
+  // Guard against a double-tap firing two overlapping swaps against the same
+  // stale roster snapshot (same fix already applied to live/[id]/page.js's
+  // moveInOrder, for the same reason: the DB writes below aren't atomic, so
+  // overlapping calls can interleave and corrupt sort_order).
+  const singleShotRef = useRef(false);
+  function singleShot(fn) {
+    return async (...args) => {
+      if (singleShotRef.current) return;
+      singleShotRef.current = true;
+      setTimeout(() => { singleShotRef.current = false; }, 300);
+      await fn(...args);
+    };
+  }
+
+  const moveInOrder = singleShot(async (player, dir) => {
     // Batting order only for softball/kickball
     if (!showBatting) return;
 
@@ -165,7 +179,7 @@ export default function PostDraftEditorPage() {
     next.sort((x, y) => Number(x.sort_order || 0) - Number(y.sort_order || 0));
     if (side === "A") setRosterA(next);
     else setRosterB(next);
-  }
+  });
 
   async function load() {
     setErr("");
