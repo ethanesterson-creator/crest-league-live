@@ -132,7 +132,19 @@ export default function ColorWarBoard({ session = "s1", blueName, whiteName, blu
     // hide departed players from the board (stats kept in DB).
     const allIds = Array.from(new Set(Object.values(leaguesOut).flat().map((r) => String(r.player_id))));
     if (allIds.length) {
-      const { data: deps } = await supabase.from("players").select("id").in("id", allIds).eq("departed", true);
+      const { data: deps, error: depsErr } = await supabase.from("players").select("id").in("id", allIds).eq("departed", true);
+      if (depsErr) {
+        // Same silent-failure bug already fixed for Round 1 (loadErr, above)
+        // and for the sibling league board's fetchLeadersForLeague — but this
+        // Round 2 query was missed. Left unchecked, a failed lookup here
+        // means `deps` stays undefined and no one gets filtered, so a
+        // departed camper can silently keep showing up on the Color War
+        // stat-leaders scene in front of the whole camp. Keep the last known
+        // (already-filtered) leaders instead of showing an unfiltered list.
+        console.error("ColorWarBoard departed-player filter failed, keeping last leaders state:", depsErr);
+        setLiveGames(live || []);
+        return;
+      }
       const departedSet = new Set((deps || []).map((d) => String(d.id)));
       if (departedSet.size) {
         for (const lg of ["seniors", "juniors", "sophomores"]) {
