@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
+import { useRealtimeTable } from "@/lib/useRealtimeTable";
 import { notifyGameFinalized } from "@/lib/notifyGame";
 import { getSportRules } from "@/lib/sportRules";
 
@@ -540,6 +541,20 @@ export default function LiveGamePage() {
 
   useEffect(() => { if (gameId) loadGame(); /* eslint-disable-next-line */ }, [gameId]);
 
+  // A second device watching the same live game (another counselor, admin
+  // monitoring) sees taps land within about a second instead of never --
+  // this page previously only re-synced after ITS OWN write. Uses the same
+  // quiet/debounced loaders a local write already triggers, so nothing about
+  // the ClockButton's own locally-ticking state is touched here.
+  useRealtimeTable("live_games", () => loadGame({ quiet: true }), {
+    filter: `id=eq.${gameId}`,
+    enabled: !!gameId,
+  });
+  useRealtimeTable("live_events", () => { if (gameRef.current) loadEventTotals(gameRef.current); }, {
+    filter: `game_id=eq.${gameId}`,
+    enabled: !!gameId,
+  });
+
   useEffect(() => {
     if (!game?.id) return;
     // None of these three depends on another's result -- all they need is
@@ -670,18 +685,30 @@ export default function LiveGamePage() {
     addStatEvent(player, statKey, -1);
   }
 
-  // NOTE: bumpHoopPoints/bumpGoalWithScore (and their undo counterparts,
-  // below) each fire two independent RPCs -- addStatEvent's rpc_add_stat
-  // and this function's own rpc_add_score -- with separate 3-try retries
-  // and no shared transaction. If one permanently fails after retries and
-  // the other succeeds, the team score and the player's individual stat
-  // total go out of sync (an error IS surfaced via setErr when a retry
-  // exhausts, so it's not silent, but it doesn't say which side failed or
-  // attempt to reconcile the other). A real fix needs a single combined
-  // server-side RPC doing both writes in one transaction -- that requires
-  // Supabase dashboard/SQL access this session doesn't have. Left as-is
-  // deliberately rather than risk a client-side compensating-write change
-  // to live scoring without being able to test it in a real browser.
+  // Combined atomic write for the two "score and stat move together" cases
+  // (a hoop bucket or a goal both bump the team score AND the player's stat
+  // in the same tap). Previously fired rpc_add_score and rpc_add_stat as two
+  // independent RPCs with separate retries -- if one permanently failed
+  // after retries while the other succeeded, the team score and the
+  // player's stat total went out of sync. rpc_add_score_and_stat (see
+  // supabase/migrations/0002_atomic_score_and_stat.sql) does both writes in
+  // one Postgres function, so either both land or neither does.
+  function addScoreAndStat({ side, scoreDelta, player, statKey, statDelta }) {
+    return rpcWithRetry(() => supabase.rpc("rpc_add_score_and_stat", {
+      p_game_id: game.id,
+      p_side: side ?? null,
+      p_score_delta: side != null ? scoreDelta : null,
+      p_player_id: String(player.player_id),
+      p_team_name: String(player?.team_name || ""),
+      p_stat_key: norm(statKey),
+      p_stat_delta: statDelta,
+    })).then(({ error }) => {
+      if (error) setErr(error.message);
+      scheduleGameSync();
+      scheduleStatsSync();
+    });
+  }
+
   function bumpHoopPoints(player, side, delta) {
     if (!game) return;
     const d = Math.floor(Number(delta));
@@ -693,9 +720,7 @@ export default function LiveGamePage() {
       score_a: side === "A" ? Number(prev.score_a || 0) + d : Number(prev.score_a || 0),
       score_b: side === "B" ? Number(prev.score_b || 0) + d : Number(prev.score_b || 0),
     });
-    addStatEvent(player, "pts", d);
-    rpcWithRetry(() => supabase.rpc("rpc_add_score", { p_game_id: game.id, p_side: side, p_delta: d }))
-      .then(({ error }) => { if (error) setErr(error.message); scheduleGameSync(); });
+    addScoreAndStat({ side, scoreDelta: d, player, statKey: "pts", statDelta: d });
   }
 
   function undoHoopPoints(player, side) {
@@ -709,11 +734,10 @@ export default function LiveGamePage() {
       score_a: side === "A" ? Math.max(0, Number(prev.score_a || 0) - 1) : Number(prev.score_a || 0),
       score_b: side === "B" ? Math.max(0, Number(prev.score_b || 0) - 1) : Number(prev.score_b || 0),
     });
-    addStatEvent(player, "pts", -1);
-    if (sideScore > 0) {
-      rpcWithRetry(() => supabase.rpc("rpc_add_score", { p_game_id: game.id, p_side: side, p_delta: -1 }))
-        .then(({ error }) => { if (error) setErr(error.message); scheduleGameSync(); });
-    }
+    addScoreAndStat({
+      side: sideScore > 0 ? side : null, scoreDelta: -1,
+      player, statKey: "pts", statDelta: -1,
+    });
   }
 
   function bumpGoalWithScore(player, side, delta) {
@@ -727,9 +751,7 @@ export default function LiveGamePage() {
       score_a: side === "A" ? Number(prev.score_a || 0) + d : Number(prev.score_a || 0),
       score_b: side === "B" ? Number(prev.score_b || 0) + d : Number(prev.score_b || 0),
     });
-    addStatEvent(player, "g", d);
-    rpcWithRetry(() => supabase.rpc("rpc_add_score", { p_game_id: game.id, p_side: side, p_delta: d }))
-      .then(({ error }) => { if (error) setErr(error.message); scheduleGameSync(); });
+    addScoreAndStat({ side, scoreDelta: d, player, statKey: "g", statDelta: d });
   }
 
   function undoGoalWithScore(player, side) {
@@ -743,11 +765,10 @@ export default function LiveGamePage() {
       score_a: side === "A" ? Math.max(0, Number(prev.score_a || 0) - 1) : Number(prev.score_a || 0),
       score_b: side === "B" ? Math.max(0, Number(prev.score_b || 0) - 1) : Number(prev.score_b || 0),
     });
-    addStatEvent(player, "g", -1);
-    if (sideScore > 0) {
-      rpcWithRetry(() => supabase.rpc("rpc_add_score", { p_game_id: game.id, p_side: side, p_delta: -1 }))
-        .then(({ error }) => { if (error) setErr(error.message); scheduleGameSync(); });
-    }
+    addScoreAndStat({
+      side: sideScore > 0 ? side : null, scoreDelta: -1,
+      player, statKey: "g", statDelta: -1,
+    });
   }
 
   // In/Out — optimistic; short guard so a double-tap doesn't toggle in+out

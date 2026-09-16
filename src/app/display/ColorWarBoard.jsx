@@ -8,6 +8,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "@/lib/supabase";
+import { useRealtimeTable } from "@/lib/useRealtimeTable";
 
 function norm(s) { return String(s ?? "").trim().toLowerCase(); }
 
@@ -158,9 +159,13 @@ export default function ColorWarBoard({ session = "s1", blueName, whiteName, blu
 
   useEffect(() => {
     loadAll();
-    const r = setInterval(loadAll, 15000);
+    // Safety-net poll for a silently-dropped realtime socket -- slow since
+    // the realtime subscription below is doing the real work now.
+    const r = setInterval(loadAll, 60000);
     return () => clearInterval(r);
   }, [session]);
+
+  useRealtimeTable(["live_games", "live_events"], loadAll);
 
   // Scene rotation every 18s. Skip empty leaders scenes so it never dwells on
   // a blank board.

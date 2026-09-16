@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import { useAppMode } from "@/lib/useAppMode";
+import { useRealtimeTable } from "@/lib/useRealtimeTable";
 import ColorWarBoard from "./ColorWarBoard";
 
 // BANQUET MODE — set true for the last-night banquet board (gold + navy,
@@ -366,7 +367,7 @@ export default function DisplayPage() {
       // fixed on the home page in 10ac85a).
       supabase
         .from("live_games")
-        .select("id, sport, league_key, team_a, team_a1, team_a2, team_b, team_b1, team_b2, score_a, score_b")
+        .select("id, sport, league_key, team_a1, team_a2, team_b1, team_b2, score_a, score_b")
         .eq("status", "active")
         .eq("season", "league")
         .eq("session", session)
@@ -374,7 +375,7 @@ export default function DisplayPage() {
         .order("updated_at", { ascending: false }),
       supabase
         .from("live_games")
-        .select("id, sport, league_key, team_a, team_a1, team_a2, team_b, team_b1, team_b2, score_a, score_b")
+        .select("id, sport, league_key, team_a1, team_a2, team_b1, team_b2, score_a, score_b")
         .eq("status", "final")
         .eq("season", "league")
         .eq("session", session)
@@ -551,12 +552,19 @@ export default function DisplayPage() {
     loadAll();
   }, []);
 
+  // Instant updates: a score/stat tap anywhere pushes a Postgres change
+  // event, so the board refreshes in well under a second instead of
+  // waiting for the next poll.
+  useRealtimeTable(["live_games", "live_events"], loadAll, { enabled: autoRefresh });
+
   useEffect(() => {
     if (!autoRefresh) return;
 
+    // Safety-net poll for a silently-dropped realtime socket -- slow since
+    // the realtime subscription above is doing the real work now.
     const t = setInterval(() => {
       loadAll();
-    }, 15000);
+    }, 60000);
 
     return () => clearInterval(t);
   }, [autoRefresh, session]);
@@ -584,8 +592,8 @@ export default function DisplayPage() {
 
  const tickerItems = useMemo(() => {
   const live = liveGames.slice(0, 4).map((g) => {
-    const left = g.team_a || g.team_a1 || "Team A";
-    const right = g.team_b || g.team_b1 || "Team B";
+    const left = g.team_a1 || "Team A";
+    const right = g.team_b1 || "Team B";
     const leagueName = fmtLeague(g.league_id || g.league_key);
     return `LIVE: ${leagueName} ${fmtSport(g.sport)} — ${left} ${Number(g.score_a || 0)}-${Number(g.score_b || 0)} ${right}`;
   });
@@ -593,8 +601,8 @@ export default function DisplayPage() {
   const finals = finalGames.slice(0, 6).map((g) => {
     const a = Number(g.score_a || 0);
     const b = Number(g.score_b || 0);
-    const sideA = [g.team_a, g.team_a2].filter(Boolean).join(" + ");
-    const sideB = [g.team_b, g.team_b2].filter(Boolean).join(" + ");
+    const sideA = [g.team_a1, g.team_a2].filter(Boolean).join(" + ");
+    const sideB = [g.team_b1, g.team_b2].filter(Boolean).join(" + ");
     const winner = a > b ? sideA : sideB;
     const loser = a > b ? sideB : sideA;
     const bowl = g.is_bowl_game ? `${String(g.bowl_name || "BOWL").toUpperCase()}: ` : "";

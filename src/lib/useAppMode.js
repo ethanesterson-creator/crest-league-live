@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
+import { useRealtimeTable } from "@/lib/useRealtimeTable";
 
 // Reads the current app mode from app_settings.
 //
@@ -66,10 +67,16 @@ export function useAppMode() {
 
   useEffect(() => {
     load();
-    const t = setInterval(load, 15000);
+    // Safety-net poll for a silently-dropped realtime socket -- slow since
+    // the realtime subscription below is doing the real work now.
+    const t = setInterval(load, 60000);
     return () => clearInterval(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // A Color War switch / session flip propagates to every open device in
+  // under a second instead of waiting up to a minute for the next poll.
+  useRealtimeTable("app_settings", load, { filter: "id=eq.1" });
 
   const isCW = settings.mode === "color_war";
   return {
