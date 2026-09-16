@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
+import { useNotifyingErr } from "@/lib/useNotifyingErr";
 import { getSportRules } from "@/lib/sportRules";
 
 function norm(s) {
@@ -47,7 +48,7 @@ export default function PastGameDetailPage() {
   const gameId = params?.id;
 
   const [loading, setLoading] = useState(true);
-  const [err, setErr] = useState("");
+  const [err, setErr] = useNotifyingErr();
   const [game, setGame] = useState(null);
   const [rosterA, setRosterA] = useState([]);
   const [rosterB, setRosterB] = useState([]);

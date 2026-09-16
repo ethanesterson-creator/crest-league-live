@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import { useAppMode } from "@/lib/useAppMode";
+import { useNotifyingErr } from "@/lib/useNotifyingErr";
 const STAFF_SPORT_KEY = "staff";    // staff standings should live under standings.sport='staff'
 
 function norm(s) {
@@ -27,7 +28,7 @@ function sortStandings(arr) {
 
 export default function StandingsPage() {
   const { season, session } = useAppMode();
-  const [err, setErr] = useState("");  const [loading, setLoading] = useState(true);
+  const [err, setErr] = useNotifyingErr();  const [loading, setLoading] = useState(true);
 
   // Tabs: overall | staff | non_game
   const [tab, setTab] = useState("overall");

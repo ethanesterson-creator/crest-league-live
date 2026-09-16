@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
+import { useNotifyingErr } from "@/lib/useNotifyingErr";
 import { notifyGameFinalized } from "@/lib/notifyGame";
 
 function norm(s) {
@@ -75,7 +76,7 @@ export default function PostDraftEditorPage() {
   const router = useRouter();
   const id = params?.id;
 
-  const [err, setErr] = useState("");
+  const [err, setErr] = useNotifyingErr();
   const [msg, setMsg] = useState("");
   const [game, setGame] = useState(null);
 

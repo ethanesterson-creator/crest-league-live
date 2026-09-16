@@ -1,5 +1,6 @@
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
+import GlobalErrorReporter from "./GlobalErrorReporter";
 
 // ============================================================================
 // OFF-SEASON LOCK
@@ -88,6 +89,7 @@ export default function RootLayout({ children }) {
           </div>
         ) : (
         <>
+        <GlobalErrorReporter />
         {/* Top App Bar */}
         <header
           style={{

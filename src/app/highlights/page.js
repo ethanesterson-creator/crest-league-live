@@ -2,12 +2,13 @@
 
 import { useEffect, useRef, useState } from "react";
 import { supabase } from "@/lib/supabase";
+import { useNotifyingErr } from "@/lib/useNotifyingErr";
 
 export default function HighlightsAdminPage() {
   const [items, setItems] = useState([]);
   const [uploading, setUploading] = useState(false);
   const [progress, setProgress] = useState("");
-  const [err, setErr] = useState("");
+  const [err, setErr] = useNotifyingErr();
   const fileInputRef = useRef(null);
 
   async function load() {

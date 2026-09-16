@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { supabase } from "@/lib/supabase";
 import { useAppMode } from "@/lib/useAppMode";
+import { useNotifyingErr } from "@/lib/useNotifyingErr";
 import { getSportRules } from "@/lib/sportRules";
 
 const SPORTS = [
@@ -39,7 +40,7 @@ function prettyStatLabel(sportName, statKey) {
 
 export default function LeadersPage() {
   const { season, session } = useAppMode();
-  const [err, setErr] = useState("");  const [loading, setLoading] = useState(true);
+  const [err, setErr] = useNotifyingErr();  const [loading, setLoading] = useState(true);
 
   const [leagues, setLeagues] = useState([]);
   const [leagueId, setLeagueId] = useState("seniors");

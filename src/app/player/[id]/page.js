@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import { supabase } from "@/lib/supabase";
+import { useNotifyingErr } from "@/lib/useNotifyingErr";
 
 function norm(s) { return String(s ?? "").trim().toLowerCase(); }
 function fmtLeague(id) {
@@ -25,7 +26,7 @@ export default function PlayerProfilePage() {
   const [games, setGames] = useState(0);
   const [bestGame, setBestGame] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [err, setErr] = useState("");
+  const [err, setErr] = useNotifyingErr();
 
   useEffect(() => {
     if (!id) return;

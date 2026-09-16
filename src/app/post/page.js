@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { supabase } from "@/lib/supabase";
 import { useAppMode } from "@/lib/useAppMode";
+import { useNotifyingErr } from "@/lib/useNotifyingErr";
 const SPORTS = ["Hoop", "Soccer", "Softball", "Kickball", "Volleyball", "Football", "Speedball", "Euro", "Hockey", "Newcomb"];
 const FALLBACK_LEVELS = ["A", "B", "C", "D", "E", "F"];
 const MODES = ["5v5", "6v6", "7v7", "8v8", "9v9", "10v10", "11v11"];
@@ -37,7 +38,7 @@ function matchupLabel(a1, a2) {
 
 export default function PostGamesPage() {
   const { season, session, isCW, blueName, whiteName } = useAppMode();
-  const [err, setErr] = useState("");
+  const [err, setErr] = useNotifyingErr();
   const [msg, setMsg] = useState("");
 
   // Entry type for Phase 2

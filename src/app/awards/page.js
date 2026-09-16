@@ -11,6 +11,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { supabase } from "@/lib/supabase";
 import { useAppMode } from "@/lib/useAppMode";
+import { useNotifyingErr } from "@/lib/useNotifyingErr";
 
 function fmtLeague(id) {
   const s = String(id || "").toLowerCase();
@@ -36,7 +37,7 @@ export default function AwardsPage() {
   const [rows, setRows] = useState([]);
   const [seasonOver, setSeasonOver] = useState(false);
   const [loading, setLoading] = useState(true);
-  const [err, setErr] = useState("");
+  const [err, setErr] = useNotifyingErr();
 
   useEffect(() => {
     (async () => {

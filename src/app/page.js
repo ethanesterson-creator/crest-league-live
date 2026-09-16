@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { supabase } from "@/lib/supabase";
+import { useNotifyingErr } from "@/lib/useNotifyingErr";
 import { useAppMode } from "@/lib/useAppMode";
 import { getSportRules } from "@/lib/sportRules";
 
@@ -93,7 +94,7 @@ function SportIcon({ sport, color }) {
 export default function HomePage() {
   const { season, session, isCW, blueName, whiteName } = useAppMode();
   const [status, setStatus] = useState("Checking…");
-  const [err, setErr] = useState("");
+  const [err, setErr] = useNotifyingErr();
   const [creating, setCreating] = useState(false);
   const [games, setGames] = useState([]);
 

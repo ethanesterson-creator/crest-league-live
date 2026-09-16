@@ -2,9 +2,10 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabase";
+import { useNotifyingErr } from "@/lib/useNotifyingErr";
 
 export default function AdminPage() {
-  const [err, setErr] = useState("");
+  const [err, setErr] = useNotifyingErr();
   const [msg, setMsg] = useState("");
   const [busy, setBusy] = useState(false);
 

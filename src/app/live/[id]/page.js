@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import { useRealtimeTable } from "@/lib/useRealtimeTable";
+import { useNotifyingErr } from "@/lib/useNotifyingErr";
 import { notifyGameFinalized } from "@/lib/notifyGame";
 import { getSportRules } from "@/lib/sportRules";
 
@@ -233,7 +234,7 @@ export default function LiveGamePage() {
   const gameId = params?.id;
 
   const [loading, setLoading] = useState(true);
-  const [err, setErr]         = useState("");
+  const [err, setErr]         = useNotifyingErr();
   const [game, setGame]       = useState(null);
   const [rosterA, setRosterA] = useState([]);
   const [rosterB, setRosterB] = useState([]);

@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { supabase } from "@/lib/supabase";
 import { useAppMode } from "@/lib/useAppMode";
+import { useNotifyingErr } from "@/lib/useNotifyingErr";
 function norm(s) {
   return String(s ?? "").trim().toLowerCase();
 }
@@ -31,7 +32,7 @@ export default function PastGamesPage() {
   const { season, session } = useAppMode();
   const [games, setGames] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [err, setErr] = useState("");
+  const [err, setErr] = useNotifyingErr();
 
   const [leagueFilter, setLeagueFilter] = useState("");
   const [sportFilter, setSportFilter] = useState("");
