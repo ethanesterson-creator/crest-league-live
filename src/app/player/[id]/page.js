@@ -67,10 +67,14 @@ export default function PlayerProfilePage() {
             .eq("player_id", id)
             .eq("is_playing", true)
             .limit(2000),
-          // Best single game
+          // Best single game. live_events has no sport column of its own
+          // (confirmed live: "column live_events.sport does not exist",
+          // despite CLAUDE.md's schema notes claiming otherwise) -- this
+          // silently broke this entire page for every visitor until caught
+          // here. Sport is derived from each event's game in Round 2 below.
           supabase
             .from("live_events")
-            .select("game_id, sport, stat_key, delta")
+            .select("game_id, stat_key, delta")
             .eq("event_type", "stat")
             .eq("player_id", id)
             .limit(5000),
@@ -125,10 +129,22 @@ export default function PlayerProfilePage() {
 
         const perGame = {};
         for (const e of evts || []) {
-          perGame[e.game_id] = perGame[e.game_id] || { sport: e.sport, stats: {} };
+          perGame[e.game_id] = perGame[e.game_id] || { stats: {} };
           const k = String(e.stat_key).toUpperCase();
           perGame[e.game_id].stats[k] = (perGame[e.game_id].stats[k] || 0) + Number(e.delta || 0);
         }
+
+        // Round 2: depends on round 1's event game ids, so it has to come
+        // after -- fetches each game's sport (see the comment on the
+        // live_events query above for why this can't just be e.sport).
+        const bestGameIds = Object.keys(perGame);
+        if (bestGameIds.length) {
+          const { data: gamesForBest } = await supabase.from("live_games").select("id, sport").in("id", bestGameIds);
+          const sportById = {};
+          for (const g of gamesForBest || []) sportById[g.id] = g.sport;
+          for (const gk of bestGameIds) perGame[gk].sport = sportById[gk] || "";
+        }
+
         let best = null;
         for (const gk of Object.keys(perGame)) {
           const g = perGame[gk];

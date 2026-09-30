@@ -49,13 +49,16 @@ export function buildPlayerCardsCSV(players, totals, rosters, games, events) {
     if (won) winMap[String(r.player_id)] = (winMap[String(r.player_id)] || 0) + 1;
   }
 
-  // best single game per player: {pid: "5 G · SOCCER"}
+  // best single game per player: {pid: "5 G · SOCCER"}. live_events has no
+  // sport column of its own -- sport comes from the event's game instead
+  // (see the comment on the `games` query in admin/page.js's
+  // exportPlayerCards).
   const perGameStat = {};
   for (const e of events || []) {
     const pid = String(e.player_id);
     perGameStat[pid] = perGameStat[pid] || {};
     const gk = e.game_id;
-    perGameStat[pid][gk] = perGameStat[pid][gk] || { sport: e.sport, stats: {} };
+    perGameStat[pid][gk] = perGameStat[pid][gk] || { sport: gameById[gk]?.sport, stats: {} };
     const sk = String(e.stat_key).toUpperCase();
     perGameStat[pid][gk].stats[sk] = (perGameStat[pid][gk].stats[sk] || 0) + Number(e.delta || 0);
   }

@@ -920,16 +920,21 @@ export default function AdminPage() {
           .select("game_id, player_id, team_side")
           .eq("is_playing", true)
           .limit(50000),
+        // Also carries `sport` for the best-single-game lookup below --
+        // live_events has no sport column of its own (confirmed live:
+        // "column live_events.sport does not exist", despite CLAUDE.md's
+        // schema notes claiming otherwise), so each event's sport has to be
+        // derived from its game instead.
         supabase
           .from("live_games")
-          .select("id, score_a, score_b, session, status")
+          .select("id, sport, score_a, score_b, session, status")
           .eq("status", "final")
           .limit(5000),
         // 4) Best single games: per player, the game where they logged the
         //    most of a single stat (e.g. 5 goals in one game).
         supabase
           .from("live_events")
-          .select("game_id, player_id, sport, stat_key, delta")
+          .select("game_id, player_id, stat_key, delta")
           .eq("event_type", "stat")
           .limit(100000),
       ]);
