@@ -549,11 +549,16 @@ export default function PostDraftEditorPage() {
   if (!game) {
     return (
       <div className="min-h-screen bg-slate-950 text-slate-100">
-        <div className="mx-auto max-w-4xl px-4 py-6">
-          <div className="text-lg font-black">Loading draft…</div>
+        <div className="mx-auto max-w-6xl px-4 py-6">
           {err ? (
-            <div className="mt-4 rounded-xl border border-red-700 bg-red-950/40 p-3 text-sm text-red-200">{err}</div>
-          ) : null}
+            <div className="rounded-xl border border-red-700 bg-red-950/40 p-3 text-sm text-red-200">{err}</div>
+          ) : (
+            <div className="animate-pulse">
+              <div className="h-8 w-48 rounded-lg bg-white/10" />
+              <div className="mt-6 h-40 rounded-2xl border border-white/10 bg-white/5" />
+              <div className="mt-6 h-64 rounded-2xl border border-white/10 bg-white/5" />
+            </div>
+          )}
         </div>
       </div>
     );

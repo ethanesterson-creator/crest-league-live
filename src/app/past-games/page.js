@@ -129,7 +129,7 @@ export default function PastGamesPage() {
           <label className="text-sm">
             <div className="mb-1 text-slate-300">League</div>
             <select
-              className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 outline-none focus:border-slate-500"
+              className="bc-select"
               value={leagueFilter}
               onChange={(e) => setLeagueFilter(e.target.value)}
             >
@@ -145,7 +145,7 @@ export default function PastGamesPage() {
           <label className="text-sm">
             <div className="mb-1 text-slate-300">Team</div>
             <select
-              className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 outline-none focus:border-slate-500"
+              className="bc-select"
               value={teamFilter}
               onChange={(e) => setTeamFilter(e.target.value)}
             >
@@ -161,7 +161,7 @@ export default function PastGamesPage() {
           <label className="text-sm">
             <div className="mb-1 text-slate-300">Sport</div>
             <select
-              className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 outline-none focus:border-slate-500"
+              className="bc-select"
               value={sportFilter}
               onChange={(e) => setSportFilter(e.target.value)}
             >
@@ -177,7 +177,7 @@ export default function PastGamesPage() {
           <label className="text-sm">
             <div className="mb-1 text-slate-300">Level</div>
             <select
-              className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 outline-none focus:border-slate-500"
+              className="bc-select"
               value={levelFilter}
               onChange={(e) => setLevelFilter(e.target.value)}
             >

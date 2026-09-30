@@ -5,6 +5,7 @@ import { useParams } from "next/navigation";
 import Link from "next/link";
 import { supabase } from "@/lib/supabase";
 import { useNotifyingErr } from "@/lib/useNotifyingErr";
+import { useAppMode } from "@/lib/useAppMode";
 
 function norm(s) { return String(s ?? "").trim().toLowerCase(); }
 function fmtLeague(id) {
@@ -18,6 +19,7 @@ function fmtLeague(id) {
 export default function PlayerProfilePage() {
   const params = useParams();
   const id = params?.id;
+  const { session } = useAppMode();
 
   const [player, setPlayer] = useState(null);
   const [totals, setTotals] = useState([]);      // combined stat totals
@@ -25,6 +27,7 @@ export default function PlayerProfilePage() {
   const [wins, setWins] = useState(0);
   const [games, setGames] = useState(0);
   const [bestGame, setBestGame] = useState(null);
+  const [badges, setBadges] = useState([]); // award podium finishes for this player
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useNotifyingErr();
 
@@ -40,6 +43,7 @@ export default function PlayerProfilePage() {
           { data: t, error: tErr },
           { data: rosters, error: rErr },
           { data: evts, error: eErr },
+          { data: awardRows },
         ] = await Promise.all([
           // This page has no login -- anyone with the link gets this
           // response. Only fetch the fields actually rendered below, not
@@ -70,12 +74,20 @@ export default function PlayerProfilePage() {
             .eq("event_type", "stat")
             .eq("player_id", id)
             .limit(5000),
+          // Trading-card badges: any award podium finish (gold/silver/bronze)
+          // this player holds this session. Non-fatal if it fails -- badges
+          // are a nice-to-have, not core profile data.
+          supabase.rpc("get_awards", { p_session: session }).then(
+            (res) => res,
+            () => ({ data: [] })
+          ),
         ]);
         if (pErr) throw pErr;
         if (tErr) throw tErr;
         if (rErr) throw rErr;
         if (eErr) throw eErr;
         setPlayer(p);
+        setBadges((awardRows || []).filter((r) => String(r.o_player_id) === String(id)).sort((a, b) => a.o_rank - b.o_rank));
 
         const rows = (t || []).filter((r) => Number(r.value) > 0);
 
@@ -133,7 +145,16 @@ export default function PlayerProfilePage() {
     })();
   }, [id]);
 
-  if (loading) return <div className="mt-10 text-white/70">Loading…</div>;
+  if (loading) return (
+    <div className="pb-16 animate-pulse">
+      <div className="mt-6 h-48 rounded-3xl border border-white/10 bg-white/5" />
+      <div className="mt-5 grid grid-cols-3 gap-3">
+        <div className="h-20 rounded-2xl border border-white/10 bg-white/5" />
+        <div className="h-20 rounded-2xl border border-white/10 bg-white/5" />
+        <div className="h-20 rounded-2xl border border-white/10 bg-white/5" />
+      </div>
+    </div>
+  );
   // A fetch error also leaves `player` null, same as a genuinely missing
   // player -- check `err` first so a transient failure doesn't render as
   // "Player not found" for a real player.
@@ -150,22 +171,47 @@ export default function PlayerProfilePage() {
   const fullName = `${player.first_name ?? ""} ${player.last_name ?? ""}`.trim();
   const bothSessions = player.active_session === "s2" && player.s1_team;
 
+  const hasAward = badges.length > 0;
+
   return (
     <div className="pb-16">
-      {/* Hero */}
-      <div className="mt-6 overflow-hidden rounded-3xl border border-white/10 bg-gradient-to-br from-blue-950/60 via-slate-900 to-slate-950">
+      {/* Hero — a trading-card treatment: gold frame + glow once this player
+          holds any award podium spot, same gold language as /awards. */}
+      <div
+        className="mt-6 overflow-hidden rounded-3xl border bg-gradient-to-br from-blue-950/60 via-slate-900 to-slate-950"
+        style={hasAward
+          ? { borderColor: "rgba(245,196,81,.35)", boxShadow: "0 0 60px rgba(245,196,81,.10)" }
+          : { borderColor: "rgba(255,255,255,.1)" }}
+      >
         <div className="flex flex-col items-center gap-4 p-8 sm:flex-row sm:items-end sm:gap-6">
-          <div className="flex h-32 w-32 items-center justify-center rounded-2xl bg-white/5 text-5xl font-black ring-2 ring-white/10">
+          <div
+            className="flex h-32 w-32 items-center justify-center rounded-2xl bg-white/5 text-5xl font-black ring-2"
+            style={{ borderColor: "transparent", boxShadow: hasAward ? "0 0 0 2px rgba(245,196,81,.4)" : undefined }}
+          >
             {(player.first_name?.[0] || "") + (player.last_name?.[0] || "")}
           </div>
           <div className="text-center sm:text-left">
-            <div className="text-4xl font-black">{fullName}</div>
+            <h1 className="text-4xl font-black">{fullName}</h1>
             <div className="mt-1 text-sm font-bold uppercase tracking-widest text-white/50">
               {fmtLeague(player.league_id)} · {player.team_name} {player.bunk ? `· Bunk ${player.bunk}` : ""}
             </div>
             <div className="mt-2 text-xs font-bold text-blue-300">
               {bothSessions ? "Both Sessions" : player.active_session === "s2" ? "Session 2" : "Session 1"}
             </div>
+
+            {hasAward ? (
+              <div className="mt-3 flex flex-wrap justify-center gap-2 sm:justify-start">
+                {badges.map((b) => (
+                  <span
+                    key={`${b.o_award}-${b.o_rank}`}
+                    className="inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-black"
+                    style={{ borderColor: "rgba(245,196,81,.35)", background: "var(--bc-gold-soft)", color: "#f5c451" }}
+                  >
+                    {b.o_rank === 1 ? "🥇" : b.o_rank === 2 ? "🥈" : "🥉"} {b.o_award_label || b.o_award}
+                  </span>
+                ))}
+              </div>
+            ) : null}
           </div>
         </div>
       </div>
@@ -200,7 +246,7 @@ export default function PlayerProfilePage() {
 
       {/* Stat totals */}
       <div className="mt-5 rounded-2xl border border-white/10 bg-white/5 p-5">
-        <div className="text-lg font-black">Career Stat Totals</div>
+        <h2 className="text-lg font-black">Career Stat Totals</h2>
         <div className="mt-1 text-xs text-white/50">Combined across all sessions.</div>
         {totals.length ? (
           <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-3">

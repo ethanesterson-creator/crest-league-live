@@ -268,8 +268,14 @@ export default function PastGameDetailPage() {
 
   if (loading) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-slate-950 text-slate-300">
-        Loading box score…
+      <div className="min-h-screen bg-slate-950 p-4 text-slate-300">
+        <div className="mx-auto max-w-6xl animate-pulse">
+          <div className="h-40 rounded-2xl border border-slate-800 bg-slate-900/60" />
+          <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-[1fr_320px]">
+            <div className="h-64 rounded-2xl border border-slate-800 bg-slate-900/60" />
+            <div className="h-64 rounded-2xl border border-slate-800 bg-slate-900/60" />
+          </div>
+        </div>
       </div>
     );
   }
@@ -297,12 +303,12 @@ export default function PastGameDetailPage() {
           <div className="text-sm text-slate-500">No individual stats tracked for this sport.</div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full text-sm">
+            <table className="bc-table">
               <thead>
-                <tr className="text-left text-xs uppercase tracking-wide text-slate-500">
-                  <th className="py-1.5 pr-2">Player</th>
+                <tr>
+                  <th>Player</th>
                   {statDefs.map((sd) => (
-                    <th key={sd.key} className="py-1.5 px-2 text-center">{sd.label}</th>
+                    <th key={sd.key} className="text-center">{sd.label}</th>
                   ))}
                 </tr>
               </thead>
@@ -315,10 +321,10 @@ export default function PastGameDetailPage() {
                   </tr>
                 ) : (
                   players.map((p) => (
-                    <tr key={p.player_id} className="border-t border-slate-800">
-                      <td className="py-1.5 pr-2 font-bold text-white">{p.player_name || p.player_id}</td>
+                    <tr key={p.player_id}>
+                      <td className="font-bold text-white">{p.player_name || p.player_id}</td>
                       {statDefs.map((sd) => (
-                        <td key={sd.key} className="py-1.5 px-2 text-center font-bold tabular-nums text-slate-200">
+                        <td key={sd.key} className="text-center font-bold tabular-nums text-slate-200">
                           {p.totals[sd.key] ?? 0}
                         </td>
                       ))}
@@ -345,6 +351,7 @@ export default function PastGameDetailPage() {
 
         {/* Header / Final Score */}
         <div className="rounded-2xl border border-slate-800 bg-gradient-to-br from-slate-900 to-slate-950 p-6">
+          <h1 className="sr-only">{leftLabel} vs {rightLabel} — final {scoreA} to {scoreB}</h1>
           <div className="flex flex-wrap items-center gap-2 text-xs font-bold uppercase tracking-wide text-slate-400">
             <span>{fmtLeague(game.league_key)}</span>
             <span>·</span>

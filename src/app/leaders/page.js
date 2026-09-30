@@ -139,7 +139,7 @@ export default function LeadersPage() {
           <div>
             <div className="mb-1 text-xs font-bold text-white/60">League</div>
             <select
-              className="rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm font-bold text-white"
+              className="bc-select w-auto"
               value={leagueId}
               onChange={(e) => setLeagueId(e.target.value)}
             >
@@ -161,7 +161,7 @@ export default function LeadersPage() {
           <div>
             <div className="mb-1 text-xs font-bold text-white/60">Sport</div>
             <select
-              className="rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm font-bold text-white"
+              className="bc-select w-auto"
               value={sport}
               onChange={(e) => setSport(e.target.value)}
             >
@@ -176,7 +176,7 @@ export default function LeadersPage() {
           <div>
             <div className="mb-1 text-xs font-bold text-white/60">Stat</div>
             <select
-              className="rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm font-bold text-white"
+              className="bc-select w-auto"
               value={statKey}
               onChange={(e) => setStatKey(e.target.value)}
             >
@@ -215,27 +215,27 @@ export default function LeadersPage() {
           <div className="mt-4 text-white/70">Loading…</div>
         ) : (
           <div className="mt-4 overflow-x-auto">
-            <table className="w-full text-left text-sm">
-              <thead className="text-white/70">
+            <table className="bc-table">
+              <thead>
                 <tr>
-                  <th className="py-2">#</th>
-                  <th className="py-2">Player</th>
-                  <th className="py-2">Team</th>
-                  <th className="py-2 text-right">{statLabel}</th>
+                  <th>#</th>
+                  <th>Player</th>
+                  <th>Team</th>
+                  <th className="text-right">{statLabel}</th>
                 </tr>
               </thead>
               <tbody>
                 {rows.length ? (
                   rows.map((r, idx) => (
-                    <tr key={`${r.player_id}-${r.stat_key}`} className="border-t border-white/10">
-                      <td className="py-3 font-black">{idx + 1}</td>
-                      <td className="py-3 font-extrabold">
+                    <tr key={`${r.player_id}-${r.stat_key}`}>
+                      <td><span className={`bc-rank ${idx === 0 ? "bc-rank-1" : ""}`}>{idx + 1}</span></td>
+                      <td className="font-extrabold">
                         <Link href={`/player/${r.player_id}`} className="hover:text-blue-300 hover:underline">
                           {r.player_name}
                         </Link>
                       </td>
-                      <td className="py-3 text-white/80">{r.team_name}</td>
-                      <td className="py-3 text-right font-black tabular-nums">{r.value}</td>
+                      <td className="text-white/80">{r.team_name}</td>
+                      <td className="text-right font-black tabular-nums">{r.value}</td>
                     </tr>
                   ))
                 ) : (

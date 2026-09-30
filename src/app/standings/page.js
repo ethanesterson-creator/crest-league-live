@@ -219,24 +219,26 @@ export default function StandingsPage() {
               </div>
 
               <div className="mt-4 overflow-x-auto">
-                <table className="w-full text-left text-sm">
-                  <thead className="text-white/70">
+                <table className="bc-table">
+                  <thead>
                     <tr>
-                      <th className="py-2">Team</th>
-                      <th className="py-2">Points</th>
+                      <th>#</th>
+                      <th>Team</th>
+                      <th>Points</th>
                     </tr>
                   </thead>
                   <tbody>
                     {overallRows.length ? (
-                      overallRows.map((r) => (
-                        <tr key={`overall-${r.team_name}`} className="border-t border-white/10">
-                          <td className="py-3 font-extrabold">{r.team_name}</td>
-                          <td className="py-3 font-black">{r.points}</td>
+                      overallRows.map((r, i) => (
+                        <tr key={`overall-${r.team_name}`}>
+                          <td><span className={`bc-rank ${i === 0 ? "bc-rank-1" : ""}`}>{i + 1}</span></td>
+                          <td className="font-extrabold">{r.team_name}</td>
+                          <td className="font-black">{r.points}</td>
                         </tr>
                       ))
                     ) : (
                       <tr>
-                        <td className="py-4 text-white/60" colSpan={2}>
+                        <td className="py-4 text-white/60" colSpan={3}>
                           No overall points yet.
                         </td>
                       </tr>
@@ -254,19 +256,19 @@ export default function StandingsPage() {
               <div className="text-sm text-white/70">Spirit, cheering, songs, community, etc.</div>
 
               <div className="mt-4 overflow-x-auto">
-                <table className="w-full text-left text-sm">
-                  <thead className="text-white/70">
+                <table className="bc-table">
+                  <thead>
                     <tr>
-                      <th className="py-2">Team</th>
-                      <th className="py-2">Points</th>
+                      <th>Team</th>
+                      <th>Points</th>
                     </tr>
                   </thead>
                   <tbody>
                     {nonGameRows.length ? (
                       nonGameRows.map((r) => (
-                        <tr key={`ng-${r.team_name}`} className="border-t border-white/10">
-                          <td className="py-3 font-extrabold">{r.team_name}</td>
-                          <td className="py-3 font-black">{r.points}</td>
+                        <tr key={`ng-${r.team_name}`}>
+                          <td className="font-extrabold">{r.team_name}</td>
+                          <td className="font-black">{r.points}</td>
                         </tr>
                       ))
                     ) : (
