@@ -157,12 +157,22 @@ body::before {
   border-color: rgba(58,113,255,0.30);
 }
 
+/* The app's one loud display face — condensed, all-caps, built for
+   headlines and scoreboard numbers. Never used for running text. */
+.bc-display {
+  font-family: var(--font-display), Impact, "Arial Narrow", sans-serif;
+  text-transform: uppercase;
+  letter-spacing: 0.01em;
+}
+
 /* Page title treatment — use on each page's <h1> for consistency */
 .bc-page-title {
-  font-size: clamp(28px, 5vw, 44px);
-  font-weight: 900;
-  letter-spacing: -0.02em;
-  line-height: 1;
+  font-family: var(--font-display), Impact, "Arial Narrow", sans-serif;
+  font-size: clamp(36px, 7vw, 64px);
+  font-weight: 400;
+  letter-spacing: 0.005em;
+  line-height: 0.95;
+  text-transform: uppercase;
 }
 .bc-page-title .bc-accent-text {
   background: linear-gradient(180deg, #9dbaff, var(--bc-accent));
@@ -171,6 +181,191 @@ body::before {
 .bc-eyebrow {
   font-size: 12px; font-weight: 900; letter-spacing: 0.3em; text-transform: uppercase;
   color: #7ea6ff;
+}
+
+/* ===== Site header — the one piece of chrome on every page ===== */
+.bc-site-header {
+  position: sticky;
+  top: 0;
+  z-index: 50;
+  background: rgba(8, 23, 44, 0.88);
+  backdrop-filter: blur(12px);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+.bc-site-header-bar {
+  height: 3px;
+  background: linear-gradient(90deg, var(--bc-gold), var(--bc-accent) 55%, var(--bc-gold));
+  background-size: 200% 100%;
+  animation: bc-header-sheen 8s linear infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .bc-site-header-bar { animation: none; }
+}
+@keyframes bc-header-sheen {
+  0% { background-position: 0% 0; }
+  100% { background-position: 200% 0; }
+}
+.bc-site-header-inner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 14px;
+  padding-top: 10px;
+  padding-bottom: 10px;
+  row-gap: 8px;
+}
+.bc-wordmark {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.bc-wordmark-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  font-family: var(--font-display), Impact, sans-serif;
+  font-size: 16px;
+  letter-spacing: 0.02em;
+  color: #0a1730;
+  background: linear-gradient(180deg, #ffe9a8, var(--bc-gold));
+  box-shadow: 0 0 16px rgba(245, 196, 81, 0.4);
+}
+.bc-wordmark-text {
+  font-family: var(--font-display), Impact, sans-serif;
+  font-size: 20px;
+  letter-spacing: 0.015em;
+  text-transform: uppercase;
+  line-height: 1;
+}
+.bc-wordmark-text em {
+  font-style: normal;
+  background: linear-gradient(180deg, #9dbaff, var(--bc-accent));
+  -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent;
+}
+.bc-live-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 5px 12px;
+  border-radius: 999px;
+  border: 1px solid rgba(239, 68, 68, 0.5);
+  background: rgba(239, 68, 68, 0.12);
+  color: #fca5a5;
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+}
+.bc-live-dot {
+  width: 7px; height: 7px; border-radius: 999px;
+  background: #ef4444;
+  box-shadow: 0 0 8px rgba(239, 68, 68, 0.9);
+  animation: bc-live-pulse 1.4s ease-in-out infinite;
+}
+@keyframes bc-live-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.4; transform: scale(0.8); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .bc-live-dot { animation: none; }
+}
+.bc-nav {
+  margin-left: auto;
+  display: flex;
+  flex-wrap: wrap;
+  row-gap: 6px;
+  gap: 4px;
+  align-items: center;
+}
+.bc-nav-link {
+  font-size: 13px;
+  font-weight: 700;
+  color: rgba(255, 255, 255, 0.55);
+  padding: 6px 10px;
+  border-radius: 8px;
+}
+.bc-nav-link:hover { color: #fff; background: rgba(255, 255, 255, 0.06); }
+.bc-nav-link-active {
+  color: #fff;
+  background: var(--bc-accent-soft);
+  box-shadow: inset 0 -2px 0 var(--bc-accent);
+}
+
+/* ===== Hero / ticker band — Home page's "on-air" opener ===== */
+.bc-hero-eyebrow-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 14px;
+  border-radius: 999px;
+  border: 1px solid rgba(245, 196, 81, 0.35);
+  background: var(--bc-gold-soft);
+  color: var(--bc-gold);
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: 0.25em;
+  text-transform: uppercase;
+}
+.bc-hero-title {
+  font-family: var(--font-display), Impact, sans-serif;
+  font-size: clamp(48px, 10vw, 96px);
+  font-weight: 400;
+  line-height: 0.88;
+  letter-spacing: 0.005em;
+  text-transform: uppercase;
+}
+.bc-ticker-band {
+  display: flex;
+  overflow: hidden;
+  border-radius: 16px;
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  background: linear-gradient(90deg, rgba(239, 68, 68, 0.12), rgba(8, 23, 44, 0.4));
+}
+.bc-ticker-label {
+  display: flex;
+  shrink: 0;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 16px;
+  background: #ef4444;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: 0.1em;
+  white-space: nowrap;
+}
+.bc-ticker-track {
+  display: flex;
+  align-items: center;
+  gap: 32px;
+  padding: 0 20px;
+  white-space: nowrap;
+  animation: bc-ticker-scroll 22s linear infinite;
+}
+@keyframes bc-ticker-scroll {
+  0% { transform: translateX(0); }
+  100% { transform: translateX(-50%); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .bc-ticker-track { animation: none; overflow-x: auto; }
+}
+
+/* Entrance stagger for card grids (sport chips, standings rows, etc.) —
+   opt-in via style="--stagger: N" on each item. Skips entirely under
+   reduced motion instead of jumping straight to the end state, which reads
+   as more stable than a 0ms "animation". */
+@keyframes bc-rise-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.bc-rise-in {
+  animation: bc-rise-in 0.4s ease-out both;
+  animation-delay: calc(var(--stagger, 0) * 40ms);
+}
+@media (prefers-reduced-motion: reduce) {
+  .bc-rise-in { animation: none; }
 }
 
 /* Accent pill / chip */

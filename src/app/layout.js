@@ -1,6 +1,7 @@
-import { Geist, Geist_Mono } from "next/font/google";
+import { Geist, Geist_Mono, Bebas_Neue } from "next/font/google";
 import "./globals.css";
 import GlobalErrorReporter from "./GlobalErrorReporter";
+import SiteHeader from "./SiteHeader";
 
 // ============================================================================
 // OFF-SEASON LOCK
@@ -19,6 +20,16 @@ const geistSans = Geist({
 
 const geistMono = Geist_Mono({
   variable: "--font-geist-mono",
+  subsets: ["latin"],
+});
+
+// Condensed, all-caps display face for hero headlines, scoreboard numbers,
+// and page titles -- the app's one deliberately loud typographic choice.
+// Body copy stays on Geist Sans; this is only ever used via .bc-display /
+// .bc-page-title, never for running text.
+const bebasNeue = Bebas_Neue({
+  variable: "--font-display",
+  weight: "400",
   subsets: ["latin"],
 });
 
@@ -52,7 +63,7 @@ export const viewport = {
 export default function RootLayout({ children }) {
   return (
     <html lang="en">
-      <body className={`${geistSans.variable} ${geistMono.variable} antialiased`}>
+      <body className={`${geistSans.variable} ${geistMono.variable} ${bebasNeue.variable} antialiased`}>
         {OFF_SEASON ? (
           <div style={{
             minHeight: "100vh", display: "flex", flexDirection: "column",
@@ -90,85 +101,7 @@ export default function RootLayout({ children }) {
         ) : (
         <>
         <GlobalErrorReporter />
-        {/* Top App Bar */}
-        <header
-          style={{
-            position: "sticky",
-            top: 0,
-            zIndex: 50,
-            background: "rgba(8, 23, 44, 0.85)",
-            backdropFilter: "blur(10px)",
-            borderBottom: "1px solid rgba(255,255,255,0.12)",
-          }}
-        >
-          <div
-            className="bc-container"
-            style={{ display: "flex", flexWrap: "wrap", rowGap: 6, alignItems: "center", gap: 12, paddingTop: 10, paddingBottom: 10 }}
-          >
-            <div style={{ fontWeight: 900, letterSpacing: 0.5 }}>
-              Crest League Live
-            </div>
-
-            <div className="bc-faint" style={{ fontSize: 12 }}>
-              Created By Ethan Esterson
-            </div>
-
-            {/* Nav links — wraps instead of overflowing on narrow phones,
-                where 9 links don't fit in one row. */}
-            <div
-              style={{
-                marginLeft: "auto",
-                display: "flex",
-                flexWrap: "wrap",
-                rowGap: 6,
-                gap: 14,
-                alignItems: "center",
-              }}
-            >
-              <a className="bc-muted" href="/" style={{ fontSize: 14 }}>
-                Home
-              </a>
-
-              <a className="bc-muted" href="/standings" style={{ fontSize: 14 }}>
-                Standings
-              </a>
-
-              <a className="bc-muted" href="/leaders" style={{ fontSize: 14 }}>
-                Leaders
-              </a>
-
-              <a className="bc-muted" href="/past-games" style={{ fontSize: 14 }}>
-                Past Games
-              </a>
-
-              <a className="bc-muted" href="/display" style={{ fontSize: 14 }}>
-                Display
-              </a>
-
-              <a className="bc-muted" href="/highlights" style={{ fontSize: 14 }}>
-                Highlights
-              </a>
-
-              <a className="bc-muted" href="/admin" style={{ fontSize: 14 }}>
-                Admin
-              </a>
-
-              <a className="bc-muted" href="/awards" style={{ fontSize: 14 }}>
-                Awards
-              </a>
-
-              <a className="bc-muted" href="/post" style={{ fontSize: 14 }}>
-                Post Games
-              </a>
-
-
-              {/* Next later:
-                  - Stat Leaders
-                  - Display Board
-              */}
-            </div>
-          </div>
-        </header>
+        <SiteHeader />
 
         {/* Page content */}
         <main className="bc-container">{children}</main>
@@ -176,9 +109,10 @@ export default function RootLayout({ children }) {
         {/* Footer */}
         <footer
           className="bc-container bc-faint"
-          style={{ paddingTop: 24, paddingBottom: 24, fontSize: 12 }}
+          style={{ paddingTop: 24, paddingBottom: 32, fontSize: 12, display: "flex", justifyContent: "space-between", flexWrap: "wrap", gap: 8 }}
         >
-          Built for Camp Bauercrest — Crest League Live
+          <span>Built for Camp Bauercrest — Crest League Live</span>
+          <span>Created by Ethan Esterson</span>
         </footer>
         </>
         )}

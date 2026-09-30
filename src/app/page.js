@@ -537,39 +537,65 @@ export default function HomePage() {
     .filter(Boolean)
     .join(" · ");
 
+  const liveGamesNow = games.filter((g) => g.status === "active");
+
   return (
     <div className="min-h-screen text-slate-100">
       {confirmModal}
       <div className="bc-container">
-        {/* Header */}
-        <div className="flex items-center justify-between">
-          <div>
-            <div className="bc-eyebrow">Camp Bauercrest</div>
-            <h1 className="bc-page-title mt-1">
-              Crest <span className="bc-accent-text">League Live</span>
-            </h1>
-            <div className="mt-1 text-sm text-slate-300">
-              Status: <span className="font-semibold" style={{ color: "var(--bc-accent)" }}>{status}</span>
-            </div>
+        {/* Hero — the broadcast opener. Same navy/gold identity as
+            /display and /awards, now on the page people actually land on
+            first instead of only on the TV board. */}
+        <div className="pt-2">
+          <div className="bc-hero-eyebrow-badge">
+            <span className="bc-live-dot" aria-hidden="true" style={{ background: "var(--bc-gold)", boxShadow: "0 0 8px rgba(245,196,81,.9)" }} />
+            Camp Bauercrest Sports Network
           </div>
-          <button
-            onClick={loadGames}
-            className="rounded-xl border px-4 py-2 text-sm font-black hover:brightness-110"
-            style={{ borderColor: "rgba(58,113,255,0.4)", background: "var(--bc-accent-soft)", color: "#bcd4ff" }}
-          >
-            Refresh
-          </button>
+          <h1 className="bc-hero-title mt-3">
+            Crest <span className="bc-accent-text">League</span> Live
+          </h1>
+          <div className="mt-2 flex flex-wrap items-center gap-3 text-sm text-slate-300">
+            <span>
+              Status: <span className="font-semibold" style={{ color: "var(--bc-accent)" }}>{status}</span>
+            </span>
+            <button
+              onClick={loadGames}
+              className="rounded-xl border px-3 py-1.5 text-xs font-black hover:brightness-110"
+              style={{ borderColor: "rgba(58,113,255,0.4)", background: "var(--bc-accent-soft)", color: "#bcd4ff" }}
+            >
+              Refresh
+            </button>
+          </div>
         </div>
 
+        {/* Live ticker band — only appears when a game is actually live,
+            so the homepage itself carries this session's realtime work
+            instead of that only being visible on /display. */}
+        {liveGamesNow.length ? (
+          <div className="bc-ticker-band mt-5">
+            <div className="bc-ticker-label">
+              <span className="bc-live-dot" aria-hidden="true" />
+              LIVE
+            </div>
+            <div className="bc-ticker-track">
+              {[...liveGamesNow, ...liveGamesNow].map((g, i) => (
+                <Link key={`${g.id}-${i}`} href={`/live/${g.id}`} className="text-sm font-bold text-white hover:text-blue-300">
+                  {g.sport?.toUpperCase()} · {norm(g.team_a1)} <span className="font-black tabular-nums" style={{ color: "var(--bc-gold)" }}>{g.score_a}-{g.score_b}</span> {norm(g.team_b1)}
+                </Link>
+              ))}
+            </div>
+          </div>
+        ) : null}
+
         {/* Create game card */}
-        <div className="bc-card bc-card-pad mt-4 shadow">
+        <div className="bc-card bc-card-pad mt-5 shadow">
           <div className="text-lg font-bold">Create Live Game</div>
 
           {/* Sport — horizontally-scrolling chip strip, keeps this compact on phones */}
           <div className="mt-3">
             <div className="mb-1.5 text-xs font-bold uppercase tracking-wider text-slate-400">Sport</div>
             <div className="-mx-1 flex gap-2 overflow-x-auto px-1 pb-1" style={{ scrollbarWidth: "none" }}>
-              {SPORTS.map((s) => {
+              {SPORTS.map((s, i) => {
                 const active = norm(sport) === norm(s);
                 return (
                   <button
@@ -577,12 +603,13 @@ export default function HomePage() {
                     type="button"
                     disabled={matchupType === "crest_cup"}
                     onClick={() => setSport(s)}
-                    className="flex shrink-0 flex-col items-center gap-1 rounded-2xl border px-3.5 py-2.5 disabled:opacity-60"
-                    style={
-                      active
+                    className="bc-rise-in flex shrink-0 flex-col items-center gap-1 rounded-2xl border px-3.5 py-2.5 disabled:opacity-60"
+                    style={{
+                      "--stagger": i,
+                      ...(active
                         ? { borderColor: "#3a71ff", background: "rgba(58,113,255,0.18)", boxShadow: "0 0 0 3px rgba(58,113,255,0.15)" }
-                        : { borderColor: "rgba(255,255,255,0.1)", background: "rgba(255,255,255,0.04)" }
-                    }
+                        : { borderColor: "rgba(255,255,255,0.1)", background: "rgba(255,255,255,0.04)" }),
+                    }}
                   >
                     <SportIcon sport={s} color={active ? "#bcd4ff" : "rgba(255,255,255,0.55)"} />
                     <span className="text-[11px] font-extrabold" style={{ color: active ? "#fff" : "rgba(255,255,255,0.7)" }}>
