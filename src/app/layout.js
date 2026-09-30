@@ -10,7 +10,7 @@ import GlobalErrorReporter from "./GlobalErrorReporter";
 // The database stays frozen and untouched. Set back to false next summer to
 // reopen the app exactly as it was.
 // ============================================================================
-const OFF_SEASON = true;
+const OFF_SEASON = false;
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
