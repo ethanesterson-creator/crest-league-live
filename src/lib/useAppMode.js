@@ -20,6 +20,7 @@ const DEFAULTS = {
   cw_white_name: "White",
   cw_blue_logo: null,
   cw_white_logo: null,
+  display_mode: "season",
 };
 
 function readCache() {
@@ -88,6 +89,12 @@ export function useAppMode() {
     whiteName: settings.cw_white_name || "White",
     blueLogo: settings.cw_blue_logo || null,
     whiteLogo: settings.cw_white_logo || null,
+    // Display-board scene set. Admin-controlled (see DisplayModePanel), not
+    // a source-code flag — the board used to be pinned to banquet-only
+    // scenes by a hardcoded `const BANQUET = true` that nobody could flip
+    // without a code change + redeploy.
+    displayMode: settings.display_mode || "season",
+    isBanquet: settings.display_mode === "banquet",
     loading,
     refresh: load,
   };

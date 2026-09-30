@@ -3,12 +3,14 @@
 import { useEffect, useRef, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import { useNotifyingErr } from "@/lib/useNotifyingErr";
+import { useConfirmDialog } from "@/lib/useConfirmDialog";
 
 export default function HighlightsAdminPage() {
   const [items, setItems] = useState([]);
   const [uploading, setUploading] = useState(false);
   const [progress, setProgress] = useState("");
   const [err, setErr] = useNotifyingErr();
+  const { confirmAsync, confirmModal } = useConfirmDialog();
   const fileInputRef = useRef(null);
 
   async function load() {
@@ -85,7 +87,8 @@ export default function HighlightsAdminPage() {
   }
 
   async function deleteItem(item) {
-    if (!confirm("Delete this photo permanently?")) return;
+    const ok = await confirmAsync("This cannot be undone.", { title: "Delete this photo permanently?", confirmLabel: "Delete" });
+    if (!ok) return;
     await supabase.storage.from("highlights").remove([item.file_path]);
     const { error } = await supabase.from("highlights").delete().eq("id", item.id);
     if (error) { setErr(error.message); return; }
@@ -99,9 +102,11 @@ export default function HighlightsAdminPage() {
 
   return (
     <main className="min-h-screen bg-[#0a1628] px-4 py-8 text-white">
+      {confirmModal}
       <div className="mx-auto max-w-4xl">
-        <h1 className="text-3xl font-black">Highlights Manager</h1>
-        <p className="mt-1 text-sm text-white/50">
+        <div className="bc-eyebrow">Camp Bauercrest</div>
+        <h1 className="bc-page-title mt-1">Highlights <span className="bc-accent-text">Manager</span></h1>
+        <p className="mt-2 text-sm text-white/50">
           Upload photos for the display board. They rotate automatically in the Highlights scene.
         </p>
 
@@ -122,7 +127,7 @@ export default function HighlightsAdminPage() {
             disabled={uploading}
             onChange={(e) => handleFiles(e.target.files)}
           />
-          <div className="text-5xl">📸</div>
+          <div aria-hidden="true" className="text-5xl">📸</div>
           <div className="mt-3 text-lg font-black">
             {uploading ? progress : "Tap to upload photos or videos"}
           </div>
@@ -143,7 +148,7 @@ export default function HighlightsAdminPage() {
                 {item.file_type === "video" ? (
                   <video src={publicUrl(item.file_path)} className="h-full w-full object-cover" muted playsInline />
                 ) : (
-                  <img src={publicUrl(item.file_path)} alt="" className="h-full w-full object-cover" loading="lazy" />
+                  <img src={publicUrl(item.file_path)} alt={item.title || "Camp highlight photo"} className="h-full w-full object-cover" loading="lazy" />
                 )}
               </div>
               <div className="space-y-2 p-3">

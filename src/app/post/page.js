@@ -5,6 +5,7 @@ import Link from "next/link";
 import { supabase } from "@/lib/supabase";
 import { useAppMode } from "@/lib/useAppMode";
 import { useNotifyingErr } from "@/lib/useNotifyingErr";
+import { useConfirmDialog } from "@/lib/useConfirmDialog";
 const SPORTS = ["Hoop", "Soccer", "Softball", "Kickball", "Volleyball", "Football", "Speedball", "Euro", "Hockey", "Newcomb"];
 const FALLBACK_LEVELS = ["A", "B", "C", "D", "E", "F"];
 const MODES = ["5v5", "6v6", "7v7", "8v8", "9v9", "10v10", "11v11"];
@@ -39,6 +40,7 @@ function matchupLabel(a1, a2) {
 export default function PostGamesPage() {
   const { season, session, isCW, blueName, whiteName } = useAppMode();
   const [err, setErr] = useNotifyingErr();
+  const { confirmAsync, confirmModal } = useConfirmDialog();
   const [msg, setMsg] = useState("");
 
   // Entry type for Phase 2
@@ -206,7 +208,8 @@ export default function PostGamesPage() {
   }
 
   async function deleteDraft(id, label) {
-    if (!confirm(`Delete this draft?\n\n${label}\n\nThis cannot be undone.`)) return;
+    const ok = await confirmAsync(`${label}\n\nThis cannot be undone.`, { title: "Delete this draft?", confirmLabel: "Delete" });
+    if (!ok) return;
     try {
       // Remove child rows first, then the game. If a child delete fails we
       // stop here instead of deleting the parent anyway -- otherwise those
@@ -422,11 +425,13 @@ export default function PostGamesPage() {
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100">
+      {confirmModal}
       <div className="mx-auto max-w-6xl px-4 py-6">
         <div className="flex items-center justify-between gap-4">
           <div>
-            <div className="text-2xl font-black tracking-tight">Add Results</div>
-            <div className="mt-1 text-sm text-white/70">
+            <div className="bc-eyebrow">Camp Bauercrest</div>
+            <h1 className="bc-page-title mt-1">Add <span className="bc-accent-text">Results</span></h1>
+            <div className="mt-2 text-sm text-white/70">
               Enter results after the fact: <b>Post Games</b> and <b>Non-Game Points</b>.
             </div>
           </div>
@@ -489,7 +494,7 @@ export default function PostGamesPage() {
                 <div className="mb-1 text-slate-300">Date</div>
                 <input
                   type="date"
-                  className="w-full rounded-xl border border-slate-800 bg-slate-950 px-3 py-2 outline-none focus:border-slate-500"
+                  className="bc-select"
                   value={playedOn}
                   onChange={(e) => setPlayedOn(e.target.value)}
                 />
@@ -499,7 +504,7 @@ export default function PostGamesPage() {
                 <label className="text-sm">
                   <div className="mb-1 text-slate-300">League</div>
                   <select
-                    className="w-full rounded-xl border border-slate-800 bg-slate-950 px-3 py-2 outline-none focus:border-slate-500"
+                    className="bc-select"
                     value={leagueKey}
                     onChange={(e) => setLeagueKey(e.target.value)}
                   >
@@ -515,7 +520,7 @@ export default function PostGamesPage() {
               <label className="text-sm">
                 <div className="mb-1 text-slate-300">Sport</div>
                 <select
-                  className="w-full rounded-xl border border-slate-800 bg-slate-950 px-3 py-2 outline-none focus:border-slate-500 disabled:opacity-50"
+                  className="bc-select disabled:opacity-50"
                   value={sport}
                   onChange={(e) => setSport(e.target.value)}
                   disabled={matchupType === "crest_cup"}
@@ -535,7 +540,7 @@ export default function PostGamesPage() {
               <label className="text-sm">
                 <div className="mb-1 text-slate-300">Matchup</div>
                 <select
-                  className="w-full rounded-xl border border-slate-800 bg-slate-950 px-3 py-2 outline-none focus:border-slate-500"
+                  className="bc-select"
                   value={matchupType}
                   onChange={(e) => setMatchupType(e.target.value)}
                 >
@@ -550,7 +555,7 @@ export default function PostGamesPage() {
                 <label className="text-sm">
                   <div className="mb-1 text-slate-300">Level</div>
                   <select
-                    className="w-full rounded-xl border border-slate-800 bg-slate-950 px-3 py-2 outline-none focus:border-slate-500"
+                    className="bc-select"
                     value={String(level).toUpperCase()}
                     onChange={(e) => setLevel(e.target.value)}
                   >
@@ -571,7 +576,7 @@ export default function PostGamesPage() {
                 <label className="text-sm">
                   <div className="mb-1 text-slate-300">Mode</div>
                   <select
-                    className="w-full rounded-xl border border-slate-800 bg-slate-950 px-3 py-2 outline-none focus:border-slate-500"
+                    className="bc-select"
                     value={mode}
                     onChange={(e) => {
                       setMode(e.target.value);
@@ -601,7 +606,7 @@ export default function PostGamesPage() {
               <label className="text-sm">
                 <div className="mb-1 text-slate-300">Team A1</div>
                 <select
-                  className="w-full rounded-xl border border-slate-800 bg-slate-950 px-3 py-2 outline-none focus:border-slate-500"
+                  className="bc-select"
                   value={teamA}
                   onChange={(e) => setTeamA(e.target.value)}
                 >
@@ -616,7 +621,7 @@ export default function PostGamesPage() {
               <label className="text-sm">
                 <div className="mb-1 text-slate-300">Team B1</div>
                 <select
-                  className="w-full rounded-xl border border-slate-800 bg-slate-950 px-3 py-2 outline-none focus:border-slate-500"
+                  className="bc-select"
                   value={teamB}
                   onChange={(e) => setTeamB(e.target.value)}
                 >
@@ -635,7 +640,7 @@ export default function PostGamesPage() {
                   <label className="text-sm">
                     <div className="mb-1 text-slate-300">Team A2</div>
                     <select
-                      className="w-full rounded-xl border border-slate-800 bg-slate-950 px-3 py-2 outline-none focus:border-slate-500"
+                      className="bc-select"
                       value={teamA2}
                       onChange={(e) => setTeamA2(e.target.value)}
                     >
@@ -650,7 +655,7 @@ export default function PostGamesPage() {
                   <label className="text-sm">
                     <div className="mb-1 text-slate-300">Team B2</div>
                     <select
-                      className="w-full rounded-xl border border-slate-800 bg-slate-950 px-3 py-2 outline-none focus:border-slate-500"
+                      className="bc-select"
                       value={teamB2}
                       onChange={(e) => setTeamB2(e.target.value)}
                     >
@@ -689,7 +694,7 @@ export default function PostGamesPage() {
                 <div className="mb-1 text-slate-300">Date</div>
                 <input
                   type="date"
-                  className="w-full rounded-xl border border-slate-800 bg-slate-950 px-3 py-2 outline-none focus:border-slate-500"
+                  className="bc-select"
                   value={ngDate}
                   onChange={(e) => setNgDate(e.target.value)}
                 />
@@ -698,7 +703,7 @@ export default function PostGamesPage() {
               <label className="text-sm">
                 <div className="mb-1 text-slate-300">League (context)</div>
                 <select
-                  className="w-full rounded-xl border border-slate-800 bg-slate-950 px-3 py-2 outline-none focus:border-slate-500"
+                  className="bc-select"
                   value={ngLeagueKey}
                   onChange={(e) => setNgLeagueKey(e.target.value)}
                 >
@@ -711,7 +716,7 @@ export default function PostGamesPage() {
               <label className="text-sm">
                 <div className="mb-1 text-slate-300">Team</div>
                 <select
-                  className="w-full rounded-xl border border-slate-800 bg-slate-950 px-3 py-2 outline-none focus:border-slate-500"
+                  className="bc-select"
                   value={ngTeam}
                   onChange={(e) => setNgTeam(e.target.value)}
                 >
@@ -728,7 +733,7 @@ export default function PostGamesPage() {
                 <input
                   type="number"
                   min="0"
-                  className="w-full rounded-xl border border-slate-800 bg-slate-950 px-3 py-2 outline-none focus:border-slate-500"
+                  className="bc-select"
                   value={ngPoints}
                   onChange={(e) => setNgPoints(e.target.value)}
                 />
@@ -737,7 +742,7 @@ export default function PostGamesPage() {
               <label className="text-sm">
                 <div className="mb-1 text-slate-300">Reason</div>
                 <select
-                  className="w-full rounded-xl border border-slate-800 bg-slate-950 px-3 py-2 outline-none focus:border-slate-500"
+                  className="bc-select"
                   value={ngReason}
                   onChange={(e) => setNgReason(e.target.value)}
                 >
@@ -754,7 +759,7 @@ export default function PostGamesPage() {
                   <div className="mb-1 text-slate-300">Other (type it)</div>
                   <input
                     type="text"
-                    className="w-full rounded-xl border border-slate-800 bg-slate-950 px-3 py-2 outline-none focus:border-slate-500"
+                    className="bc-select"
                     value={ngOther}
                     onChange={(e) => setNgOther(e.target.value)}
                     placeholder="Example: Best banner"
@@ -768,7 +773,7 @@ export default function PostGamesPage() {
                 <div className="mb-1 text-slate-300">Notes (optional)</div>
                 <input
                   type="text"
-                  className="w-full rounded-xl border border-slate-800 bg-slate-950 px-3 py-2 outline-none focus:border-slate-500"
+                  className="bc-select"
                   value={ngNotes}
                   onChange={(e) => setNgNotes(e.target.value)}
                   placeholder="Example: Loudest section during finals"
@@ -837,7 +842,7 @@ export default function PostGamesPage() {
                     </Link>
                     <button
                       onClick={(e) => { e.preventDefault(); e.stopPropagation(); deleteDraft(g.id, `${left} vs ${right}`); }}
-                      className="absolute right-3 top-3 h-9 rounded-lg border border-red-500/40 bg-red-500/10 px-3 text-xs font-black text-red-200 hover:bg-red-500/20"
+                      className="absolute right-3 top-3 h-11 rounded-lg border border-red-500/40 bg-red-500/10 px-3 text-xs font-black text-red-200 hover:bg-red-500/20"
                     >
                       Delete
                     </button>

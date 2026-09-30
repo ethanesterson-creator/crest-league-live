@@ -7,6 +7,8 @@ import { useRealtimeTable } from "@/lib/useRealtimeTable";
 import { useNotifyingErr } from "@/lib/useNotifyingErr";
 import { notifyGameFinalized } from "@/lib/notifyGame";
 import { getSportRules } from "@/lib/sportRules";
+import { useConfirmDialog } from "@/lib/useConfirmDialog";
+import FlashNumber from "@/components/FlashNumber";
 
 // ────────────────────────────────────────────────────────────────────────────
 // Helpers (module scope — never recreated on render)
@@ -168,11 +170,11 @@ function PlayerRow({ p, idx, total, side, showBatting, isCap, statDefs, getVal, 
       {showBatting ? (
         <div className="flex shrink-0 items-center gap-1">
           <span className="w-4 text-center text-[10px] font-black opacity-60">{idx + 1}</span>
-          <button onClick={() => onMove(p, "up")} disabled={idx === 0} className={`${BTN} h-9 w-9 rounded-md border border-white/10 bg-white/10 text-xs font-black disabled:opacity-30`}>↑</button>
-          <button onClick={() => onMove(p, "down")} disabled={idx === total - 1} className={`${BTN} h-9 w-9 rounded-md border border-white/10 bg-white/10 text-xs font-black disabled:opacity-30`}>↓</button>
+          <button onClick={() => onMove(p, "up")} disabled={idx === 0} aria-label="Move up in batting order" className={`${BTN} h-11 w-11 rounded-md border border-white/10 bg-white/10 text-xs font-black disabled:opacity-30`}>↑</button>
+          <button onClick={() => onMove(p, "down")} disabled={idx === total - 1} aria-label="Move down in batting order" className={`${BTN} h-11 w-11 rounded-md border border-white/10 bg-white/10 text-xs font-black disabled:opacity-30`}>↓</button>
         </div>
       ) : null}
-      <div className="min-w-[80px] flex-1 truncate text-sm font-black text-white">{isCap ? "⭐ " : ""}{p.player_name || p.player_id}</div>
+      <div className="min-w-[80px] flex-1 truncate text-sm font-black text-white">{isCap ? <span aria-hidden="true">⭐ </span> : ""}{isCap ? <span className="sr-only">Captain </span> : ""}{p.player_name || p.player_id}</div>
       {statDefs.map((sd) => (
         <StatChip key={`${p.player_id}-${sd.key}`} p={p} sd={sd} side={side}
           value={getVal(p.player_id, sd.key)}
@@ -187,7 +189,7 @@ function PlayerRow({ p, idx, total, side, showBatting, isCap, statDefs, getVal, 
 function HoopPlayerRow({ p, side, isCap, pts, fouls, onBumpPts, onUndoPts, onBumpFoul, onUndoFoul, onToggle }) {
   return (
     <div className="flex flex-wrap items-center gap-2 rounded-lg border border-white/10 bg-white/[0.04] px-2.5 py-1.5">
-      <div className="min-w-[80px] flex-1 truncate text-sm font-black text-white">{isCap ? "⭐ " : ""}{p.player_name || p.player_id}</div>
+      <div className="min-w-[80px] flex-1 truncate text-sm font-black text-white">{isCap ? <span aria-hidden="true">⭐ </span> : ""}{isCap ? <span className="sr-only">Captain </span> : ""}{p.player_name || p.player_id}</div>
 
       <div className="flex shrink-0 items-center gap-1 rounded-lg border border-white/10 bg-white/5 py-1 pl-2 pr-1">
         <span className="text-[9px] font-black uppercase tracking-wide text-white/45">Pts</span>
@@ -218,7 +220,7 @@ function HoopPlayerRow({ p, side, isCap, pts, fouls, onBumpPts, onUndoPts, onBum
 function BenchRow({ p, isCap, onToggle }) {
   return (
     <div className="flex items-center justify-between rounded-lg border border-white/5 bg-white/[0.02] px-2.5 py-1.5">
-      <span className="truncate text-sm font-semibold text-white/60">{isCap ? "⭐ " : ""}{p.player_name || p.player_id}</span>
+      <span className="truncate text-sm font-semibold text-white/60">{isCap ? <span aria-hidden="true">⭐ </span> : ""}{isCap ? <span className="sr-only">Captain </span> : ""}{p.player_name || p.player_id}</span>
       <button onClick={() => onToggle(p)}
         className={`${BTN} h-9 shrink-0 rounded-md border border-emerald-500/30 bg-emerald-500/10 px-3 text-[11px] font-black text-emerald-300 active:scale-95`}>In</button>
     </div>
@@ -235,6 +237,7 @@ export default function LiveGamePage() {
 
   const [loading, setLoading] = useState(true);
   const [err, setErr]         = useNotifyingErr();
+  const { confirmAsync, confirmModal } = useConfirmDialog();
   const [game, setGame]       = useState(null);
   const [rosterA, setRosterA] = useState([]);
   const [rosterB, setRosterB] = useState([]);
@@ -321,6 +324,20 @@ export default function LiveGamePage() {
   // Keep a ref of game for timers/closures
   const gameRef = useRef(null);
   useEffect(() => { gameRef.current = game; }, [game]);
+
+  // Screen-reader announcement of score changes (WCAG 4.1.3) — mainly for a
+  // second device (another counselor, admin) watching this same game
+  // passively over Realtime rather than tapping the buttons themselves.
+  const [liveAnnouncement, setLiveAnnouncement] = useState("");
+  const prevScoreRef = useRef({ a: null, b: null });
+  useEffect(() => {
+    if (!game) return;
+    const prev = prevScoreRef.current;
+    if (prev.a !== null && (prev.a !== game.score_a || prev.b !== game.score_b)) {
+      setLiveAnnouncement(`Score update: ${game.team_a1 || "Home"} ${Number(game.score_a || 0)}, ${game.team_b1 || "Away"} ${Number(game.score_b || 0)}`);
+    }
+    prevScoreRef.current = { a: game.score_a, b: game.score_b };
+  }, [game?.score_a, game?.score_b]);
 
   // Network-resilient RPC: camp WiFi drops requests, and supabase-js THROWS
   // on network failure (iOS shows "TypeError: Load failed") instead of
@@ -1025,7 +1042,10 @@ export default function LiveGamePage() {
     if (statSports.includes(norm(game.sport))) {
       const anyStats = Object.values(statTotals || {}).some((v) => Number(v) > 0);
       if (!anyStats) {
-        const proceed = confirm("This game has NO player stats logged.\n\nFor player cards we want every goal/point/hit recorded. Log stats first, or finalize anyway?");
+        const proceed = await confirmAsync(
+          "For player cards we want every goal/point/hit recorded. Log stats first, or finalize anyway?",
+          { title: "No player stats logged", confirmLabel: "Finalize Anyway" }
+        );
         if (!proceed) { setFinalizing(false); return; }
       }
     }
@@ -1087,6 +1107,8 @@ export default function LiveGamePage() {
 
   return (
     <div className="fixed inset-0 z-[999] overflow-y-auto bg-[#0a1628] text-white" style={{ touchAction: "manipulation" }}>
+      {confirmModal}
+      <div aria-live="polite" className="sr-only">{liveAnnouncement}</div>
 
       {/* Always visible, regardless of scroll position — a failed tap's
           error must never render off-screen above where the counselor
@@ -1130,7 +1152,7 @@ export default function LiveGamePage() {
           <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2">
             <div>
               <div className="text-[9px] font-black uppercase tracking-widest text-blue-400/60">{leftLabel}</div>
-              <div className="text-2xl font-black tabular-nums text-white landscape:text-xl">{scoreA}</div>
+              <FlashNumber as="div" className="text-2xl font-black tabular-nums text-white landscape:text-xl" value={scoreA} />
             </div>
             <div className="flex flex-col items-center gap-1">
               {rules?.clock?.enabled ? (
@@ -1170,7 +1192,7 @@ export default function LiveGamePage() {
             </div>
             <div className="text-right">
               <div className="text-[9px] font-black uppercase tracking-widest text-blue-400/60">{rightLabel}</div>
-              <div className="text-2xl font-black tabular-nums text-white landscape:text-xl">{scoreB}</div>
+              <FlashNumber as="div" className="text-2xl font-black tabular-nums text-white landscape:text-xl" value={scoreB} />
             </div>
           </div>
         ) : noStat ? (
@@ -1178,7 +1200,7 @@ export default function LiveGamePage() {
             <button onClick={() => bumpScore("A", 1)}
               className={`${BTN} flex min-h-[150px] landscape:min-h-[92px] flex-col items-center justify-center rounded-2xl border border-white/10 bg-white/5 px-2 py-3 landscape:py-1.5 active:scale-[0.98] active:bg-white/10`}>
               <div className="truncate text-sm font-black uppercase tracking-widest text-blue-400/70">{leftLabel}</div>
-              <div className="mt-1 text-8xl landscape:text-5xl font-black leading-none tabular-nums text-white">{scoreA}</div>
+              <FlashNumber as="div" className="mt-1 text-8xl landscape:text-5xl font-black leading-none tabular-nums text-white" value={scoreA} />
               <div className="mt-2 landscape:mt-0.5 text-[10px] font-bold uppercase tracking-wider text-white/30">Tap · +1</div>
             </button>
             <div className="flex flex-col items-center justify-center gap-1.5 px-1">
@@ -1210,7 +1232,7 @@ export default function LiveGamePage() {
             <button onClick={() => bumpScore("B", 1)}
               className={`${BTN} flex min-h-[150px] landscape:min-h-[92px] flex-col items-center justify-center rounded-2xl border border-white/10 bg-white/5 px-2 py-3 landscape:py-1.5 active:scale-[0.98] active:bg-white/10`}>
               <div className="truncate text-sm font-black uppercase tracking-widest text-blue-400/70">{rightLabel}</div>
-              <div className="mt-1 text-8xl landscape:text-5xl font-black leading-none tabular-nums text-white">{scoreB}</div>
+              <FlashNumber as="div" className="mt-1 text-8xl landscape:text-5xl font-black leading-none tabular-nums text-white" value={scoreB} />
               <div className="mt-2 landscape:mt-0.5 text-[10px] font-bold uppercase tracking-wider text-white/30">Tap · +1</div>
             </button>
           </div>
@@ -1219,7 +1241,7 @@ export default function LiveGamePage() {
             <div>
               <div className="text-[10px] font-black uppercase tracking-widest text-blue-400/60">Home</div>
               <div className="mt-0.5 truncate text-base font-black text-white">{leftLabel}</div>
-              <div className="mt-1 text-5xl landscape:text-3xl font-black tabular-nums text-white">{scoreA}</div>
+              <FlashNumber as="div" className="mt-1 text-5xl landscape:text-3xl font-black tabular-nums text-white" value={scoreA} />
               <div className="mt-2 landscape:mt-1 flex flex-wrap gap-1.5">
                 <button onClick={() => undoScore("A")} disabled={scoreA <= 0}
                   className={`${BTN} flex-1 rounded-lg border border-red-500/30 bg-red-500/10 py-2.5 landscape:py-1.5 text-sm font-black text-red-300 active:scale-95 disabled:opacity-20`}>-1</button>
@@ -1300,7 +1322,7 @@ export default function LiveGamePage() {
             <div className="text-right">
               <div className="text-[10px] font-black uppercase tracking-widest text-blue-400/60">Away</div>
               <div className="mt-0.5 truncate text-base font-black text-white">{rightLabel}</div>
-              <div className="mt-1 text-5xl landscape:text-3xl font-black tabular-nums text-white">{scoreB}</div>
+              <FlashNumber as="div" className="mt-1 text-5xl landscape:text-3xl font-black tabular-nums text-white" value={scoreB} />
               <div className="mt-2 landscape:mt-1 flex flex-wrap justify-end gap-1.5">
                 {scoreButtons.map((d) => (
                   <button key={`B-${d}`} onClick={() => bumpScore("B", d)}
@@ -1507,8 +1529,8 @@ export default function LiveGamePage() {
                         <div className="flex items-center gap-0.5">
                           {p.is_playing && (
                             <>
-                              <button onClick={() => moveInOrder(p, "up")} className={`${BTN} rounded border border-white/10 bg-white/10 px-1.5 py-1 text-[9px] font-black`}>↑</button>
-                              <button onClick={() => moveInOrder(p, "down")} className={`${BTN} rounded border border-white/10 bg-white/10 px-1.5 py-1 text-[9px] font-black`}>↓</button>
+                              <button onClick={() => moveInOrder(p, "up")} aria-label={`Move ${p.player_name} up`} className={`${BTN} rounded border border-white/10 bg-white/10 px-1.5 py-1 text-[9px] font-black`}>↑</button>
+                              <button onClick={() => moveInOrder(p, "down")} aria-label={`Move ${p.player_name} down`} className={`${BTN} rounded border border-white/10 bg-white/10 px-1.5 py-1 text-[9px] font-black`}>↓</button>
                             </>
                           )}
                           <button onClick={() => togglePlaying(p)}

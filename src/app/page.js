@@ -6,6 +6,7 @@ import { supabase } from "@/lib/supabase";
 import { useNotifyingErr } from "@/lib/useNotifyingErr";
 import { useAppMode } from "@/lib/useAppMode";
 import { getSportRules } from "@/lib/sportRules";
+import { useConfirmDialog } from "@/lib/useConfirmDialog";
 
 const SPORTS = [
   "Hoop",
@@ -93,6 +94,7 @@ function SportIcon({ sport, color }) {
 
 export default function HomePage() {
   const { season, session, isCW, blueName, whiteName } = useAppMode();
+  const { confirmAsync, confirmModal } = useConfirmDialog();
   const [status, setStatus] = useState("Checking…");
   const [err, setErr] = useNotifyingErr();
   const [creating, setCreating] = useState(false);
@@ -508,7 +510,7 @@ export default function HomePage() {
   async function deleteGame(id) {
     try {
       setErr("");
-      const ok = confirm("Delete this game? (Only allowed if NOT finalized)");
+      const ok = await confirmAsync("Only allowed if the game is NOT finalized.", { title: "Delete this game?", confirmLabel: "Delete" });
       if (!ok) return;
 
       const { error } = await supabase.rpc("delete_unfinalized_game", { gid: id });
@@ -537,29 +539,30 @@ export default function HomePage() {
 
   return (
     <div className="min-h-screen text-slate-100">
-      <div className="mx-auto max-w-4xl p-4">
+      {confirmModal}
+      <div className="bc-container">
         {/* Header */}
         <div className="flex items-center justify-between">
           <div>
-            <div className="text-[11px] font-black uppercase tracking-[0.3em]" style={{ color: "#7ea6ff" }}>Camp Bauercrest</div>
-            <h1 className="mt-1 text-4xl font-black tracking-tight" style={{ textShadow: "0 2px 20px rgba(58,113,255,0.3)" }}>
-              Crest <span style={{ background: "linear-gradient(180deg,#9dbaff,#3a71ff)", WebkitBackgroundClip: "text", backgroundClip: "text", WebkitTextFillColor: "transparent" }}>League Live</span>
+            <div className="bc-eyebrow">Camp Bauercrest</div>
+            <h1 className="bc-page-title mt-1">
+              Crest <span className="bc-accent-text">League Live</span>
             </h1>
             <div className="mt-1 text-sm text-slate-300">
-              Status: <span className="font-semibold" style={{ color: "#5b8cff" }}>{status}</span>
+              Status: <span className="font-semibold" style={{ color: "var(--bc-accent)" }}>{status}</span>
             </div>
           </div>
           <button
             onClick={loadGames}
             className="rounded-xl border px-4 py-2 text-sm font-black hover:brightness-110"
-            style={{ borderColor: "rgba(58,113,255,0.4)", background: "rgba(58,113,255,0.12)", color: "#bcd4ff" }}
+            style={{ borderColor: "rgba(58,113,255,0.4)", background: "var(--bc-accent-soft)", color: "#bcd4ff" }}
           >
             Refresh
           </button>
         </div>
 
         {/* Create game card */}
-        <div className="mt-4 rounded-2xl border border-slate-800 bg-slate-900/60 p-4 shadow">
+        <div className="bc-card bc-card-pad mt-4 shadow">
           <div className="text-lg font-bold">Create Live Game</div>
 
           {/* Sport — horizontally-scrolling chip strip, keeps this compact on phones */}
@@ -596,7 +599,7 @@ export default function HomePage() {
             <label className="mt-3 block text-sm">
               <div className="mb-1 text-slate-300">Series Format</div>
               <select
-                className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 outline-none focus:border-slate-500"
+                className="bc-select"
                 value={seriesFormatChoice}
                 onChange={(e) => setSeriesFormatChoice(Number(e.target.value))}
               >
@@ -739,7 +742,7 @@ export default function HomePage() {
                 <label className="text-sm">
                   <div className="mb-1 text-slate-300">Level</div>
                   <select
-                    className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 outline-none focus:border-slate-500"
+                    className="bc-select"
                     value={String(level).toUpperCase()}
                     onChange={(e) => setLevel(e.target.value)}
                   >
@@ -760,7 +763,7 @@ export default function HomePage() {
                 <label className="text-sm">
                   <div className="mb-1 text-slate-300">Mode</div>
                   <select
-                    className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 outline-none focus:border-slate-500"
+                    className="bc-select"
                     value={mode}
                     onChange={(e) => {
                       setMode(e.target.value);
@@ -783,7 +786,7 @@ export default function HomePage() {
                 <label className="text-sm sm:col-span-2">
                   <div className="mb-1 text-slate-300">Clock Style</div>
                   <select
-                    className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 outline-none focus:border-slate-500"
+                    className="bc-select"
                     value={clockStyle}
                     onChange={(e) => {
                       setClockStyle(e.target.value);
@@ -815,7 +818,7 @@ export default function HomePage() {
                 <label className="text-sm sm:col-span-2">
                   <div className="mb-1 text-slate-300">Timer Preset</div>
                   <select
-                    className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 outline-none focus:border-slate-500"
+                    className="bc-select"
                     value={preset}
                     onChange={(e) => {
                       setPreset(Number(e.target.value));
@@ -850,7 +853,7 @@ export default function HomePage() {
                   <label className="text-sm">
                     <div className="mb-1 text-slate-300">Matchup</div>
                     <select
-                      className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 outline-none focus:border-slate-500"
+                      className="bc-select"
                       value={matchupType}
                       onChange={(e) => setMatchupType(e.target.value)}
                     >
@@ -886,7 +889,7 @@ export default function HomePage() {
                             value={bowlName}
                             onChange={(e) => setBowlName(e.target.value)}
                             placeholder="Session 1 Bowl"
-                            className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 outline-none focus:border-slate-500"
+                            className="bc-select"
                           />
                         </label>
 
@@ -895,7 +898,7 @@ export default function HomePage() {
                           <select
                             value={bowlCounts ? "yes" : "no"}
                             onChange={(e) => setBowlCounts(e.target.value === "yes")}
-                            className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 outline-none focus:border-slate-500"
+                            className="bc-select"
                           >
                             <option value="yes">Yes (normal points)</option>
                             <option value="no">No (exhibition)</option>
@@ -918,7 +921,7 @@ export default function HomePage() {
             disabled={!canCreate || creating}
             className={`mt-4 w-full rounded-2xl px-4 py-3 text-lg font-extrabold shadow
               ${canCreate && !creating ? "text-white hover:brightness-110" : "bg-slate-800 text-slate-400"}`}
-            style={canCreate && !creating ? { background: "linear-gradient(180deg,#4d80ff,#3a71ff)", boxShadow: "0 6px 20px rgba(58,113,255,0.3)" } : {}}
+            style={canCreate && !creating ? { background: "linear-gradient(180deg, #4d80ff, var(--bc-accent))", boxShadow: "0 6px 20px rgba(58,113,255,0.3)" } : {}}
           >
             {creating ? "Creating…" : "Create Game"}
           </button>
@@ -927,7 +930,7 @@ export default function HomePage() {
         </div>
 
         {/* Recent games */}
-        <div className="mt-4 rounded-2xl border border-slate-800 bg-slate-900/40 p-4">
+        <div className="bc-card bc-card-pad mt-4">
           <div className="mb-3 text-lg font-bold">Recent Live Games</div>
 
           {games.length === 0 ? (

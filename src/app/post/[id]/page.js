@@ -6,6 +6,7 @@ import { useParams, useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import { useNotifyingErr } from "@/lib/useNotifyingErr";
 import { notifyGameFinalized } from "@/lib/notifyGame";
+import { useConfirmDialog } from "@/lib/useConfirmDialog";
 
 function norm(s) {
   return String(s ?? "").trim().toLowerCase();
@@ -77,6 +78,7 @@ export default function PostDraftEditorPage() {
   const id = params?.id;
 
   const [err, setErr] = useNotifyingErr();
+  const { confirmAsync, confirmModal } = useConfirmDialog();
   const [msg, setMsg] = useState("");
   const [game, setGame] = useState(null);
 
@@ -508,12 +510,15 @@ export default function PostDraftEditorPage() {
         if (anyStats) break;
       }
       if (!anyStats) {
-        const proceed = confirm("This game has NO player stats logged.\n\nFor player cards we want every goal/point/hit recorded. Add stats first, or finalize anyway?");
+        const proceed = await confirmAsync(
+          "For player cards we want every goal/point/hit recorded. Add stats first, or finalize anyway?",
+          { title: "No player stats logged", confirmLabel: "Finalize Anyway" }
+        );
         if (!proceed) return;
       }
     }
 
-    const ok = confirm("Finalize this post-game draft?\n\nThis updates standings + stat leaders.");
+    const ok = await confirmAsync("This updates standings + stat leaders.", { title: "Finalize this post-game draft?", confirmLabel: "Finalize", danger: false });
     if (!ok) return;
 
     setFinalizing(true);
@@ -570,14 +575,16 @@ export default function PostDraftEditorPage() {
         <button
           onClick={() => moveInOrder(p, "up")}
           disabled={idx === 0}
-          className="h-9 w-9 rounded-lg border border-white/10 bg-white/10 text-sm font-black disabled:opacity-40"
+          aria-label={`Move ${p.player_name} up`}
+          className="h-11 w-11 rounded-lg border border-white/10 bg-white/10 text-sm font-black disabled:opacity-40"
         >
           ↑
         </button>
         <button
           onClick={() => moveInOrder(p, "down")}
           disabled={idx === list.length - 1}
-          className="h-9 w-9 rounded-lg border border-white/10 bg-white/10 text-sm font-black disabled:opacity-40"
+          aria-label={`Move ${p.player_name} down`}
+          className="h-11 w-11 rounded-lg border border-white/10 bg-white/10 text-sm font-black disabled:opacity-40"
         >
           ↓
         </button>
@@ -587,11 +594,12 @@ export default function PostDraftEditorPage() {
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100">
+      {confirmModal}
       <div className="mx-auto max-w-6xl px-4 py-6">
         <div className="flex items-center justify-between gap-4">
           <div>
             <div className="flex items-center gap-2">
-              <div className="text-2xl font-black tracking-tight">{isStaff ? "Staff Game Draft" : "Post Game Draft"}</div>
+              <h1 className="text-2xl font-black tracking-tight">{isStaff ? "Staff Game Draft" : "Post Game Draft"}</h1>
               {isStaff ? (
                 <span className="rounded-full border border-purple-400/30 bg-purple-500/10 px-2 py-1 text-[11px] font-black text-purple-100">
                   STAFF
@@ -709,7 +717,8 @@ export default function PostDraftEditorPage() {
                       <div key={`A-${p.player_id}`} className="rounded-2xl border border-white/10 bg-black/20 p-4">
                         <div className="flex items-center justify-between gap-2">
                           <div className="min-w-0 flex-1 truncate font-black">
-                            {isCap(p.player_id) ? "⭐ " : ""}
+                            {isCap(p.player_id) ? <span aria-hidden="true">⭐ </span> : ""}
+                            {isCap(p.player_id) ? <span className="sr-only">Captain </span> : ""}
                             {p.player_name}
                           </div>
 
@@ -756,7 +765,8 @@ export default function PostDraftEditorPage() {
                       <div key={`B-${p.player_id}`} className="rounded-2xl border border-white/10 bg-black/20 p-4">
                         <div className="flex items-center justify-between gap-2">
                           <div className="min-w-0 flex-1 truncate font-black">
-                            {isCap(p.player_id) ? "⭐ " : ""}
+                            {isCap(p.player_id) ? <span aria-hidden="true">⭐ </span> : ""}
+                            {isCap(p.player_id) ? <span className="sr-only">Captain </span> : ""}
                             {p.player_name}
                           </div>
 

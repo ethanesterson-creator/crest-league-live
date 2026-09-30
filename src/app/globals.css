@@ -111,28 +111,6 @@ button {
   -webkit-user-select: none;
 }
 
-/* ============ CAMP BACKGROUND TEST ============
-   Delete this whole block to go back to plain navy. */
-:root {
-  --bg-darkness: 0.78;   /* raise toward 1 = darker, lower = photo shows more */
-}
-
-body::before {
-  content: "";
-  position: fixed;
-  inset: 0;
-  z-index: -1;
-  background-image:
-    linear-gradient(
-      rgba(8, 23, 44, var(--bg-darkness)),
-      rgba(8, 23, 44, var(--bg-darkness))
-    ),
-    url("/camp-bg.jpg");
-  background-size: cover;
-  background-position: center;
-  background-repeat: no-repeat;
-}
-/* ============ END CAMP BACKGROUND TEST ============ */
 /* ============ CAMP BACKGROUND ============
    Lake sunset background across the whole app.
    Delete this block to go back to plain navy. */
@@ -164,6 +142,8 @@ body::before {
   --bc-accent: #3a71ff;
   --bc-accent-soft: rgba(58, 113, 255, 0.15);
   --bc-gold: #f5c451;
+  --bc-gold-soft: rgba(245, 196, 81, 0.15);
+  --bc-danger-soft: rgba(220, 38, 38, 0.12);
 }
 
 /* Elevate the default card: subtle gradient + glow on hover */
@@ -242,3 +222,64 @@ body::before {
 /* Nav polish — active state and hover */
 .bc-nav-link { transition: color .12s ease; }
 .bc-nav-link:hover { color: #bcd4ff; }
+
+/* Live-update flash — the visible "this just changed" signal for realtime
+   score/stat updates (see src/components/FlashNumber.jsx). Scale + brighten
+   only, never width/height, so it can't shift surrounding layout. */
+@keyframes bc-flash-pulse {
+  0%   { transform: scale(1);     filter: brightness(1); }
+  30%  { transform: scale(1.16);  filter: brightness(1.65); }
+  100% { transform: scale(1);     filter: brightness(1); }
+}
+.bc-flash {
+  display: inline-block;
+  animation: bc-flash-pulse 0.6s ease-out;
+  color: var(--bc-gold);
+}
+@media (prefers-reduced-motion: reduce) {
+  .bc-flash { animation: none; color: var(--bc-gold); }
+}
+
+/* Consistent select styling for the app's filter rows (League/Sport/Level/
+   Team pickers) — a shared alternative to the bare native <select> so those
+   rows read as part of the same product as the card/chip-driven sections. */
+.bc-select-label {
+  display: block;
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--bc-faint);
+  margin-bottom: 4px;
+}
+.bc-select {
+  width: 100%;
+  border-radius: 12px;
+  border: 1px solid var(--bc-border);
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--bc-text);
+  font-weight: 700;
+  font-size: 14px;
+  padding: 9px 12px;
+  outline: none;
+  transition: border-color .12s ease, background .12s ease;
+}
+.bc-select:hover { background: rgba(255, 255, 255, 0.08); }
+.bc-select:focus { border-color: rgba(58, 113, 255, 0.5); }
+
+/* Shared modal surface — replaces native confirm()/alert() dialogs, which
+   aren't stylable and break the custom dark theme. */
+.bc-modal-overlay {
+  position: fixed; inset: 0; z-index: 200;
+  display: grid; place-items: center;
+  background: rgba(4, 10, 22, 0.75);
+  padding: 16px;
+}
+.bc-modal {
+  width: 100%; max-width: 440px;
+  border-radius: 20px;
+  border: 1px solid var(--bc-border);
+  background: linear-gradient(180deg, #0f2545, var(--bc-navy-2));
+  padding: 22px;
+  box-shadow: 0 20px 60px rgba(0,0,0,.45);
+}

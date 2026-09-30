@@ -4,15 +4,19 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import { useAppMode } from "@/lib/useAppMode";
 import { useRealtimeTable } from "@/lib/useRealtimeTable";
+import FlashNumber from "@/components/FlashNumber";
 import ColorWarBoard from "./ColorWarBoard";
 
-// BANQUET MODE — set true for the last-night banquet board (gold + navy,
-// champions first, no CBSN blue). Set back to false to return to normal.
-const BANQUET = true;
-
-const SCENES_BANQUET = ["champions", "awards", "spotlight", "highlights"];
+// Display-board scene set. Which list is active is now controlled from
+// Admin → Display Board (app_settings.display_mode via useAppMode's
+// isBanquet), not a hardcoded source flag — this used to be
+// `const BANQUET = true;`, permanently pinning the board to banquet-only
+// scenes (no live scores, no camp standings) with no way to flip it back
+// without a code change + redeploy.
+const SCENES_BANQUET = ["champions", "recap", "awards", "spotlight", "highlights"];
 const SCENES_NORMAL = [
   "camp",
+  "live",
   "spotlight",
   "averages",
   "awards",
@@ -22,11 +26,12 @@ const SCENES_NORMAL = [
   "leaders_sophomores",
   "highlights",
 ];
-const SCENES = BANQUET ? SCENES_BANQUET : SCENES_NORMAL;
 
 const SCENE_LABELS = {
   champions: "League Champions",
+  recap: "Season Recap",
   camp: "Camp Standings",
+  live: "Live Now",
   spotlight: "Camper Spotlight",
   averages: "Per Game Leaders",
   awards: "Crest Awards",
@@ -61,6 +66,24 @@ function fmtClock(d) {
     hour: "2-digit",
     minute: "2-digit",
   });
+}
+
+// One atomic status message for the first live game whose score actually
+// changed since the last poll/realtime tick — never a bare number, and
+// never one message per changed game (a wall of simultaneous live-region
+// announcements is worse than one, per accessibility guidance on status
+// messages).
+function announceScoreChange(prevGames, nextGames) {
+  const prevMap = new Map((prevGames || []).map((g) => [g.id, g]));
+  for (const g of nextGames || []) {
+    const prev = prevMap.get(g.id);
+    if (prev && (Number(prev.score_a) !== Number(g.score_a) || Number(prev.score_b) !== Number(g.score_b))) {
+      const left = g.team_a1 || "Team A";
+      const right = g.team_b1 || "Team B";
+      return `Score update: ${left} ${Number(g.score_a || 0)}, ${right} ${Number(g.score_b || 0)}`;
+    }
+  }
+  return null;
 }
 
 // Isolated so its 1x/second tick never re-renders the rest of the board —
@@ -134,7 +157,8 @@ function HighlightsScene({ highlights }) {
             <img
               key={h.id}
               src={url}
-              alt=""
+              alt={h.title || "Camp highlight photo"}
+              loading="lazy"
               className="h-full w-full object-contain"
             />
           )}
@@ -145,7 +169,7 @@ function HighlightsScene({ highlights }) {
 }
 
 export default function DisplayPage() {
-  const { isCW, session, blueName, whiteName, blueLogo, whiteLogo, loading: modeLoading } = useAppMode();
+  const { isCW, session, blueName, whiteName, blueLogo, whiteLogo, isBanquet, loading: modeLoading } = useAppMode();
   const [scene, setScene] = useState("camp");
 
   const [campStandings, setCampStandings] = useState([]);
@@ -155,6 +179,18 @@ export default function DisplayPage() {
   const [leadersByLeague, setLeadersByLeague] = useState({ seniors: [], juniors: [], sophomores: [] });
   const [highlights, setHighlights] = useState([]);
   const [spotlight, setSpotlight] = useState([]);
+  const [recap, setRecap] = useState({ gamesPlayed: 0, totalPoints: 0, statEvents: 0, biggest: null });
+
+  // Which scene set is currently active — recomputed whenever admin flips
+  // Season/Banquet mode, not fixed at module load.
+  const SCENES = isBanquet ? SCENES_BANQUET : SCENES_NORMAL;
+
+  // Screen-reader announcement of the most recent live score change. Visual
+  // score updates already propagate instantly via Realtime; without this, a
+  // screen-reader user watching this public board gets no signal at all
+  // that anything changed (WCAG 4.1.3 Status Messages).
+  const [liveAnnouncement, setLiveAnnouncement] = useState("");
+  const prevLiveGamesRef = useRef([]);
 
   const [rotateSeconds, setRotateSeconds] = useState(18);
   const [autoRotate, setAutoRotate] = useState(true);
@@ -390,9 +426,12 @@ export default function DisplayPage() {
         .eq("season", "league")
         .eq("session", session)
         .limit(20000),
+      // Also backs the Season Recap scene (games played, total points,
+      // biggest margin of victory) — reuses this query instead of firing a
+      // separate one for the same "final games this session" rows.
       supabase
         .from("live_games")
-        .select("id, sport")
+        .select("id, sport, score_a, score_b, team_a1, team_b1")
         .eq("status", "final")
         .eq("season", "league")
         .eq("session", session)
@@ -445,7 +484,11 @@ export default function DisplayPage() {
     }
     setChampions(champByLeague);
 
-    setLiveGames(liveRes.data || []);
+    const nextLiveGames = liveRes.data || [];
+    const announcement = announceScoreChange(prevLiveGamesRef.current, nextLiveGames);
+    if (announcement) setLiveAnnouncement(announcement);
+    prevLiveGamesRef.current = nextLiveGames;
+    setLiveGames(nextLiveGames);
     setFinalGames(finalsRes.data || []);
 
     setLeadersByLeague({
@@ -468,19 +511,42 @@ export default function DisplayPage() {
     const gameIds = Object.keys(sportByGame);
     const avgIds = Array.from(new Set(avgTotals.map((t) => String(t.player_id))));
 
-    // ---- Round 2: these two depend on round 1's results (the game ids /
+    // ---- Round 2: these three depend on round 1's results (the game ids /
     // player ids above), so they can't start until round 1 resolves — but
     // they don't depend on EACH OTHER, so they still run together. ----
-    const [rosterRes, departedRes] = await Promise.all([
+    const [rosterRes, departedRes, statEventsRes] = await Promise.all([
       gameIds.length
         ? supabase.from("game_roster").select("game_id, player_id").eq("is_playing", true).in("game_id", gameIds).limit(50000)
         : Promise.resolve({ data: [] }),
       avgIds.length
         ? supabase.from("players").select("id").in("id", avgIds).eq("departed", true)
         : Promise.resolve({ data: [] }),
+      // Season Recap's "moments logged" tile — every individual stat tap
+      // recorded across this session's finalized games.
+      gameIds.length
+        ? supabase.from("live_events").select("id", { count: "exact", head: true }).eq("event_type", "stat").in("game_id", gameIds)
+        : Promise.resolve({ count: 0 }),
     ]);
 
-    if (rosterRes.error || departedRes.error) throw rosterRes.error || departedRes.error;
+    if (rosterRes.error || departedRes.error || statEventsRes.error) throw rosterRes.error || departedRes.error || statEventsRes.error;
+
+    // ---- SEASON RECAP (banquet scene) ----
+    let totalPoints = 0;
+    let biggest = null;
+    for (const g of avgGames) {
+      const a = Number(g.score_a || 0), b = Number(g.score_b || 0);
+      totalPoints += a + b;
+      const margin = Math.abs(a - b);
+      if (a + b > 0 && (!biggest || margin > biggest.margin)) {
+        biggest = { margin, sport: g.sport, team_a1: g.team_a1, team_b1: g.team_b1, score_a: a, score_b: b };
+      }
+    }
+    setRecap({
+      gamesPlayed: avgGames.length,
+      totalPoints,
+      statEvents: statEventsRes.count || 0,
+      biggest,
+    });
 
     // rosters -> games played per player per sport
     const played = {};
@@ -588,7 +654,18 @@ export default function DisplayPage() {
     }, rotateSeconds * 1000);
 
     return () => clearInterval(t);
-  }, [autoRotate, rotateSeconds]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoRotate, rotateSeconds, isBanquet]);
+
+  // If admin flips Season/Banquet mode while the board is open, jump
+  // straight to that scene set's first scene instead of sitting on
+  // whatever scene name happened to be active (which might not exist in
+  // the other set at all, and would otherwise render blank until the next
+  // rotation tick).
+  useEffect(() => {
+    setScene(SCENES[0]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isBanquet]);
 
  const tickerItems = useMemo(() => {
   const live = liveGames.slice(0, 4).map((g) => {
@@ -923,6 +1000,98 @@ export default function DisplayPage() {
     );
   }
 
+  function renderRecap() {
+    const tiles = [
+      { label: "Games Played", value: recap.gamesPlayed, suffix: "" },
+      { label: "Points Scored", value: recap.totalPoints, suffix: "" },
+      { label: "Stats Logged", value: recap.statEvents, suffix: "" },
+    ];
+    return (
+      <div className="flex h-full flex-col overflow-hidden rounded-[32px] p-10"
+           style={{
+             border: "1px solid rgba(245,196,81,0.35)",
+             background: "linear-gradient(160deg, #0b1f3b 0%, #08172c 100%)",
+             boxShadow: "inset 0 0 120px rgba(245,196,81,0.08)",
+           }}>
+        <div className="mb-8 text-center">
+          <div className="text-sm font-black uppercase tracking-[0.5em]" style={{ color: "#f5c451" }}>
+            The Summer, By The Numbers
+          </div>
+          <div className="mt-2 text-7xl font-black text-white" style={{ fontFamily: "Georgia, serif" }}>
+            Season Recap
+          </div>
+        </div>
+
+        <div className="grid grid-cols-3 gap-8">
+          {tiles.map((t) => (
+            <div key={t.label} className="flex flex-col items-center justify-center rounded-[28px] p-8 text-center"
+                 style={{
+                   border: "1px solid rgba(245,196,81,0.30)",
+                   background: "radial-gradient(120% 90% at 50% 0%, rgba(245,196,81,0.12), transparent 65%)",
+                 }}>
+              <div className="text-7xl font-black tabular-nums text-white xl:text-8xl">
+                <FlashNumber value={t.value} />
+              </div>
+              <div className="mt-4 text-lg font-black uppercase tracking-[0.25em]" style={{ color: "#f5c451" }}>
+                {t.label}
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {recap.biggest ? (
+          <div className="mt-8 flex flex-1 flex-col items-center justify-center rounded-[28px] p-8 text-center"
+               style={{ border: "1px solid rgba(245,196,81,0.30)", background: "rgba(255,255,255,0.03)" }}>
+            <div className="text-lg font-black uppercase tracking-[0.3em]" style={{ color: "#f5c451" }}>
+              Biggest Blowout
+            </div>
+            <div className="mt-3 text-4xl font-black text-white xl:text-5xl">
+              {recap.biggest.team_a1} {recap.biggest.score_a} – {recap.biggest.score_b} {recap.biggest.team_b1}
+            </div>
+            <div className="mt-2 text-sm font-bold uppercase tracking-widest text-white/40">
+              {fmtSport(recap.biggest.sport)} · won by {recap.biggest.margin}
+            </div>
+          </div>
+        ) : null}
+      </div>
+    );
+  }
+
+  function renderLive() {
+    if (!liveGames.length) {
+      return (
+        <div className="flex h-full items-center justify-center text-2xl font-black text-white/40">
+          No games live right now — check back soon.
+        </div>
+      );
+    }
+    return (
+      <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
+        {liveGames.map((g) => (
+          <div key={g.id} className="rounded-[32px] border border-white/10 bg-gradient-to-br from-slate-900 to-black p-8">
+            <div className="flex items-center justify-between">
+              <div className="text-sm font-black uppercase tracking-[0.2em] text-blue-400">
+                <span className="mr-2 inline-block h-2 w-2 rounded-full bg-red-500 align-middle" style={{ boxShadow: "0 0 8px rgba(239,68,68,.8)" }} />
+                LIVE
+              </div>
+              <div className="text-sm font-black text-white/50">
+                {fmtLeague(g.league_key)} • {fmtSport(g.sport)}
+              </div>
+            </div>
+
+            <div className="mt-6 grid grid-cols-[1fr_auto_1fr] items-center gap-4">
+              <div className="truncate text-2xl font-black text-white xl:text-3xl">{g.team_a1}{g.team_a2 ? ` + ${g.team_a2}` : ""}</div>
+              <div className="text-5xl font-black tabular-nums text-blue-400 xl:text-6xl">
+                <FlashNumber value={Number(g.score_a || 0)} /> – <FlashNumber value={Number(g.score_b || 0)} />
+              </div>
+              <div className="truncate text-right text-2xl font-black text-white xl:text-3xl">{g.team_b1}{g.team_b2 ? ` + ${g.team_b2}` : ""}</div>
+            </div>
+          </div>
+        ))}
+      </div>
+    );
+  }
+
   function renderFinals() {
     return (
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
@@ -1013,6 +1182,12 @@ export default function DisplayPage() {
       ref={wrapRef}
       className="relative min-h-screen overflow-hidden bg-[#050509] text-white"
     >
+      <h1 className="sr-only">Crest League Live — {isBanquet ? "Banquet" : "Season"} display board</h1>
+      {/* Announces the latest live score change for screen-reader viewers —
+          the visual board updates instantly via Realtime, but nothing said
+          so before this. */}
+      <div aria-live="polite" className="sr-only">{liveAnnouncement}</div>
+
       {/* Background */}
       <div className="pointer-events-none absolute inset-0">
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(58,113,255,0.30),transparent_35%),radial-gradient(circle_at_bottom_right,rgba(30,64,175,0.22),transparent_40%)]" />
@@ -1038,7 +1213,7 @@ export default function DisplayPage() {
             Camp Bauercrest Sports Network
           </div>
 
-          {BANQUET ? (
+          {isBanquet ? (
             <div className="rounded-lg border border-amber-400/40 bg-amber-500/10 px-2.5 py-1 text-[10px] font-black uppercase tracking-widest text-amber-300">
               Banquet Mode
             </div>
@@ -1168,7 +1343,7 @@ export default function DisplayPage() {
                         POINTS
                       </div>
                       <div className="text-8xl font-black text-blue-400 xl:text-9xl">
-                        {Number(t.league_points || 0)}
+                        <FlashNumber value={Number(t.league_points || 0)} />
                       </div>
                     </div>
                   </div>
@@ -1179,6 +1354,8 @@ export default function DisplayPage() {
 
           {scene === "averages" && renderAverages()}
           {scene === "champions" && renderChampions()}
+          {scene === "recap" && renderRecap()}
+          {scene === "live" && renderLive()}
           {scene === "awards" && renderAwards()}
           {scene === "finals" && renderFinals()}
           {scene === "spotlight" && renderSpotlight()}

@@ -9,8 +9,25 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import { useRealtimeTable } from "@/lib/useRealtimeTable";
+import FlashNumber from "@/components/FlashNumber";
 
 function norm(s) { return String(s ?? "").trim().toLowerCase(); }
+
+// One atomic status message for the first game whose score actually changed
+// — never a bare number, never one message per changed game.
+function announceScoreChange(prevGames, nextGames, blueName, whiteName) {
+  const prevMap = new Map((prevGames || []).map((g) => [g.id, g]));
+  for (const g of nextGames || []) {
+    const prev = prevMap.get(g.id);
+    if (prev && (Number(prev.score_a) !== Number(g.score_a) || Number(prev.score_b) !== Number(g.score_b))) {
+      const aBlue = norm(g.team_a1) === "blue";
+      const left = aBlue ? blueName : whiteName;
+      const right = aBlue ? whiteName : blueName;
+      return `Score update: ${left} ${Number(g.score_a || 0)}, ${right} ${Number(g.score_b || 0)}`;
+    }
+  }
+  return null;
+}
 
 const CW_SCENES = ["scoreboard", "leaders_seniors", "leaders_juniors", "leaders_sophomores", "live"];
 
@@ -21,6 +38,11 @@ export default function ColorWarBoard({ session = "s1", blueName, whiteName, blu
   const [byLeague, setByLeague] = useState({ seniors: { blue: 0, white: 0 }, juniors: { blue: 0, white: 0 }, sophomores: { blue: 0, white: 0 } });
   const [leaders, setLeaders] = useState({ seniors: [], juniors: [], sophomores: [] });
   const [liveGames, setLiveGames] = useState([]);
+  // Screen-reader announcement of the latest live score change (WCAG 4.1.3)
+  // — the totals above already update instantly via Realtime, but nothing
+  // said so out loud before this.
+  const [liveAnnouncement, setLiveAnnouncement] = useState("");
+  const prevLiveGamesRef = useRef([]);
 
   function logoUrl(path) {
     if (!path) return null;
@@ -143,7 +165,13 @@ export default function ColorWarBoard({ session = "s1", blueName, whiteName, blu
         // stat-leaders scene in front of the whole camp. Keep the last known
         // (already-filtered) leaders instead of showing an unfiltered list.
         console.error("ColorWarBoard departed-player filter failed, keeping last leaders state:", depsErr);
-        setLiveGames(live || []);
+        {
+          const nextLiveEarly = live || [];
+          const earlyAnnouncement = announceScoreChange(prevLiveGamesRef.current, nextLiveEarly, blueName, whiteName);
+          if (earlyAnnouncement) setLiveAnnouncement(earlyAnnouncement);
+          prevLiveGamesRef.current = nextLiveEarly;
+          setLiveGames(nextLiveEarly);
+        }
         return;
       }
       const departedSet = new Set((deps || []).map((d) => String(d.id)));
@@ -154,7 +182,11 @@ export default function ColorWarBoard({ session = "s1", blueName, whiteName, blu
       }
     }
     setLeaders(leaguesOut);
-    setLiveGames(live || []);
+    const nextLive = live || [];
+    const announcement = announceScoreChange(prevLiveGamesRef.current, nextLive, blueName, whiteName);
+    if (announcement) setLiveAnnouncement(announcement);
+    prevLiveGamesRef.current = nextLive;
+    setLiveGames(nextLive);
   }
 
   useEffect(() => {
@@ -206,9 +238,9 @@ export default function ColorWarBoard({ session = "s1", blueName, whiteName, blu
   const blueUrl = logoUrl(blueLogo);
   const whiteUrl = logoUrl(whiteLogo);
 
-  function TeamCrest({ url, fallbackLetter, ring }) {
+  function TeamCrest({ url, fallbackLetter, ring, teamName }) {
     return url ? (
-      <img src={url} alt="" className={`h-56 w-56 rounded-full object-cover ring-4 ${ring}`} />
+      <img src={url} alt={`${teamName} team crest`} loading="lazy" className={`h-56 w-56 rounded-full object-cover ring-4 ${ring}`} />
     ) : (
       <div className={`flex h-56 w-56 items-center justify-center rounded-full ring-4 ${ring} bg-white/5 text-9xl font-black`}>
         {fallbackLetter}
@@ -223,6 +255,9 @@ export default function ColorWarBoard({ session = "s1", blueName, whiteName, blu
 
   return (
     <div className="relative flex h-screen w-full flex-col overflow-hidden bg-gradient-to-br from-blue-950 via-slate-900 to-slate-950 text-white">
+      <h1 className="sr-only">Color War display board — {blueName} vs {whiteName}</h1>
+      <div aria-live="polite" className="sr-only">{liveAnnouncement}</div>
+
       {/* Animated split background */}
       <div className="pointer-events-none absolute inset-0">
         <div className="absolute inset-y-0 left-0 w-1/2 bg-gradient-to-r from-blue-600/25 to-transparent" />
@@ -241,13 +276,13 @@ export default function ColorWarBoard({ session = "s1", blueName, whiteName, blu
           <div className="grid w-full grid-cols-[1fr_auto_1fr] items-center gap-6">
             {/* Blue */}
             <div className="flex min-w-0 flex-col items-center gap-4 px-4">
-              <TeamCrest url={blueUrl} fallbackLetter="B" ring="ring-blue-400" />
+              <TeamCrest url={blueUrl} fallbackLetter="B" ring="ring-blue-400" teamName={blueName} />
               <div className="text-center text-6xl font-black uppercase leading-[0.95] tracking-wide text-blue-200 break-words"
                    style={{ textShadow: "0 0 30px rgba(59,130,246,0.6)" }}>
                 {blueName}
               </div>
               <div className="text-[9rem] leading-none font-black tabular-nums text-white" style={{ textShadow: "0 0 60px rgba(59,130,246,0.7)" }}>
-                {blueTotal}
+                <FlashNumber value={blueTotal} />
               </div>
             </div>
 
@@ -261,13 +296,13 @@ export default function ColorWarBoard({ session = "s1", blueName, whiteName, blu
 
             {/* White */}
             <div className="flex min-w-0 flex-col items-center gap-4 px-4">
-              <TeamCrest url={whiteUrl} fallbackLetter="W" ring="ring-white/70" />
+              <TeamCrest url={whiteUrl} fallbackLetter="W" ring="ring-white/70" teamName={whiteName} />
               <div className="text-center text-6xl font-black uppercase leading-[0.95] tracking-wide text-white break-words"
                    style={{ textShadow: "0 0 30px rgba(255,255,255,0.5)" }}>
                 {whiteName}
               </div>
               <div className="text-[9rem] leading-none font-black tabular-nums text-white" style={{ textShadow: "0 0 60px rgba(255,255,255,0.5)" }}>
-                {whiteTotal}
+                <FlashNumber value={whiteTotal} />
               </div>
             </div>
           </div>
@@ -332,7 +367,9 @@ export default function ColorWarBoard({ session = "s1", blueName, whiteName, blu
                   </div>
                   <div className="mt-3 flex items-center justify-between">
                     <div className={`text-2xl font-black ${aBlue ? "text-blue-300" : "text-white"}`}>{aBlue ? blueName : whiteName}</div>
-                    <div className="text-4xl font-black tabular-nums">{g.score_a} - {g.score_b}</div>
+                    <div className="text-4xl font-black tabular-nums">
+                      <FlashNumber value={Number(g.score_a || 0)} /> - <FlashNumber value={Number(g.score_b || 0)} />
+                    </div>
                     <div className={`text-2xl font-black ${!aBlue ? "text-blue-300" : "text-white"}`}>{!aBlue ? blueName : whiteName}</div>
                   </div>
                 </div>
