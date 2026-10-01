@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
+import { useRealtimeTable } from "@/lib/useRealtimeTable";
 
 // Reads the current app mode from app_settings.
 //
@@ -19,6 +20,7 @@ const DEFAULTS = {
   cw_white_name: "White",
   cw_blue_logo: null,
   cw_white_logo: null,
+  display_mode: "season",
 };
 
 function readCache() {
@@ -66,10 +68,16 @@ export function useAppMode() {
 
   useEffect(() => {
     load();
-    const t = setInterval(load, 15000);
+    // Safety-net poll for a silently-dropped realtime socket -- slow since
+    // the realtime subscription below is doing the real work now.
+    const t = setInterval(load, 60000);
     return () => clearInterval(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // A Color War switch / session flip propagates to every open device in
+  // under a second instead of waiting up to a minute for the next poll.
+  useRealtimeTable("app_settings", load, { filter: "id=eq.1" });
 
   const isCW = settings.mode === "color_war";
   return {
@@ -81,6 +89,12 @@ export function useAppMode() {
     whiteName: settings.cw_white_name || "White",
     blueLogo: settings.cw_blue_logo || null,
     whiteLogo: settings.cw_white_logo || null,
+    // Display-board scene set. Admin-controlled (see DisplayModePanel), not
+    // a source-code flag — the board used to be pinned to banquet-only
+    // scenes by a hardcoded `const BANQUET = true` that nobody could flip
+    // without a code change + redeploy.
+    displayMode: settings.display_mode || "season",
+    isBanquet: settings.display_mode === "banquet",
     loading,
     refresh: load,
   };

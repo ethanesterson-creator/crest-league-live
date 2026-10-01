@@ -11,8 +11,9 @@ export default function InstallRedirect() {
     router.replace("/awards");
   }, [router]);
   return (
-    <div className="mt-10 text-center text-white/60">
-      Redirecting to Awards…
+    <div className="bc-empty mt-10" role="status">
+      <strong>Redirecting</strong>
+      Taking you to Awards…
     </div>
   );
 }

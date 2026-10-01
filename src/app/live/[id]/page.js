@@ -3,8 +3,12 @@
 import { useEffect, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
+import { useRealtimeTable } from "@/lib/useRealtimeTable";
+import { useNotifyingErr } from "@/lib/useNotifyingErr";
 import { notifyGameFinalized } from "@/lib/notifyGame";
 import { getSportRules } from "@/lib/sportRules";
+import { useConfirmDialog } from "@/lib/useConfirmDialog";
+import FlashNumber from "@/components/FlashNumber";
 
 // ────────────────────────────────────────────────────────────────────────────
 // Helpers (module scope — never recreated on render)
@@ -71,11 +75,11 @@ const AT_BAT_OUTCOMES = [
 ];
 
 const OUTCOME_COLORS = {
-  emerald: "border-emerald-500/40 bg-emerald-500/15 text-emerald-200 active:bg-emerald-500/40",
-  amber:   "border-amber-400/40 bg-amber-500/15 text-amber-200 active:bg-amber-500/40",
-  blue:    "border-blue-400/40 bg-blue-500/15 text-blue-200 active:bg-blue-500/40",
-  red:     "border-red-500/40 bg-red-500/15 text-red-300 active:bg-red-500/40",
-  orange:  "border-orange-400/40 bg-orange-500/15 text-orange-200 active:bg-orange-500/40",
+  emerald: "border-[var(--good)] bg-transparent text-[var(--good-ink)] active:bg-[var(--good)] active:text-white",
+  amber:   "border-[var(--ink)] bg-[var(--ink)] text-[var(--on-ink)] active:opacity-80",
+  blue:    "border-[var(--ink-3)] bg-transparent text-[var(--ink)] active:bg-[var(--ink)] active:text-[var(--on-ink)]",
+  red:     "border-[var(--ink-3)] bg-transparent text-[var(--ink-2)] active:bg-[var(--ink)] active:text-[var(--on-ink)]",
+  orange:  "border-[var(--warn)] bg-transparent text-[var(--warn-ink)] active:bg-[var(--warn)] active:text-white",
 };
 
 function parseSeriesNotes(notes) {
@@ -125,10 +129,8 @@ function ClockButton({ game, onOpen, big }) {
     return () => clearInterval(t);
   }, [game?.timer_running]);
   return (
-    <button onClick={onOpen}
-      className={big
-        ? "touch-manipulation select-none rounded-xl border border-white/10 bg-black/30 px-4 py-2 landscape:py-1 text-3xl landscape:text-2xl font-black tabular-nums text-white active:scale-[0.98]"
-        : "touch-manipulation select-none rounded-lg border border-white/10 bg-black/30 px-3 py-1.5 text-xl font-black tabular-nums text-white active:scale-[0.98]"}>
+    <button onClick={onOpen} aria-label="Set clock time"
+      className={`lv-clock ${big ? "" : "small"} ${game?.timer_running ? "is-running" : ""}`}>
       {fmtClock(computeRemaining(game))}
     </button>
   );
@@ -141,84 +143,109 @@ function ClockButton({ game, onOpen, big }) {
 // ────────────────────────────────────────────────────────────────────────────
 const BTN = "touch-manipulation select-none";
 
-// One stat = one compact inline cluster (short caption, count, -1/+N) —
-// sits inline in the player row instead of stacking into its own card.
-// Landscape gives width, not height, so rows stay ONE line tall.
+function CaptainMark() {
+  return (
+    <>
+      <span className="lv-cap" aria-hidden="true">C</span>
+      <span className="sr-only">Captain </span>
+    </>
+  );
+}
+
+// One stat = one ledger cell: caption over a big count, then -1 / +N steppers.
 function StatChip({ p, sd, side, value, onBump, onUndo }) {
   const deltas = sd?.deltas?.length ? sd.deltas : [1];
   return (
-    <div className="flex shrink-0 items-center gap-1 rounded-lg border border-white/10 bg-white/5 py-1 pl-2 pr-1">
-      <span className="text-[9px] font-black uppercase tracking-wide text-white/45">{statCaption(sd.key, sd.label)}</span>
-      <span className="w-4 text-center text-sm font-black tabular-nums text-white">{value}</span>
-      <button onClick={() => onUndo(p, sd, side)} disabled={value <= 0}
-        className={`${BTN} h-9 w-9 rounded-md border border-red-500/30 bg-red-500/10 text-xs font-black text-red-300 active:scale-95 disabled:opacity-20`}>-1</button>
-      {deltas.map((d) => (
-        <button key={d} onClick={() => onBump(p, sd, side, d)}
-          className={`${BTN} h-9 w-9 rounded-md border border-white/10 bg-white/10 text-xs font-black active:scale-95`}>+{d}</button>
-      ))}
+    <div className="lv-stat">
+      <div className="lv-stat-read">
+        <span className="lv-stat-cap">{statCaption(sd.key, sd.label)}</span>
+        <span className="lv-stat-val">{value}</span>
+      </div>
+      <div className="lv-stat-btns">
+        <button onClick={() => onUndo(p, sd, side)} disabled={value <= 0}
+          aria-label={`Undo ${statCaption(sd.key, sd.label)} for ${p.player_name || p.player_id}`}
+          className={`${BTN} step step-undo`}>−1</button>
+        {deltas.map((d) => (
+          <button key={d} onClick={() => onBump(p, sd, side, d)}
+            aria-label={`Add ${d} ${statCaption(sd.key, sd.label)} for ${p.player_name || p.player_id}`}
+            className={`${BTN} step`}>+{d}</button>
+        ))}
+      </div>
     </div>
   );
 }
 
 function PlayerRow({ p, idx, total, side, showBatting, isCap, statDefs, getVal, onBumpChip, onUndoChip, onToggle, onMove }) {
   return (
-    <div className="flex flex-wrap items-center gap-2 rounded-lg border border-white/10 bg-white/[0.04] px-2.5 py-1.5">
-      {showBatting ? (
-        <div className="flex shrink-0 items-center gap-1">
-          <span className="w-4 text-center text-[10px] font-black opacity-60">{idx + 1}</span>
-          <button onClick={() => onMove(p, "up")} disabled={idx === 0} className={`${BTN} h-9 w-9 rounded-md border border-white/10 bg-white/10 text-xs font-black disabled:opacity-30`}>↑</button>
-          <button onClick={() => onMove(p, "down")} disabled={idx === total - 1} className={`${BTN} h-9 w-9 rounded-md border border-white/10 bg-white/10 text-xs font-black disabled:opacity-30`}>↓</button>
-        </div>
-      ) : null}
-      <div className="min-w-[80px] flex-1 truncate text-sm font-black text-white">{isCap ? "⭐ " : ""}{p.player_name || p.player_id}</div>
-      {statDefs.map((sd) => (
-        <StatChip key={`${p.player_id}-${sd.key}`} p={p} sd={sd} side={side}
-          value={getVal(p.player_id, sd.key)}
-          onBump={onBumpChip} onUndo={onUndoChip} />
-      ))}
-      <button onClick={() => onToggle(p)}
-        className={`${BTN} h-9 shrink-0 rounded-md border border-red-500/30 bg-red-500/10 px-3 text-[11px] font-black text-red-300 active:scale-95`}>Out</button>
+    <div className="lv-row">
+      <div className="lv-row-top">
+        {showBatting ? (
+          <div className="flex shrink-0 items-center gap-1">
+            <span className="w-5 text-center text-sm font-bold text-[var(--ink-2)]">{idx + 1}</span>
+            <button onClick={() => onMove(p, "up")} disabled={idx === 0} aria-label="Move up in batting order" className={`${BTN} step step-undo`}>↑</button>
+            <button onClick={() => onMove(p, "down")} disabled={idx === total - 1} aria-label="Move down in batting order" className={`${BTN} step step-undo`}>↓</button>
+          </div>
+        ) : null}
+        <div className="lv-name">{isCap ? <CaptainMark /> : null}<span>{p.player_name || p.player_id}</span></div>
+        <button onClick={() => onToggle(p)} className={`${BTN} btn btn-danger btn-sm`}>Out</button>
+      </div>
+      <div className="lv-stats">
+        {statDefs.map((sd) => (
+          <StatChip key={`${p.player_id}-${sd.key}`} p={p} sd={sd} side={side}
+            value={getVal(p.player_id, sd.key)}
+            onBump={onBumpChip} onUndo={onUndoChip} />
+        ))}
+      </div>
     </div>
   );
 }
 
 function HoopPlayerRow({ p, side, isCap, pts, fouls, onBumpPts, onUndoPts, onBumpFoul, onUndoFoul, onToggle }) {
+  const who = p.player_name || p.player_id;
   return (
-    <div className="flex flex-wrap items-center gap-2 rounded-lg border border-white/10 bg-white/[0.04] px-2.5 py-1.5">
-      <div className="min-w-[80px] flex-1 truncate text-sm font-black text-white">{isCap ? "⭐ " : ""}{p.player_name || p.player_id}</div>
-
-      <div className="flex shrink-0 items-center gap-1 rounded-lg border border-white/10 bg-white/5 py-1 pl-2 pr-1">
-        <span className="text-[9px] font-black uppercase tracking-wide text-white/45">Pts</span>
-        <span className="w-4 text-center text-sm font-black tabular-nums text-white">{pts}</span>
-        <button onClick={() => onUndoPts(p, side)} disabled={pts <= 0}
-          className={`${BTN} h-9 w-9 rounded-md border border-red-500/30 bg-red-500/10 text-xs font-black text-red-300 active:scale-95 disabled:opacity-20`}>-1</button>
-        {[1, 2, 3].map((d) => (
-          <button key={d} onClick={() => onBumpPts(p, side, d)}
-            className={`${BTN} h-9 w-9 rounded-md border border-white/10 bg-white/10 text-xs font-black active:scale-95`}>+{d}</button>
-        ))}
+    <div className="lv-row">
+      <div className="lv-row-top">
+        <div className="lv-name">{isCap ? <CaptainMark /> : null}<span>{who}</span></div>
+        <button onClick={() => onToggle(p)} className={`${BTN} btn btn-danger btn-sm`}>Out</button>
       </div>
+      <div className="lv-stats">
+        <div className="lv-stat">
+          <div className="lv-stat-read">
+            <span className="lv-stat-cap">Pts</span>
+            <span className="lv-stat-val">{pts}</span>
+          </div>
+          <div className="lv-stat-btns">
+            <button onClick={() => onUndoPts(p, side)} disabled={pts <= 0} aria-label={`Undo points for ${who}`}
+              className={`${BTN} step step-undo`}>−1</button>
+            {[1, 2, 3].map((d) => (
+              <button key={d} onClick={() => onBumpPts(p, side, d)} aria-label={`Add ${d} points for ${who}`}
+                className={`${BTN} step`}>+{d}</button>
+            ))}
+          </div>
+        </div>
 
-      <div className="flex shrink-0 items-center gap-1 rounded-lg border border-white/10 bg-white/5 py-1 pl-2 pr-1">
-        <span className="text-[9px] font-black uppercase tracking-wide text-white/45">Foul</span>
-        <span className="w-4 text-center text-sm font-black tabular-nums text-white">{fouls}</span>
-        <button onClick={() => onUndoFoul(p)} disabled={fouls <= 0}
-          className={`${BTN} h-9 w-9 rounded-md border border-red-500/30 bg-red-500/10 text-xs font-black text-red-300 active:scale-95 disabled:opacity-20`}>-1</button>
-        <button onClick={() => onBumpFoul(p)}
-          className={`${BTN} h-9 w-9 rounded-md border border-white/10 bg-white/10 text-xs font-black active:scale-95`}>+1</button>
+        <div className="lv-stat">
+          <div className="lv-stat-read">
+            <span className="lv-stat-cap">Foul</span>
+            <span className="lv-stat-val">{fouls}</span>
+          </div>
+          <div className="lv-stat-btns">
+            <button onClick={() => onUndoFoul(p)} disabled={fouls <= 0} aria-label={`Undo foul for ${who}`}
+              className={`${BTN} step step-undo`}>−1</button>
+            <button onClick={() => onBumpFoul(p)} aria-label={`Add foul for ${who}`}
+              className={`${BTN} step`}>+1</button>
+          </div>
+        </div>
       </div>
-
-      <button onClick={() => onToggle(p)}
-        className={`${BTN} h-9 shrink-0 rounded-md border border-red-500/30 bg-red-500/10 px-3 text-[11px] font-black text-red-300 active:scale-95`}>Out</button>
     </div>
   );
 }
 
 function BenchRow({ p, isCap, onToggle }) {
   return (
-    <div className="flex items-center justify-between rounded-lg border border-white/5 bg-white/[0.02] px-2.5 py-1.5">
-      <span className="truncate text-sm font-semibold text-white/60">{isCap ? "⭐ " : ""}{p.player_name || p.player_id}</span>
-      <button onClick={() => onToggle(p)}
-        className={`${BTN} h-9 shrink-0 rounded-md border border-emerald-500/30 bg-emerald-500/10 px-3 text-[11px] font-black text-emerald-300 active:scale-95`}>In</button>
+    <div className="lv-bench">
+      <span className="flex min-w-0 items-center gap-2">{isCap ? <CaptainMark /> : null}<span className="truncate">{p.player_name || p.player_id}</span></span>
+      <button onClick={() => onToggle(p)} className={`${BTN} btn btn-good btn-sm`}>In</button>
     </div>
   );
 }
@@ -232,7 +259,8 @@ export default function LiveGamePage() {
   const gameId = params?.id;
 
   const [loading, setLoading] = useState(true);
-  const [err, setErr]         = useState("");
+  const [err, setErr]         = useNotifyingErr();
+  const { confirmAsync, confirmModal } = useConfirmDialog();
   const [game, setGame]       = useState(null);
   const [rosterA, setRosterA] = useState([]);
   const [rosterB, setRosterB] = useState([]);
@@ -320,6 +348,20 @@ export default function LiveGamePage() {
   const gameRef = useRef(null);
   useEffect(() => { gameRef.current = game; }, [game]);
 
+  // Screen-reader announcement of score changes (WCAG 4.1.3) — mainly for a
+  // second device (another counselor, admin) watching this same game
+  // passively over Realtime rather than tapping the buttons themselves.
+  const [liveAnnouncement, setLiveAnnouncement] = useState("");
+  const prevScoreRef = useRef({ a: null, b: null });
+  useEffect(() => {
+    if (!game) return;
+    const prev = prevScoreRef.current;
+    if (prev.a !== null && (prev.a !== game.score_a || prev.b !== game.score_b)) {
+      setLiveAnnouncement(`Score update: ${game.team_a1 || "Home"} ${Number(game.score_a || 0)}, ${game.team_b1 || "Away"} ${Number(game.score_b || 0)}`);
+    }
+    prevScoreRef.current = { a: game.score_a, b: game.score_b };
+  }, [game?.score_a, game?.score_b]);
+
   // Network-resilient RPC: camp WiFi drops requests, and supabase-js THROWS
   // on network failure (iOS shows "TypeError: Load failed") instead of
   // returning { error }. This retries up to 3 times with backoff and always
@@ -331,7 +373,7 @@ export default function LiveGamePage() {
         if (!error) return { error: null };
         if (i === tries - 1) return { error };
       } catch {
-        if (i === tries - 1) return { error: { message: "⚠️ WiFi dropped — that tap did NOT save. Check the score." } };
+        if (i === tries - 1) return { error: { message: "WiFi dropped — that tap did NOT save. Check the score." } };
       }
       await new Promise((r) => setTimeout(r, 700 * (i + 1)));
     }
@@ -453,7 +495,7 @@ export default function LiveGamePage() {
     // roster, and if a real roster already exists but this query just
     // failed to fetch it, that insert would duplicate every row.
     if (r1Err) {
-      setErr("⚠️ Couldn't load the roster — check WiFi and refresh.");
+      setErr("Couldn't load the roster — check WiFi and refresh.");
       return;
     }
 
@@ -499,7 +541,7 @@ export default function LiveGamePage() {
     }
 
     if (playersErr) {
-      setErr("⚠️ Couldn't build the roster — check WiFi and refresh.");
+      setErr("Couldn't build the roster — check WiFi and refresh.");
       return;
     }
 
@@ -516,7 +558,7 @@ export default function LiveGamePage() {
       for (let i = 0; i < rows.length; i += chunk) {
         const { error: insErr } = await supabase.from("game_roster").insert(rows.slice(i, i + chunk));
         if (insErr) {
-          setErr("⚠️ Roster only partly saved — check WiFi and refresh before scoring.");
+          setErr("Roster only partly saved — check WiFi and refresh before scoring.");
           break;
         }
       }
@@ -527,18 +569,32 @@ export default function LiveGamePage() {
       .eq("game_id", g.id).order("team_side").order("sort_order").limit(5000);
 
     if (r2Err) {
-      setErr("⚠️ Couldn't reload the roster after building it — refresh to see it.");
+      setErr("Couldn't reload the roster after building it — refresh to see it.");
       return;
     }
 
     setRosterA((r2 || []).filter((x) => x.team_side === "A"));
     setRosterB((r2 || []).filter((x) => x.team_side === "B"));
     } catch {
-      setErr("⚠️ Couldn't load rosters — check WiFi and refresh.");
+      setErr("Couldn't load rosters — check WiFi and refresh.");
     }
   }
 
   useEffect(() => { if (gameId) loadGame(); /* eslint-disable-next-line */ }, [gameId]);
+
+  // A second device watching the same live game (another counselor, admin
+  // monitoring) sees taps land within about a second instead of never --
+  // this page previously only re-synced after ITS OWN write. Uses the same
+  // quiet/debounced loaders a local write already triggers, so nothing about
+  // the ClockButton's own locally-ticking state is touched here.
+  useRealtimeTable("live_games", () => loadGame({ quiet: true }), {
+    filter: `id=eq.${gameId}`,
+    enabled: !!gameId,
+  });
+  useRealtimeTable("live_events", () => { if (gameRef.current) loadEventTotals(gameRef.current); }, {
+    filter: `game_id=eq.${gameId}`,
+    enabled: !!gameId,
+  });
 
   useEffect(() => {
     if (!game?.id) return;
@@ -585,7 +641,7 @@ export default function LiveGamePage() {
       });
       return data;
     } catch {
-      setErr("⚠️ WiFi dropped — that didn't save. Try again.");
+      setErr("WiFi dropped — that didn't save. Try again.");
       return null;
     }
   }
@@ -670,18 +726,30 @@ export default function LiveGamePage() {
     addStatEvent(player, statKey, -1);
   }
 
-  // NOTE: bumpHoopPoints/bumpGoalWithScore (and their undo counterparts,
-  // below) each fire two independent RPCs -- addStatEvent's rpc_add_stat
-  // and this function's own rpc_add_score -- with separate 3-try retries
-  // and no shared transaction. If one permanently fails after retries and
-  // the other succeeds, the team score and the player's individual stat
-  // total go out of sync (an error IS surfaced via setErr when a retry
-  // exhausts, so it's not silent, but it doesn't say which side failed or
-  // attempt to reconcile the other). A real fix needs a single combined
-  // server-side RPC doing both writes in one transaction -- that requires
-  // Supabase dashboard/SQL access this session doesn't have. Left as-is
-  // deliberately rather than risk a client-side compensating-write change
-  // to live scoring without being able to test it in a real browser.
+  // Combined atomic write for the two "score and stat move together" cases
+  // (a hoop bucket or a goal both bump the team score AND the player's stat
+  // in the same tap). Previously fired rpc_add_score and rpc_add_stat as two
+  // independent RPCs with separate retries -- if one permanently failed
+  // after retries while the other succeeded, the team score and the
+  // player's stat total went out of sync. rpc_add_score_and_stat (see
+  // supabase/migrations/0002_atomic_score_and_stat.sql) does both writes in
+  // one Postgres function, so either both land or neither does.
+  function addScoreAndStat({ side, scoreDelta, player, statKey, statDelta }) {
+    return rpcWithRetry(() => supabase.rpc("rpc_add_score_and_stat", {
+      p_game_id: game.id,
+      p_side: side ?? null,
+      p_score_delta: side != null ? scoreDelta : null,
+      p_player_id: String(player.player_id),
+      p_team_name: String(player?.team_name || ""),
+      p_stat_key: norm(statKey),
+      p_stat_delta: statDelta,
+    })).then(({ error }) => {
+      if (error) setErr(error.message);
+      scheduleGameSync();
+      scheduleStatsSync();
+    });
+  }
+
   function bumpHoopPoints(player, side, delta) {
     if (!game) return;
     const d = Math.floor(Number(delta));
@@ -693,9 +761,7 @@ export default function LiveGamePage() {
       score_a: side === "A" ? Number(prev.score_a || 0) + d : Number(prev.score_a || 0),
       score_b: side === "B" ? Number(prev.score_b || 0) + d : Number(prev.score_b || 0),
     });
-    addStatEvent(player, "pts", d);
-    rpcWithRetry(() => supabase.rpc("rpc_add_score", { p_game_id: game.id, p_side: side, p_delta: d }))
-      .then(({ error }) => { if (error) setErr(error.message); scheduleGameSync(); });
+    addScoreAndStat({ side, scoreDelta: d, player, statKey: "pts", statDelta: d });
   }
 
   function undoHoopPoints(player, side) {
@@ -709,11 +775,10 @@ export default function LiveGamePage() {
       score_a: side === "A" ? Math.max(0, Number(prev.score_a || 0) - 1) : Number(prev.score_a || 0),
       score_b: side === "B" ? Math.max(0, Number(prev.score_b || 0) - 1) : Number(prev.score_b || 0),
     });
-    addStatEvent(player, "pts", -1);
-    if (sideScore > 0) {
-      rpcWithRetry(() => supabase.rpc("rpc_add_score", { p_game_id: game.id, p_side: side, p_delta: -1 }))
-        .then(({ error }) => { if (error) setErr(error.message); scheduleGameSync(); });
-    }
+    addScoreAndStat({
+      side: sideScore > 0 ? side : null, scoreDelta: -1,
+      player, statKey: "pts", statDelta: -1,
+    });
   }
 
   function bumpGoalWithScore(player, side, delta) {
@@ -727,9 +792,7 @@ export default function LiveGamePage() {
       score_a: side === "A" ? Number(prev.score_a || 0) + d : Number(prev.score_a || 0),
       score_b: side === "B" ? Number(prev.score_b || 0) + d : Number(prev.score_b || 0),
     });
-    addStatEvent(player, "g", d);
-    rpcWithRetry(() => supabase.rpc("rpc_add_score", { p_game_id: game.id, p_side: side, p_delta: d }))
-      .then(({ error }) => { if (error) setErr(error.message); scheduleGameSync(); });
+    addScoreAndStat({ side, scoreDelta: d, player, statKey: "g", statDelta: d });
   }
 
   function undoGoalWithScore(player, side) {
@@ -743,11 +806,10 @@ export default function LiveGamePage() {
       score_a: side === "A" ? Math.max(0, Number(prev.score_a || 0) - 1) : Number(prev.score_a || 0),
       score_b: side === "B" ? Math.max(0, Number(prev.score_b || 0) - 1) : Number(prev.score_b || 0),
     });
-    addStatEvent(player, "g", -1);
-    if (sideScore > 0) {
-      rpcWithRetry(() => supabase.rpc("rpc_add_score", { p_game_id: game.id, p_side: side, p_delta: -1 }))
-        .then(({ error }) => { if (error) setErr(error.message); scheduleGameSync(); });
-    }
+    addScoreAndStat({
+      side: sideScore > 0 ? side : null, scoreDelta: -1,
+      player, statKey: "g", statDelta: -1,
+    });
   }
 
   // In/Out — optimistic; short guard so a double-tap doesn't toggle in+out
@@ -770,7 +832,7 @@ export default function LiveGamePage() {
       const { error } = await supabase.from("game_roster").update(patch).eq("game_id", player.game_id).eq("player_id", player.player_id);
       if (error) throw error;
     } catch (e) {
-      setErr(e?.message || "⚠️ WiFi dropped — In/Out didn't save. Tap again.");
+      setErr(e?.message || "WiFi dropped — In/Out didn't save. Tap again.");
       const revert = (arr) => arr.map((p) => p.player_id === player.player_id ? { ...p, is_playing: !next } : p);
       if (side === "A") setRosterA(revert); else setRosterB(revert);
     }
@@ -799,7 +861,7 @@ export default function LiveGamePage() {
     if (aErr) {
       // Nothing persisted yet -- just revert the optimistic UI change.
       if (side === "A") setRosterA(list); else setRosterB(list);
-      setErr("⚠️ Couldn't reorder batting lineup — check WiFi and try again.");
+      setErr("Couldn't reorder batting lineup — check WiFi and try again.");
       return;
     }
 
@@ -813,8 +875,8 @@ export default function LiveGamePage() {
       const { error: rollbackErr } = await supabase.from("game_roster").update({ sort_order: a.sort_order }).eq("game_id", a.game_id).eq("player_id", a.player_id);
       if (side === "A") setRosterA(list); else setRosterB(list);
       setErr(rollbackErr
-        ? "⚠️ Batting order may be out of sync — refresh before continuing."
-        : "⚠️ Couldn't reorder batting lineup — check WiFi and try again.");
+        ? "Batting order may be out of sync — refresh before continuing."
+        : "Couldn't reorder batting lineup — check WiFi and try again.");
     }
   });
 
@@ -922,7 +984,7 @@ export default function LiveGamePage() {
       if (error) { setErr(error.message); return; }
       setGame(data); setSeriesA(newSA); setSeriesB(newSB);
     } catch {
-      setErr("⚠️ WiFi dropped — set didn't end. Tap End Set again.");
+      setErr("WiFi dropped — set didn't end. Tap End Set again.");
     }
   });
 
@@ -988,7 +1050,7 @@ export default function LiveGamePage() {
         notifyGameFinalized(game, { score_a: seriesA, score_b: seriesB });
         router.push("/");
       } catch {
-        setErr("⚠️ WiFi dropped — game did NOT finalize. Tap Finalize again.");
+        setErr("WiFi dropped — game did NOT finalize. Tap Finalize again.");
       } finally { setFinalizing(false); }
       return;
     }
@@ -1003,7 +1065,10 @@ export default function LiveGamePage() {
     if (statSports.includes(norm(game.sport))) {
       const anyStats = Object.values(statTotals || {}).some((v) => Number(v) > 0);
       if (!anyStats) {
-        const proceed = confirm("This game has NO player stats logged.\n\nFor player cards we want every goal/point/hit recorded. Log stats first, or finalize anyway?");
+        const proceed = await confirmAsync(
+          "For player cards we want every goal/point/hit recorded. Log stats first, or finalize anyway?",
+          { title: "No player stats logged", confirmLabel: "Finalize Anyway" }
+        );
         if (!proceed) { setFinalizing(false); return; }
       }
     }
@@ -1019,7 +1084,7 @@ export default function LiveGamePage() {
       notifyGameFinalized(game);
       router.push("/");
     } catch {
-      setErr("⚠️ WiFi dropped — game did NOT finalize. Tap Finalize again.");
+      setErr("WiFi dropped — game did NOT finalize. Tap Finalize again.");
     } finally { setFinalizing(false); }
   }
 
@@ -1063,263 +1128,213 @@ export default function LiveGamePage() {
   const onBumpChip = (p, sd, side, d) => sd.key === "g" && GOAL_AUTO_SCORE_SPORTS.includes(norm(game?.sport)) ? bumpGoalWithScore(p, side, d) : bumpStat(p, sd.key, d);
   const onUndoChip = (p, sd, side)   => sd.key === "g" && GOAL_AUTO_SCORE_SPORTS.includes(norm(game?.sport)) ? undoGoalWithScore(p, side) : undoStat(p, sd.key);
 
+  const finalizeBtn = (cls = "") => (
+    <button onClick={() => setConfirmFinalizeOpen(true)} className={`${BTN} btn btn-good ${cls}`}>Finalize</button>
+  );
+  const clockBtns = (
+    <>
+      {game.timer_running
+        ? <button onClick={onPause} className={`${BTN} btn grow`}>Pause</button>
+        : <button onClick={onStart} className={`${BTN} btn grow`}>Start</button>}
+      <button onClick={() => onReset(game.duration_seconds || clockPresets[clockPresets.length - 1] || 1800)}
+        className={`${BTN} btn btn-secondary`}>Reset</button>
+    </>
+  );
+  const periodPill = showPeriods ? (
+    <div className="lv-pill">
+      <span>{periodLabel}</span>
+      <span className="val">{periodPrefix}{period}<span className="text-sm font-semibold text-[var(--ink-3)]">/{periodMax}</span></span>
+      <button onClick={() => setPeriod((v) => Math.max(1, v - 1))} disabled={period <= 1} aria-label={`Previous ${periodLabel.toLowerCase()}`} className={`${BTN} step step-undo`}>−1</button>
+      <button onClick={() => setPeriod((v) => Math.min(periodMax, v + 1))} disabled={period >= periodMax} aria-label={`Next ${periodLabel.toLowerCase()}`} className={`${BTN} step`}>+1</button>
+      {!periodIsFixed && (
+        <select value={periodFmt} aria-label="Period format"
+          onChange={(e) => { setPeriodFmt(e.target.value); setPeriod(1); }}
+          style={{ minHeight: 44, padding: "0 30px 0 10px", fontSize: 14 }}>
+          <option value="halves">Halves</option>
+          <option value="quarters">Quarters</option>
+        </select>
+      )}
+    </div>
+  ) : null;
+  const seriesPill = isSeriesSport(game.sport) ? (
+    <div className="lv-pill">
+      <span>Best of {seriesFormat}</span>
+      <span className="val">{seriesA}–{seriesB}</span>
+      <button onClick={endSet} disabled={scoreA === scoreB} className={`${BTN} btn btn-secondary btn-sm`}>End set</button>
+    </div>
+  ) : null;
+  const inningPill = (isSoftballGame || norm(game.sport) === "kickball") ? (
+    <div className="lv-pill">
+      <span>{inningHalf === "top" ? "Top" : "Bottom"}</span>
+      <span className="val">{inning}</span>
+      <button onClick={isSoftballGame ? nextHalfSoftball : nextHalfKickball} className={`${BTN} btn btn-secondary btn-sm`}>Next half</button>
+    </div>
+  ) : null;
+
   return (
-    <div className="fixed inset-0 z-[999] overflow-y-auto bg-[#0a1628] text-white" style={{ touchAction: "manipulation" }}>
+    <div className="lv-root">
+      {confirmModal}
+      <div aria-live="polite" className="sr-only">{liveAnnouncement}</div>
 
       {/* Always visible, regardless of scroll position — a failed tap's
           error must never render off-screen above where the counselor
           is scrolled to while entering stats. */}
-      <div className="sticky top-0 z-40 flex flex-col shadow-lg shadow-black/40">
+      <div className="lv-head">
         {!isOnline && (
-          <div className="bg-red-600 px-4 py-2.5 text-center text-sm font-black text-white">
-            ⚠️ NO WIFI — Scores are NOT saving. Reconnect before continuing.
+          <div role="alert" className="px-4 py-2.5 text-center text-sm font-extrabold" style={{ background: "var(--live)", color: "#fff" }}>
+            NO WIFI — scores are NOT saving. Reconnect before continuing.
           </div>
         )}
 
         {err && (
-          <div className="bg-[#0a1628] px-3 pt-2">
-            <div className="rounded-lg border border-red-700 bg-red-950 px-3 py-2 text-xs font-bold text-red-200">{err}</div>
+          <div className="px-3 pt-2">
+            <div role="alert" className="bc-error text-sm">{err}</div>
           </div>
         )}
 
-        {/* Top bar */}
         {showTopBar ? (
-          <div className="flex items-center justify-between border-b border-white/10 bg-[#06101f] px-3 py-2 landscape:py-1">
-            <div className="min-w-0 truncate text-[11px] font-bold uppercase tracking-widest text-white/40">
+          <div className="lv-meta">
+            <div className="min-w-0 truncate">
               {game.league_key} · {game.sport} · {game.level} · {game.mode}
             </div>
             <div className="flex items-center gap-2">
-              <button onClick={() => router.push("/")}
-                className={`${BTN} rounded-lg border border-white/10 bg-white/5 px-2.5 py-1.5 text-[10px] font-bold text-white/60`}>Home</button>
-              <button onClick={() => setShowTopBar(false)}
-                className={`${BTN} rounded-lg border border-white/10 bg-white/5 px-2 py-1.5 text-[10px] font-bold text-white/60`}>▲</button>
+              <button onClick={() => router.push("/")} className={`${BTN} btn btn-secondary btn-sm`}>Home</button>
+              <button onClick={() => setShowTopBar(false)} aria-label="Collapse header" className={`${BTN} btn btn-secondary btn-sm`} style={{ padding: "0 14px", minWidth: 44 }}>
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M3 10l5-5 5 5" /></svg>
+              </button>
             </div>
           </div>
         ) : (
-          <button onClick={() => setShowTopBar(true)}
-            className={`${BTN} flex w-full items-center justify-center border-b border-white/10 bg-[#06101f] py-1 text-white/30`}>
-            <span className="text-[10px]">☰</span>
+          <button onClick={() => setShowTopBar(true)} aria-label="Show header"
+            className={`${BTN} flex w-full items-center justify-center text-[var(--ink-3)]`} style={{ minHeight: 28, borderBottom: "1px solid var(--rule)" }}>
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M3 6l5 5 5-5" /></svg>
           </button>
         )}
 
         {/* ── SCOREBOARD ── */}
-        <div className="border-b border-white/10 bg-[#07112a] px-3 py-2 landscape:py-1.5">
+        <div className="lv-board">
         {isHoop ? (
-          <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2">
-            <div>
-              <div className="text-[9px] font-black uppercase tracking-widest text-blue-400/60">{leftLabel}</div>
-              <div className="text-2xl font-black tabular-nums text-white landscape:text-xl">{scoreA}</div>
+          <>
+            <div className="lv-line">
+              <div className="lv-side">
+                <div className="lv-team">{leftLabel}</div>
+                <FlashNumber as="div" className="lv-score" value={scoreA} />
+              </div>
+              <div className="lv-mid">
+                {rules?.clock?.enabled ? <ClockButton game={game} onOpen={openSetTimeModal} /> : null}
+              </div>
+              <div className="lv-side right">
+                <div className="lv-team">{rightLabel}</div>
+                <FlashNumber as="div" className="lv-score" value={scoreB} />
+              </div>
             </div>
-            <div className="flex flex-col items-center gap-1">
-              {rules?.clock?.enabled ? (
-                <>
-                  <ClockButton game={game} onOpen={openSetTimeModal} />
-                  <div className="flex items-center gap-1.5">
-                    {game.timer_running
-                      ? <button onClick={onPause} className={`${BTN} rounded-lg bg-white px-4 py-2 text-xs font-black text-black active:scale-95`}>Pause</button>
-                      : <button onClick={onStart} className={`${BTN} rounded-lg bg-white px-4 py-2 text-xs font-black text-black active:scale-95`}>Start</button>}
-                    <button onClick={() => onReset(game.duration_seconds || clockPresets[clockPresets.length - 1] || 1800)}
-                      className={`${BTN} rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-xs font-black active:scale-95`}>Reset</button>
-                    <button onClick={() => setConfirmFinalizeOpen(true)}
-                      className={`${BTN} rounded-lg border border-emerald-500/40 bg-emerald-500/15 px-3 py-2 text-xs font-black text-emerald-200 active:scale-95`}>Finalize</button>
-                  </div>
-                  {showPeriods && (
-                    <div className="flex items-center gap-1.5">
-                      <button onClick={() => setPeriod((v) => Math.max(1, v - 1))} disabled={period <= 1}
-                        className={`${BTN} rounded border border-white/10 bg-white/10 px-2.5 py-1 text-xs font-black active:scale-95 disabled:opacity-20`}>-1</button>
-                      <span className="text-sm font-black tabular-nums text-white">{periodPrefix}{period}<span className="text-[10px] text-white/30">/{periodMax}</span></span>
-                      <button onClick={() => setPeriod((v) => Math.min(periodMax, v + 1))} disabled={period >= periodMax}
-                        className={`${BTN} rounded border border-white/10 bg-white/10 px-2.5 py-1 text-xs font-black active:scale-95 disabled:opacity-20`}>+1</button>
-                      {!periodIsFixed && (
-                        <select value={periodFmt}
-                          onChange={(e) => { setPeriodFmt(e.target.value); setPeriod(1); }}
-                          className="rounded border border-white/10 bg-[#0a1628] px-1.5 py-0.5 text-[9px] font-bold text-white outline-none">
-                          <option value="halves">H</option>
-                          <option value="quarters">Q</option>
-                        </select>
-                      )}
-                    </div>
-                  )}
-                </>
-              ) : (
-                <button onClick={() => setConfirmFinalizeOpen(true)}
-                  className={`${BTN} rounded-lg border border-emerald-500/40 bg-emerald-500/15 px-4 py-2 text-xs font-black text-emerald-200 active:scale-95`}>Finalize</button>
-              )}
+            <div className="lv-ctl">
+              {rules?.clock?.enabled ? clockBtns : null}
+              {finalizeBtn(rules?.clock?.enabled ? "" : "grow")}
             </div>
-            <div className="text-right">
-              <div className="text-[9px] font-black uppercase tracking-widest text-blue-400/60">{rightLabel}</div>
-              <div className="text-2xl font-black tabular-nums text-white landscape:text-xl">{scoreB}</div>
-            </div>
-          </div>
+            {periodPill ? <div className="lv-extras">{periodPill}</div> : null}
+          </>
         ) : noStat ? (
-          <div className="grid grid-cols-[1fr_auto_1fr] items-stretch gap-2">
-            <button onClick={() => bumpScore("A", 1)}
-              className={`${BTN} flex min-h-[150px] landscape:min-h-[92px] flex-col items-center justify-center rounded-2xl border border-white/10 bg-white/5 px-2 py-3 landscape:py-1.5 active:scale-[0.98] active:bg-white/10`}>
-              <div className="truncate text-sm font-black uppercase tracking-widest text-blue-400/70">{leftLabel}</div>
-              <div className="mt-1 text-8xl landscape:text-5xl font-black leading-none tabular-nums text-white">{scoreA}</div>
-              <div className="mt-2 landscape:mt-0.5 text-[10px] font-bold uppercase tracking-wider text-white/30">Tap · +1</div>
-            </button>
-            <div className="flex flex-col items-center justify-center gap-1.5 px-1">
-              {isSeriesSport(game.sport) && (
-                <div className="flex flex-col items-center gap-1 rounded-xl border border-white/10 bg-white/[0.04] px-5 py-2 landscape:py-1.5">
-                  <div className="text-[10px] font-black uppercase tracking-widest text-white/40">Series (Bo{seriesFormat})</div>
-                  <div className="text-5xl landscape:text-2xl font-black tabular-nums text-white">{seriesA} - {seriesB}</div>
-                  <button onClick={endSet} disabled={scoreA === scoreB}
-                    className={`${BTN} mt-1 rounded-xl border border-amber-400/40 bg-amber-500/15 px-6 py-3 landscape:py-1.5 text-base font-black text-amber-200 active:scale-95 disabled:opacity-30`}>End Set</button>
-                </div>
-              )}
-              {norm(game.sport) === "kickball" && (
-                <div className="flex flex-col items-center gap-1 rounded-xl border border-white/10 bg-white/[0.04] px-4 py-2 landscape:py-1">
-                  <div className="text-[9px] font-black uppercase tracking-widest text-white/40">{inningHalf === "top" ? "▲ TOP" : "▼ BOT"}</div>
-                  <div className="text-4xl landscape:text-2xl font-black tabular-nums text-white">{inning}</div>
-                  <button onClick={nextHalfKickball}
-                    className={`${BTN} mt-1 rounded-xl border border-white/15 bg-white/10 px-4 py-2 landscape:py-1 text-xs font-black active:scale-95`}>Next Half</button>
-                </div>
-              )}
-              <button onClick={() => setConfirmFinalizeOpen(true)}
-                className={`${BTN} rounded-xl border border-emerald-500/40 bg-emerald-500/15 px-6 py-3 landscape:py-1.5 text-base font-black text-emerald-200 active:scale-95`}>Finalize</button>
-              <div className="flex items-center gap-2">
-                <button onClick={() => undoScore("A")} disabled={scoreA <= 0}
-                  className={`${BTN} rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-1.5 text-[10px] font-black text-red-300 active:scale-95 disabled:opacity-20`}>{leftLabel} -1</button>
-                <button onClick={() => undoScore("B")} disabled={scoreB <= 0}
-                  className={`${BTN} rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-1.5 text-[10px] font-black text-red-300 active:scale-95 disabled:opacity-20`}>{rightLabel} -1</button>
-              </div>
+          <>
+            <div className="grid grid-cols-2 gap-3">
+              <button onClick={() => bumpScore("A", 1)} className={`${BTN} lv-tap`} aria-label={`Add 1 to ${leftLabel}`}>
+                <div className="lv-team" style={{ color: "inherit", maxWidth: "100%" }}>{leftLabel}</div>
+                <FlashNumber as="div" className="lv-score" value={scoreA} />
+                <div className="lv-tap-hint">Tap to add 1</div>
+              </button>
+              <button onClick={() => bumpScore("B", 1)} className={`${BTN} lv-tap`} aria-label={`Add 1 to ${rightLabel}`}>
+                <div className="lv-team" style={{ color: "inherit", maxWidth: "100%" }}>{rightLabel}</div>
+                <FlashNumber as="div" className="lv-score" value={scoreB} />
+                <div className="lv-tap-hint">Tap to add 1</div>
+              </button>
             </div>
-            <button onClick={() => bumpScore("B", 1)}
-              className={`${BTN} flex min-h-[150px] landscape:min-h-[92px] flex-col items-center justify-center rounded-2xl border border-white/10 bg-white/5 px-2 py-3 landscape:py-1.5 active:scale-[0.98] active:bg-white/10`}>
-              <div className="truncate text-sm font-black uppercase tracking-widest text-blue-400/70">{rightLabel}</div>
-              <div className="mt-1 text-8xl landscape:text-5xl font-black leading-none tabular-nums text-white">{scoreB}</div>
-              <div className="mt-2 landscape:mt-0.5 text-[10px] font-bold uppercase tracking-wider text-white/30">Tap · +1</div>
-            </button>
-          </div>
+            {(seriesPill || inningPill) ? <div className="lv-extras">{seriesPill}{inningPill}</div> : null}
+            <div className="lv-ctl">
+              <button onClick={() => undoScore("A")} disabled={scoreA <= 0} className={`${BTN} btn btn-secondary btn-sm`}>{leftLabel} −1</button>
+              <button onClick={() => undoScore("B")} disabled={scoreB <= 0} className={`${BTN} btn btn-secondary btn-sm`}>{rightLabel} −1</button>
+            </div>
+            <div className="lv-ctl">{finalizeBtn()}</div>
+          </>
         ) : (
-          <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2">
-            <div>
-              <div className="text-[10px] font-black uppercase tracking-widest text-blue-400/60">Home</div>
-              <div className="mt-0.5 truncate text-base font-black text-white">{leftLabel}</div>
-              <div className="mt-1 text-5xl landscape:text-3xl font-black tabular-nums text-white">{scoreA}</div>
-              <div className="mt-2 landscape:mt-1 flex flex-wrap gap-1.5">
-                <button onClick={() => undoScore("A")} disabled={scoreA <= 0}
-                  className={`${BTN} flex-1 rounded-lg border border-red-500/30 bg-red-500/10 py-2.5 landscape:py-1.5 text-sm font-black text-red-300 active:scale-95 disabled:opacity-20`}>-1</button>
-                {scoreButtons.map((d) => (
-                  <button key={`A-${d}`} onClick={() => bumpScore("A", d)}
-                    className={`${BTN} flex-1 rounded-lg border border-white/15 bg-white/10 py-2.5 landscape:py-1.5 text-sm font-black active:scale-95`}>+{d}</button>
-                ))}
+          <>
+            <div className="lv-line">
+              <div className="lv-side">
+                <div className="lv-team">{leftLabel} · Home</div>
+                <FlashNumber as="div" className="lv-score" value={scoreA} />
+              </div>
+              <div className="lv-mid">
+                {rules?.clock?.enabled ? <ClockButton game={game} onOpen={openSetTimeModal} big /> : <span className="bc-chip">No clock</span>}
+              </div>
+              <div className="lv-side right">
+                <div className="lv-team">Away · {rightLabel}</div>
+                <FlashNumber as="div" className="lv-score" value={scoreB} />
               </div>
             </div>
-            <div className="flex flex-col items-center gap-1 px-2">
-              {rules?.clock?.enabled ? (
-                <>
-                  <div className="flex items-center gap-1.5">
-                    <ClockButton game={game} onOpen={openSetTimeModal} big />
-                    {game.timer_running
-                      ? <button onClick={onPause} className={`${BTN} rounded-lg bg-white px-3 py-1.5 landscape:py-1 text-xs font-black text-black active:scale-95`}>Pause</button>
-                      : <button onClick={onStart} className={`${BTN} rounded-lg bg-white px-3 py-1.5 landscape:py-1 text-xs font-black text-black active:scale-95`}>Start</button>}
-                    <button onClick={() => onReset(game.duration_seconds || clockPresets[clockPresets.length - 1] || 1800)}
-                      className={`${BTN} rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 landscape:py-1 text-xs font-black active:scale-95`}>Reset</button>
-                  </div>
-                  <div className="flex gap-1 overflow-x-auto pb-0.5 max-w-[160px] landscape:hidden">
-                    {clockPresets.map((s) => (
-                      <button key={`preset-${s}`} onClick={() => onReset(s)}
-                        className={`${BTN} shrink-0 rounded border border-white/10 bg-white/5 px-1.5 py-1 text-[10px] font-bold active:scale-95`}>
-                        {fmtClock(s)}
-                      </button>
-                    ))}
-                  </div>
-                  {rules?.clock?.modes?.length > 1 && (
-                    <select value={clockMode} onChange={(e) => setClockMode(e.target.value)}
-                      className="rounded-lg border border-white/10 bg-[#0a1628] px-2 py-1 text-[10px] font-bold text-white outline-none landscape:hidden">
-                      {rules.clock.modes.map((m) => <option key={m.id} value={m.id}>{m.label}</option>)}
-                    </select>
-                  )}
-                </>
-              ) : (
-                <div className="rounded-xl border border-white/10 bg-black/20 px-4 py-3 landscape:py-1.5 text-center">
-                  <div className="text-[10px] font-black uppercase tracking-widest text-white/40">No Clock</div>
-                </div>
-              )}
-              {isSeriesSport(game.sport) && (
-                <div className="flex items-center gap-2 rounded-lg border border-white/10 bg-white/[0.04] px-3 py-1">
-                  <span className="text-[9px] font-black uppercase tracking-widest text-white/40">Bo{seriesFormat}</span>
-                  <span className="text-lg font-black tabular-nums text-white">{seriesA}-{seriesB}</span>
-                  <button onClick={endSet} disabled={scoreA === scoreB}
-                    className={`${BTN} rounded-md border border-amber-400/40 bg-amber-500/15 px-2.5 py-1 text-[10px] font-black text-amber-200 active:scale-95 disabled:opacity-30`}>End Set</button>
-                </div>
-              )}
-              {showPeriods && (
-                <div className="flex items-center gap-2 rounded-lg border border-white/10 bg-white/[0.04] px-3 py-1">
-                  <span className="text-[9px] font-black uppercase tracking-widest text-white/40">{periodLabel}</span>
-                  <span className="text-lg font-black tabular-nums text-white">{periodPrefix}{period}<span className="text-xs text-white/30">/{periodMax}</span></span>
-                  <button onClick={() => setPeriod((v) => Math.max(1, v - 1))} disabled={period <= 1}
-                    className={`${BTN} h-7 w-7 rounded-md border border-white/10 bg-white/10 text-xs font-black active:scale-95 disabled:opacity-20`}>-1</button>
-                  <button onClick={() => setPeriod((v) => Math.min(periodMax, v + 1))} disabled={period >= periodMax}
-                    className={`${BTN} h-7 w-7 rounded-md border border-white/10 bg-white/10 text-xs font-black active:scale-95 disabled:opacity-20`}>+1</button>
-                  {!periodIsFixed && (
-                    <select value={periodFmt}
-                      onChange={(e) => { setPeriodFmt(e.target.value); setPeriod(1); }}
-                      className="rounded-md border border-white/10 bg-[#0a1628] px-1.5 py-1 text-[9px] font-bold text-white outline-none">
-                      <option value="halves">Halves</option>
-                      <option value="quarters">Quarters</option>
-                    </select>
-                  )}
-                </div>
-              )}
-              {isSoftballGame && (
-                <div className="flex items-center gap-2 rounded-lg border border-white/10 bg-white/[0.04] px-3 py-1">
-                  <span className="text-[9px] font-black uppercase tracking-widest text-white/40">{inningHalf === "top" ? "▲ TOP" : "▼ BOT"}</span>
-                  <span className="text-lg font-black tabular-nums text-white">{inning}</span>
-                  <button onClick={nextHalfSoftball}
-                    className={`${BTN} rounded-md border border-white/15 bg-white/10 px-2.5 py-1 text-[10px] font-black active:scale-95`}>Next Half</button>
-                </div>
-              )}
-              <button onClick={() => setConfirmFinalizeOpen(true)}
-                className={`${BTN} rounded-lg border border-emerald-500/40 bg-emerald-500/15 px-4 py-1.5 text-xs font-black text-emerald-200 active:scale-95`}>Finalize</button>
-            </div>
-            <div className="text-right">
-              <div className="text-[10px] font-black uppercase tracking-widest text-blue-400/60">Away</div>
-              <div className="mt-0.5 truncate text-base font-black text-white">{rightLabel}</div>
-              <div className="mt-1 text-5xl landscape:text-3xl font-black tabular-nums text-white">{scoreB}</div>
-              <div className="mt-2 landscape:mt-1 flex flex-wrap justify-end gap-1.5">
+            <div className="lv-adds">
+              <div>
+                <button onClick={() => undoScore("A")} disabled={scoreA <= 0} aria-label={`Undo a point for ${leftLabel}`} className={`${BTN} step step-undo`}>−1</button>
                 {scoreButtons.map((d) => (
-                  <button key={`B-${d}`} onClick={() => bumpScore("B", d)}
-                    className={`${BTN} flex-1 rounded-lg border border-white/15 bg-white/10 py-2.5 landscape:py-1.5 text-sm font-black active:scale-95`}>+{d}</button>
+                  <button key={`A-${d}`} onClick={() => bumpScore("A", d)} aria-label={`Add ${d} to ${leftLabel}`} className={`${BTN} step`}>+{d}</button>
                 ))}
-                <button onClick={() => undoScore("B")} disabled={scoreB <= 0}
-                  className={`${BTN} flex-1 rounded-lg border border-red-500/30 bg-red-500/10 py-2.5 landscape:py-1.5 text-sm font-black text-red-300 active:scale-95 disabled:opacity-20`}>-1</button>
+              </div>
+              <div>
+                {scoreButtons.map((d) => (
+                  <button key={`B-${d}`} onClick={() => bumpScore("B", d)} aria-label={`Add ${d} to ${rightLabel}`} className={`${BTN} step`}>+{d}</button>
+                ))}
+                <button onClick={() => undoScore("B")} disabled={scoreB <= 0} aria-label={`Undo a point for ${rightLabel}`} className={`${BTN} step step-undo`}>−1</button>
               </div>
             </div>
-          </div>
+            <div className="lv-ctl">
+              {rules?.clock?.enabled ? clockBtns : null}
+              {finalizeBtn(rules?.clock?.enabled ? "" : "grow")}
+            </div>
+            {(rules?.clock?.enabled && clockPresets.length) || (rules?.clock?.modes?.length > 1) ? (
+              <div className="lv-extras landscape:hidden">
+                {rules?.clock?.enabled ? clockPresets.map((s) => (
+                  <button key={`preset-${s}`} onClick={() => onReset(s)} className={`${BTN} btn btn-secondary btn-sm`} style={{ padding: "0 10px", fontVariantNumeric: "tabular-nums" }}>
+                    {fmtClock(s)}
+                  </button>
+                )) : null}
+                {rules?.clock?.enabled && rules?.clock?.modes?.length > 1 && (
+                  <select value={clockMode} onChange={(e) => setClockMode(e.target.value)} aria-label="Clock mode"
+                    style={{ minHeight: 44, padding: "0 30px 0 10px", fontSize: 14 }}>
+                    {rules.clock.modes.map((m) => <option key={m.id} value={m.id}>{m.label}</option>)}
+                  </select>
+                )}
+              </div>
+            ) : null}
+            {(periodPill || seriesPill || inningPill) ? (
+              <div className="lv-extras">{periodPill}{seriesPill}{inningPill}</div>
+            ) : null}
+          </>
         )}
         </div>
       </div>
 
       {/* ── BODY ── */}
       {isSoftballGame && lineupDone ? (
-        <div className="p-3 space-y-3">
-          <div className="rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <div className="text-[10px] font-black uppercase tracking-widest text-blue-400/70">
-                  Now Batting · {battingTeam === "A" ? leftLabel : rightLabel}
+        <div className="lv-body space-y-3">
+          <div className="bc-card bc-card-pad">
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <div className="text-xs font-bold uppercase tracking-wider text-[var(--ink-2)]">
+                  Now batting · {battingTeam === "A" ? leftLabel : rightLabel}
                 </div>
-                <div className="mt-1 text-3xl font-black text-white">{currentBatter ? currentBatter.player_name : "—"}</div>
+                <div className="bc-display mt-1 text-4xl leading-none">{currentBatter ? currentBatter.player_name : "—"}</div>
                 {currentBatter && (
-                  <div className="mt-0.5 text-xs text-white/40">
+                  <div className="mt-1 text-sm text-[var(--ink-2)]">
                     #{(activeBatterIdx % Math.max(1, battingRoster.length)) + 1} in order · H: {getVal(currentBatter.player_id, "h")} · HR: {getVal(currentBatter.player_id, "hr")}
                   </div>
                 )}
               </div>
-              <div className="flex flex-col items-center gap-1.5">
-                <div className="text-[9px] font-black uppercase tracking-widest text-white/30">Outs</div>
-                <div className="flex gap-1.5">
+              <div className="flex flex-col items-center gap-2">
+                <div className="text-xs font-bold uppercase tracking-wider text-[var(--ink-2)]">Outs</div>
+                <div className="flex gap-2">
                   {[0, 1, 2].map((i) => (
-                    <div key={i} className={`h-4 w-4 rounded-full border-2 transition-colors ${i < outsThisHalf ? "border-red-400 bg-red-400" : "border-white/20 bg-transparent"}`} />
+                    <div key={i} className={`h-5 w-5 rounded-full border-2 border-[var(--ink)] ${i < outsThisHalf ? "bg-[var(--ink)]" : "bg-transparent"}`} />
                   ))}
                 </div>
-                <button onClick={addOutOnly}
-                  className={`${BTN} rounded-lg border border-red-500/40 bg-red-500/15 px-3 py-1.5 text-[10px] font-black text-red-300 active:scale-95`}>
-                  +1 Out
-                </button>
+                <button onClick={addOutOnly} className={`${BTN} btn btn-secondary btn-sm`}>+1 Out</button>
               </div>
             </div>
           </div>
@@ -1327,25 +1342,22 @@ export default function LiveGamePage() {
           <div className="grid grid-cols-4 gap-2">
             {AT_BAT_OUTCOMES.map((o) => (
               <button key={o.key} onClick={() => recordAtBat(o)}
-                className={`${BTN} rounded-xl border py-4 text-lg font-black active:scale-95 ${OUTCOME_COLORS[o.color]}`}>
+                className={`${BTN} min-h-[56px] rounded-md border-[1.5px] py-3 text-xl font-extrabold active:scale-95 ${OUTCOME_COLORS[o.color]}`}>
                 {o.label}
               </button>
             ))}
           </div>
 
           {lastAtBatSnap && (
-            <button onClick={undoLastAtBat}
-              className={`${BTN} w-full rounded-xl border border-white/15 bg-white/5 py-3 text-sm font-black text-white/70 active:scale-[0.98]`}>
-              ↩ Undo Last At-Bat
-            </button>
+            <button onClick={undoLastAtBat} className={`${BTN} btn btn-secondary w-full`}>Undo last at-bat</button>
           )}
 
           {atBatResults.filter((r) => r.inning === inning && r.half === inningHalf).length > 0 && (
-            <div className="rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2">
-              <div className="text-[9px] font-black uppercase tracking-widest text-white/30 mb-1">This half inning</div>
-              <div className="flex flex-wrap gap-1.5">
+            <div className="bc-card bc-card-pad">
+              <div className="mb-2 text-xs font-bold uppercase tracking-wider text-[var(--ink-2)]">This half inning</div>
+              <div className="flex flex-wrap gap-2">
                 {atBatResults.filter((r) => r.inning === inning && r.half === inningHalf).map((r, i) => (
-                  <span key={i} className="rounded-lg border border-white/10 bg-white/5 px-2 py-0.5 text-[10px] font-black text-white/60">
+                  <span key={i} className="bc-chip">
                     {r.playerName?.split(" ")[0]}: {r.label}
                   </span>
                 ))}
@@ -1355,16 +1367,16 @@ export default function LiveGamePage() {
 
           <div className="grid grid-cols-2 gap-2">
             {[{ side: "A", roster: playingA, label: leftLabel }, { side: "B", roster: playingB, label: rightLabel }].map(({ side, roster, label }) => (
-              <div key={side} className={`rounded-xl border p-2 ${battingTeam === side ? "border-blue-500/30 bg-blue-500/5" : "border-white/5 bg-white/[0.02]"}`}>
-                <div className="mb-1 text-[9px] font-black uppercase tracking-wider text-white/40">{label} {battingTeam === side ? "· Batting" : ""}</div>
+              <div key={side} className={`rounded-md border p-2 ${battingTeam === side ? "border-[var(--ink)] border-2 bg-[var(--sheet)]" : "border-[var(--rule)]"}`}>
+                <div className="mb-1 text-xs font-bold uppercase tracking-wider text-[var(--ink-2)]">{label}{battingTeam === side ? " · batting" : ""}</div>
                 <div className="space-y-0.5">
                   {roster.map((p, idx) => {
                     const isUp = battingTeam === side && idx === (activeBatterIdx % Math.max(1, roster.length));
                     return (
-                      <div key={p.player_id} className={`flex items-center gap-1.5 rounded px-1.5 py-0.5 text-[11px] ${isUp ? "bg-blue-500/20 font-black text-white" : "text-white/40"}`}>
-                        <span className="w-3 text-[9px]">{idx + 1}</span>
+                      <div key={p.player_id} className={`flex items-center gap-2 rounded px-1.5 py-1 text-sm ${isUp ? "bg-[var(--ink)] font-bold text-[var(--on-ink)]" : "text-[var(--ink-2)]"}`}>
+                        <span className="w-4 text-xs">{idx + 1}</span>
                         <span className="truncate">{p.player_name?.split(" ")[0]}</span>
-                        {isUp && <span className="ml-auto text-[9px] text-blue-400">▶</span>}
+                        {isUp && <span className="ml-auto text-xs">Up</span>}
                       </div>
                     );
                   })}
@@ -1381,25 +1393,21 @@ export default function LiveGamePage() {
           ];
           const active = rosterTeams.find((t) => t.side === activeRosterSide) ?? rosterTeams[0];
           return (
-            <div className="p-2">
+            <div className="lv-body">
               {/* One team at a time, full device width — the squeezed
                   side-by-side columns were the main source of tiny,
                   mis-tappable buttons and forced-abbreviated names. */}
-              <div className="flex gap-1.5 rounded-xl border border-white/10 bg-white/[0.04] p-1">
-                {rosterTeams.map((t) => {
-                  const isActive = t.side === activeRosterSide;
-                  return (
-                    <button key={t.side} onClick={() => setActiveRosterSide(t.side)}
-                      className={`${BTN} h-9 flex-1 truncate rounded-lg px-3 text-sm font-black active:scale-[0.98] ${
-                        isActive ? "text-white" : "text-white/45"}`}
-                      style={isActive ? { background: "linear-gradient(180deg,#4d80ff,#3a71ff)" } : {}}>
-                      {t.label} · {t.score}
-                    </button>
-                  );
-                })}
+              <div className="seg" role="group" aria-label="Team roster">
+                {rosterTeams.map((t) => (
+                  <button key={t.side} onClick={() => setActiveRosterSide(t.side)}
+                    aria-pressed={t.side === activeRosterSide}
+                    className={BTN}>
+                    {t.label} · {t.score}
+                  </button>
+                ))}
               </div>
 
-              <div className="mt-2 space-y-1.5">
+              <div className="lv-rows">
                 {active.playing.length ? (
                   active.playing.map((p) => {
                     const idx = active.roster.findIndex((x) => x.player_id === p.player_id);
@@ -1418,23 +1426,26 @@ export default function LiveGamePage() {
                     );
                   })
                 ) : (
-                  <div className="rounded-xl border border-white/5 bg-white/[0.02] p-3 text-sm text-white/40">
-                    No one in yet — open bench below and tap In.
+                  <div className="bc-empty">
+                    <strong>Nobody in yet</strong>
+                    Open the bench below and tap In to put a player on the floor.
                   </div>
                 )}
               </div>
 
-              <div className="mt-2">
-                <button onClick={() => active.setShow((v) => !v)}
-                  className={`${BTN} h-9 flex w-full items-center justify-between rounded-lg border border-white/5 bg-white/[0.02] px-3 text-xs font-bold text-white/40`}>
+              <div className="mt-3">
+                <button onClick={() => active.setShow((v) => !v)} aria-expanded={active.show}
+                  className={`${BTN} btn btn-secondary btn-sm w-full justify-between`}>
                   <span>Bench ({active.bench.length})</span>
-                  <span>{active.show ? "▲" : "▼"}</span>
+                  <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                    <path d={active.show ? "M3 10l5-5 5 5" : "M3 6l5 5 5-5"} />
+                  </svg>
                 </button>
                 {active.show && (
-                  <div className="mt-2 space-y-1.5">
+                  <div className="mt-2 grid gap-2">
                     {active.bench.length
                       ? active.bench.map((p) => <BenchRow key={p.player_id} p={p} isCap={isCapFn(p.player_id)} onToggle={togglePlaying} />)
-                      : <div className="text-xs text-white/30">No bench.</div>}
+                      : <div className="text-sm text-[var(--ink-2)]">No one on the bench.</div>}
                   </div>
                 )}
               </div>
@@ -1442,55 +1453,51 @@ export default function LiveGamePage() {
           );
         })()
       ) : (
-        <div className="px-3 pt-3 text-center text-[11px] text-white/30">
+        <div className="lv-body text-center text-sm text-[var(--ink-2)]">
           {leftLabel} vs {rightLabel} — no stats tracked for this sport.
         </div>
       )}
 
-      <div className="px-3 pb-8 text-[10px] text-white/20">ID: {String(game.id)}</div>
+      <div className="px-3 pb-10" />
 
       {/* ── LINEUP MODAL (softball) ── */}
       {lineupOpen && (
-        <div className="fixed inset-0 z-[60] flex items-end bg-black/80 sm:items-center sm:justify-center">
-          <div className="w-full max-w-2xl rounded-t-3xl border border-white/15 bg-[#08172c] p-5 sm:rounded-3xl">
-            <div className="text-xl font-black text-white">Set Lineup</div>
-            <div className="mt-0.5 text-xs text-white/50">Mark who's In, set batting order, pick Home team. Then tap Done — this won't reopen.</div>
+        <div className="fixed inset-0 z-[60] flex items-end bg-[rgba(5,14,31,0.6)] sm:items-center sm:justify-center">
+          <div className="bc-modal" style={{ maxWidth: 672, borderRadius: "10px 10px 0 0", maxHeight: "92vh", overflowY: "auto" }}>
+            <div className="bc-display text-3xl leading-none">Set lineup</div>
+            <div className="mt-2 text-sm text-[var(--ink-2)]">Mark who&apos;s in, set the batting order, and pick the home team. Then tap Done — this won&apos;t reopen.</div>
 
-            <div className="mt-4 flex items-center gap-3">
-              <span className="text-xs font-black uppercase tracking-widest text-white/40">Home team:</span>
-              <button onClick={() => setHomeTeam("A")}
-                className={`${BTN} rounded-xl border px-4 py-2 text-xs font-black transition ${homeTeam === "A" ? "border-blue-400/60 bg-blue-500/20 text-blue-200" : "border-white/10 bg-white/5 text-white/40"}`}>
-                {leftLabel}
-              </button>
-              <button onClick={() => setHomeTeam("B")}
-                className={`${BTN} rounded-xl border px-4 py-2 text-xs font-black transition ${homeTeam === "B" ? "border-blue-400/60 bg-blue-500/20 text-blue-200" : "border-white/10 bg-white/5 text-white/40"}`}>
-                {rightLabel}
-              </button>
+            <div className="mt-4">
+              <div className="bc-select-label">Home team</div>
+              <div className="seg" role="group" aria-label="Home team">
+                <button onClick={() => setHomeTeam("A")} aria-pressed={homeTeam === "A"} className={BTN}>{leftLabel}</button>
+                <button onClick={() => setHomeTeam("B")} aria-pressed={homeTeam === "B"} className={BTN}>{rightLabel}</button>
+              </div>
             </div>
 
-            <div className="mt-4 grid grid-cols-2 gap-3 max-h-[55vh] overflow-y-auto">
+            <div className="mt-4 grid max-h-[50vh] grid-cols-1 gap-4 overflow-y-auto sm:grid-cols-2">
               {[
                 { label: leftLabel, roster: rosterA, playing: playingA },
                 { label: rightLabel, roster: rosterB, playing: playingB },
               ].map(({ label, roster, playing }, colIdx) => (
                 <div key={colIdx}>
-                  <div className="mb-2 text-xs font-black uppercase tracking-wider text-white/60">{label}</div>
-                  <div className="space-y-1">
+                  <div className="bc-section-head"><h2>{label}</h2></div>
+                  <div className="grid gap-1.5">
                     {[...roster].sort((a, b) => Number(a.sort_order || 0) - Number(b.sort_order || 0)).map((p) => (
-                      <div key={p.player_id} className={`flex items-center gap-2 rounded-lg border px-2 py-1.5 ${p.is_playing ? "border-emerald-500/30 bg-emerald-500/10" : "border-white/5 bg-white/[0.02]"}`}>
+                      <div key={p.player_id} className={`flex items-center gap-2 rounded-md border px-2 py-1 ${p.is_playing ? "border-[var(--good)]" : "border-[var(--rule)]"}`}>
                         {p.is_playing
-                          ? <span className="w-4 text-center text-[10px] font-black text-white/50">{playing.findIndex((x) => x.player_id === p.player_id) + 1}</span>
-                          : <span className="w-4" />}
-                        <span className="flex-1 truncate text-[11px] font-semibold text-white">{p.player_name}</span>
-                        <div className="flex items-center gap-0.5">
+                          ? <span className="w-5 text-center text-sm font-bold text-[var(--ink-2)]">{playing.findIndex((x) => x.player_id === p.player_id) + 1}</span>
+                          : <span className="w-5" />}
+                        <span className="flex-1 truncate text-sm font-semibold">{p.player_name}</span>
+                        <div className="flex items-center gap-1">
                           {p.is_playing && (
                             <>
-                              <button onClick={() => moveInOrder(p, "up")} className={`${BTN} rounded border border-white/10 bg-white/10 px-1.5 py-1 text-[9px] font-black`}>↑</button>
-                              <button onClick={() => moveInOrder(p, "down")} className={`${BTN} rounded border border-white/10 bg-white/10 px-1.5 py-1 text-[9px] font-black`}>↓</button>
+                              <button onClick={() => moveInOrder(p, "up")} aria-label={`Move ${p.player_name} up`} className={`${BTN} step step-undo`}>↑</button>
+                              <button onClick={() => moveInOrder(p, "down")} aria-label={`Move ${p.player_name} down`} className={`${BTN} step step-undo`}>↓</button>
                             </>
                           )}
                           <button onClick={() => togglePlaying(p)}
-                            className={`${BTN} rounded-lg border px-2.5 py-1 text-[10px] font-black ${p.is_playing ? "border-red-500/30 bg-red-500/10 text-red-300" : "border-emerald-500/30 bg-emerald-500/10 text-emerald-300"}`}>
+                            className={`${BTN} btn btn-sm ${p.is_playing ? "btn-danger" : "btn-good"}`}>
                             {p.is_playing ? "Out" : "In"}
                           </button>
                         </div>
@@ -1515,8 +1522,8 @@ export default function LiveGamePage() {
                   outsThisHalf: 0, lineupDone: true, inning: 1, inningHalf: "top",
                 });
               }}
-              className={`${BTN} mt-5 w-full rounded-2xl bg-blue-600 py-4 text-base font-black text-white active:scale-[0.98]`}>
-              Done — Start Game
+              className={`${BTN} btn mt-5 w-full`}>
+              Done — start game
             </button>
           </div>
         </div>
@@ -1524,22 +1531,23 @@ export default function LiveGamePage() {
 
       {/* ── SET TIME MODAL ── */}
       {setTimeOpen && (
-        <div className="fixed inset-0 z-50 grid place-items-center bg-black/70 p-4">
-          <div className="w-full max-w-sm rounded-2xl border border-white/15 bg-[#08172c] p-5">
-            <div className="text-lg font-black">Set Clock Time</div>
-            <div className="mt-1 text-sm text-white/60">Enter time as mm:ss. Clock will stay paused.</div>
+        <div className="bc-modal-overlay" style={{ zIndex: 50 }}>
+          <div className="bc-modal" style={{ maxWidth: 384 }}>
+            <div className="bc-display text-3xl leading-none">Set clock time</div>
+            <div className="mt-2 text-sm text-[var(--ink-2)]">Enter time as mm:ss. The clock stays paused.</div>
             <input value={timeInput} onChange={(e) => setTimeInput(formatMMSSFromDigits(e.target.value))}
-              inputMode="numeric" placeholder="mm:ss"
-              className="mt-4 w-full rounded-xl border border-white/15 bg-white/5 px-4 py-3 text-center text-3xl font-black tracking-widest text-white outline-none focus:border-white/30" />
+              inputMode="numeric" placeholder="mm:ss" aria-label="Clock time, minutes and seconds"
+              className="bc-num mt-4 w-full text-center"
+              style={{ fontSize: 48, minHeight: 72, letterSpacing: "0.04em" }} />
             <div className="mt-4 flex gap-2">
-              <button onClick={() => setSetTimeOpen(false)} className={`${BTN} flex-1 rounded-xl border border-white/15 bg-white/5 px-4 py-3 font-bold`}>Cancel</button>
-              <button className={`${BTN} flex-1 rounded-xl border border-emerald-400/30 bg-emerald-500/15 px-4 py-3 font-black`}
+              <button onClick={() => setSetTimeOpen(false)} className={`${BTN} btn btn-secondary flex-1`}>Cancel</button>
+              <button className={`${BTN} btn flex-1`}
                 onClick={async () => {
                   const seconds = parseMMSS(timeInput);
                   if (seconds === null) { setErr("Time must be in mm:ss format (example: 11:05)."); return; }
                   setSetTimeOpen(false);
                   await setExactRemaining(seconds);
-                }}>Set Time</button>
+                }}>Set time</button>
             </div>
           </div>
         </div>
@@ -1547,29 +1555,30 @@ export default function LiveGamePage() {
 
       {/* ── FINALIZE MODAL ── */}
       {confirmFinalizeOpen && (
-        <div className="fixed inset-0 z-50 grid place-items-center bg-black/70 p-4">
-          <div className="w-full max-w-md rounded-2xl border border-white/15 bg-[#08172c] p-5">
-            <div className="text-lg font-black">Finalize this game?</div>
-            <div className="mt-2 text-sm text-white/60">Locks the score and updates standings + stat leaders.</div>
+        <div className="bc-modal-overlay" style={{ zIndex: 50 }}>
+          <div className="bc-modal">
+            <div className="bc-display text-3xl leading-none">Finalize this game?</div>
+            <div className="mt-2 text-sm text-[var(--ink-2)]">Locks the score and updates standings and stat leaders.</div>
             {rules?.clock?.enabled && game.timer_running && (
-              <div className="mt-3 rounded-xl border border-red-400/30 bg-red-500/10 p-3 text-sm text-red-200">Pause the clock before finalizing.</div>
+              <div className="bc-error mt-3 text-sm">Pause the clock before finalizing.</div>
             )}
             {(() => {
+              const warn = "mt-3 rounded-md border-[1.5px] border-[var(--warn)] p-3 text-sm font-semibold text-[var(--warn-ink)]";
               if (isSeriesSport(game?.sport)) {
                 const majority = Math.floor(seriesFormat / 2) + 1;
-                if (seriesA < majority && seriesB < majority) return <div className="mt-3 rounded-xl border border-amber-400/30 bg-amber-500/10 p-3 text-sm text-amber-200">⚠️ Series isn't decided yet. Need {majority} set wins (currently {seriesA}-{seriesB}).</div>;
-                if (seriesA === seriesB) return <div className="mt-3 rounded-xl border border-amber-400/30 bg-amber-500/10 p-3 text-sm text-amber-200">⚠️ Series is tied. End another set.</div>;
-                return <div className="mt-3 rounded-xl border border-emerald-400/30 bg-emerald-500/10 p-3 text-sm text-emerald-200">Series is {seriesA}-{seriesB}. This will be the final score.</div>;
+                if (seriesA < majority && seriesB < majority) return <div className={warn}>Series isn&apos;t decided yet. Need {majority} set wins (currently {seriesA}-{seriesB}).</div>;
+                if (seriesA === seriesB) return <div className={warn}>Series is tied. End another set.</div>;
+                return <div className="mt-3 rounded-md border-[1.5px] border-[var(--good)] p-3 text-sm font-semibold text-[var(--good-ink)]">Series is {seriesA}-{seriesB}. This will be the final score.</div>;
               }
               const sa = Number(game?.score_a || 0), sb = Number(game?.score_b || 0);
-              if (sa === 0 && sb === 0) return <div className="mt-3 rounded-xl border border-red-400/30 bg-red-500/10 p-3 text-sm text-red-200">⚠️ Score is 0-0. Add points before finalizing.</div>;
-              if (sa === sb) return <div className="mt-3 rounded-xl border border-amber-400/30 bg-amber-500/10 p-3 text-sm text-amber-200">⚠️ Score is tied ({sa}-{sb}). Bauercrest has no ties.</div>;
+              if (sa === 0 && sb === 0) return <div className="bc-error mt-3 text-sm">Score is 0-0. Add points before finalizing.</div>;
+              if (sa === sb) return <div className={warn}>Score is tied ({sa}-{sb}). Bauercrest has no ties.</div>;
               return null;
             })()}
             <div className="mt-4 flex gap-2">
-              <button onClick={() => setConfirmFinalizeOpen(false)} className={`${BTN} flex-1 rounded-xl border border-white/15 bg-white/5 px-4 py-3 font-bold`}>Cancel</button>
+              <button onClick={() => setConfirmFinalizeOpen(false)} className={`${BTN} btn btn-secondary flex-1`}>Cancel</button>
               <button disabled={(rules?.clock?.enabled && game.timer_running) || finalizing}
-                className={`${BTN} flex-1 rounded-xl border border-emerald-400/30 bg-emerald-500/15 px-4 py-3 font-black disabled:opacity-40`}
+                className={`${BTN} btn flex-1`}
                 onClick={finalizeGame}>
                 {finalizing ? "Finalizing…" : "Finalize"}
               </button>

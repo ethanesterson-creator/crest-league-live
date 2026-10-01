@@ -1,0 +1,153 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-09-30T00:00:00Z",
+  "title": "Design System: Crest League Live",
+  "extensions": {
+    "colorMeta": {
+      "paper": { "role": "neutral", "displayName": "Dusk Navy", "canonical": "#050d1c", "tonalRamp": ["#050d1c", "#0a1830", "#0f2447", "#1a3a6e", "#3a5a8f", "#8196b8", "#b4c4de", "#f4f8ff"] },
+      "sheet": { "role": "neutral", "displayName": "Plate Navy", "canonical": "#0a1830", "tonalRamp": ["#050d1c", "#0a1830", "#0d2044", "#0f2447", "#143160", "#1c4fa8", "#3b96f2", "#8cc3ff"] },
+      "ink": { "role": "primary", "displayName": "Broadcast White", "canonical": "#f4f8ff", "tonalRamp": ["#06142b", "#3a4a63", "#8196b8", "#b4c4de", "#d6e4ff", "#e6eeff", "#f4f8ff", "#ffffff"] },
+      "accent": { "role": "secondary", "displayName": "Crest Blue", "canonical": "#3b96f2", "tonalRamp": ["#0e2150", "#143a80", "#1c4fa8", "#2a73d0", "#3b96f2", "#63adf5", "#8cc3ff", "#d6e9ff"] },
+      "live": { "role": "secondary", "displayName": "Live Red", "canonical": "#ff3d52", "tonalRamp": ["#3a0a12", "#6e1421", "#a32034", "#d92d43", "#ff3d52", "#ff6f7f", "#ff9aa5", "#ffd2d7"] },
+      "good": { "role": "secondary", "displayName": "Confirmed Green", "canonical": "#2fd08a", "tonalRamp": ["#04130c", "#0b3a26", "#136a45", "#1f9e68", "#2fd08a", "#5adea6", "#7ce8b7", "#c4f5de"] },
+      "warn": { "role": "secondary", "displayName": "Attention Amber", "canonical": "#ffb454", "tonalRamp": ["#3a2200", "#6e4208", "#a2650f", "#d68a24", "#ffb454", "#ffc677", "#ffd08a", "#ffe9c7"] },
+      "banquet": { "role": "tertiary", "displayName": "Banquet Gold", "canonical": "#e0b252", "tonalRamp": ["#282008", "#4f3f12", "#7d651f", "#a98832", "#e0b252", "#e8c374", "#f0d497", "#f8ecd0"] },
+      "cw-blue": { "role": "tertiary", "displayName": "Color War Blue", "canonical": "#1d5bff", "tonalRamp": ["#06143f", "#0c2a85", "#1240c2", "#1d5bff", "#4d7fff", "#7fa2ff", "#b3c8ff", "#e0e9ff"] }
+    },
+    "typographyMeta": {
+      "display": { "displayName": "Display", "purpose": "Closed screen and hero moments, Big Shoulders uppercase." },
+      "page-title": { "displayName": "Page Title", "purpose": "One per page, inside the dusk banner." },
+      "score": { "displayName": "Score", "purpose": "Rolling scoreboard numerals; 124px on the tap plate." },
+      "section": { "displayName": "Section", "purpose": "Section head beside a slanted blue tab." },
+      "body": { "displayName": "Body", "purpose": "Running text and forms in Barlow." },
+      "label": { "displayName": "Label", "purpose": "Nav, tags, table heads and captions in Barlow Condensed." },
+      "button": { "displayName": "Button", "purpose": "Buttons and steppers in Barlow Condensed." }
+    },
+    "shadows": [
+      { "name": "plate-tab-glow", "value": "0 0 18px var(--accent)", "purpose": "The 72px blue tab on every plate." },
+      { "name": "lead-glow", "value": "0 0 40px rgba(59,150,242,0.25)", "purpose": "Leaderboard leader row; podium first place uses 0 0 60px at 0.3." },
+      { "name": "numeral-glow", "value": "filter: drop-shadow(0 0 22px rgba(59,150,242,0.45))", "purpose": "Rolling numerals; must be a filter on the .rn wrapper, never text-shadow." },
+      { "name": "live-clock-glow", "value": "filter: drop-shadow(0 0 14px rgba(255,61,82,0.7))", "purpose": "Running game clock only." },
+      { "name": "more-sheet", "value": "0 -16px 40px rgba(0,0,0,0.5)", "purpose": "Phone More drawer." },
+      { "name": "focus-ring", "value": "0 0 0 3px color-mix(in srgb, #3b96f2 35%, transparent)", "purpose": "Input focus." }
+    ],
+    "motion": [
+      { "name": "ease-out", "value": "cubic-bezier(0.16, 1, 0.3, 1)", "purpose": "Default easing for reveals, presses, numeral rolls." },
+      { "name": "ease-io", "value": "cubic-bezier(0.65, 0, 0.35, 1)", "purpose": "Wall board scene wipes." },
+      { "name": "rise", "value": "0.75s, blur 5px + translateY 16px, 70ms stagger to 9 steps", "purpose": "Staggered reveal." },
+      { "name": "odometer", "value": "0.9s translateY in em per digit column", "purpose": "Score numerals roll on load and change." },
+      { "name": "kenburns", "value": "38s ease-in-out alternate, scale 1.04 to 1.14", "purpose": "Banner photo push-in." },
+      { "name": "tab-slide", "value": "0.45s ease-out translateX", "purpose": "Bottom tab indicator." }
+    ],
+    "breakpoints": [
+      { "name": "tablet", "value": "768px" },
+      { "name": "nav", "value": "900px" },
+      { "name": "wide-nav", "value": "1200px" },
+      { "name": "short-landscape", "value": "max-height 520px" }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "Slanted white scorebug tag; one per view.",
+      "html": "<button class=\"ds-btn\">Final score</button>",
+      "css": ".ds-btn{position:relative;display:inline-flex;align-items:center;justify-content:center;min-height:50px;padding:0 26px;background:var(--ink,#f4f8ff);color:var(--on-ink,#06142b);font-family:var(--font-label),'Arial Narrow',sans-serif;font-weight:700;font-size:18px;letter-spacing:.06em;text-transform:uppercase;border:none;clip-path:polygon(10px 0,100% 0,calc(100% - 10px) 100%,0 100%);overflow:hidden;transition:transform .12s,background-color .15s}.ds-btn:hover{background:#fff}.ds-btn:active{transform:scale(.97)}.ds-btn:focus-visible{clip-path:none;outline:2px solid var(--accent-2,#8cc3ff);outline-offset:3px}"
+    },
+    {
+      "name": "Danger Button",
+      "kind": "button",
+      "refersTo": "button-danger",
+      "description": "Destructive action; tinted red, floods solid on hover.",
+      "html": "<button class=\"ds-btn-danger\">Delete game</button>",
+      "css": ".ds-btn-danger{min-height:50px;padding:0 26px;background:rgba(255,61,82,.12);color:var(--live-ink,#ff9aa5);box-shadow:inset 0 0 0 1px var(--live,#ff3d52);font-family:var(--font-label),'Arial Narrow',sans-serif;font-weight:700;font-size:18px;letter-spacing:.06em;text-transform:uppercase;border:none;clip-path:polygon(10px 0,100% 0,calc(100% - 10px) 100%,0 100%);transition:background-color .15s,color .15s}.ds-btn-danger:hover{background:var(--live,#ff3d52);color:#fff}.ds-btn-danger:focus-visible{clip-path:none;outline:2px solid var(--accent-2,#8cc3ff);outline-offset:3px}"
+    },
+    {
+      "name": "Stepper",
+      "kind": "button",
+      "refersTo": "stepper",
+      "description": "The +1/+2/+3 scoring tile.",
+      "html": "<button class=\"ds-step\">+2</button>",
+      "css": ".ds-step{min-width:52px;min-height:52px;padding:0 12px;background:var(--ink,#f4f8ff);color:var(--on-ink,#06142b);border:none;font-family:var(--font-label),'Arial Narrow',sans-serif;font-weight:800;font-size:22px;clip-path:polygon(10px 0,100% 0,calc(100% - 10px) 100%,0 100%);transition:transform .1s,background-color .1s}.ds-step:active{transform:scale(.92);background:var(--accent-2,#8cc3ff)}.ds-step:focus-visible{clip-path:none;outline:2px solid var(--accent-2,#8cc3ff)}"
+    },
+    {
+      "name": "Input",
+      "kind": "input",
+      "refersTo": "input",
+      "description": "Labelled field, always-visible caps label above.",
+      "html": "<label class=\"ds-field\"><span>Team name</span><input class=\"ds-input\" value=\"Bears\"></label>",
+      "css": ".ds-field{display:block}.ds-field span{display:block;margin-bottom:5px;font-family:var(--font-label),sans-serif;font-size:14px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-2,#b4c4de)}.ds-input{width:100%;min-height:46px;padding:10px 12px;background:rgba(255,255,255,.05);color:var(--ink,#f4f8ff);border:1px solid rgba(160,190,235,.3);border-radius:6px;outline:none;transition:border-color .15s,box-shadow .15s}.ds-input:hover{border-color:rgba(160,190,235,.55)}.ds-input:focus-visible{border-color:var(--accent-2,#8cc3ff);box-shadow:0 0 0 3px rgba(59,150,242,.35)}"
+    },
+    {
+      "name": "Plate",
+      "kind": "card",
+      "refersTo": "plate",
+      "description": "Chamfered broadcast card with light-catching edge and blue tab; section head carries a slanted tab.",
+      "html": "<section class=\"ds-plate\"><div class=\"ds-head\"><h2>Standings</h2></div><p>Plate content</p></section>",
+      "css": ".ds-plate{position:relative;isolation:isolate;padding:24px;color:var(--ink,#f4f8ff);clip-path:polygon(0 0,calc(100% - 18px) 0,100% 18px,100% 100%,18px 100%,0 calc(100% - 18px));background:linear-gradient(135deg,rgba(150,190,255,.55),rgba(150,190,255,.1) 38%,rgba(150,190,255,.22))}.ds-plate::before{content:'';position:absolute;inset:1px;z-index:-1;clip-path:polygon(0 0,calc(100% - 17px) 0,100% 17px,100% 100%,17px 100%,0 calc(100% - 17px));background:linear-gradient(180deg,#0d2044,#091730)}.ds-plate::after{content:'';position:absolute;top:0;left:0;width:72px;height:3px;background:var(--accent,#3b96f2);box-shadow:0 0 18px var(--accent,#3b96f2)}.ds-head{display:flex;align-items:center;gap:14px;margin-bottom:14px}.ds-head::before{content:'';width:10px;height:26px;background:var(--accent,#3b96f2);transform:skewX(-20deg);box-shadow:0 0 14px rgba(59,150,242,.6)}.ds-head h2{margin:0;font-family:var(--font-display),'Arial Narrow',sans-serif;font-size:30px;font-weight:800;line-height:1;text-transform:uppercase}"
+    },
+    {
+      "name": "Live Badge and Chip",
+      "kind": "chip",
+      "refersTo": "live-badge",
+      "description": "Red slanted LIVE tag with pulsing dot, beside a neutral slanted chip.",
+      "html": "<span class=\"ds-live\"><i></i>Live</span> <span class=\"ds-chip\">Session 1</span>",
+      "css": ".ds-live{display:inline-flex;align-items:center;gap:8px;min-height:30px;padding:0 14px;background:var(--live,#ff3d52);color:#fff;font-family:var(--font-label),sans-serif;font-weight:800;font-size:15px;letter-spacing:.12em;text-transform:uppercase;clip-path:polygon(8px 0,100% 0,calc(100% - 8px) 100%,0 100%)}.ds-live i{width:8px;height:8px;border-radius:99px;background:#fff;animation:ds-ring 1.6s ease-out infinite}@keyframes ds-ring{0%{box-shadow:0 0 0 0 rgba(255,255,255,.85)}80%,100%{box-shadow:0 0 0 9px rgba(255,255,255,0)}}.ds-chip{display:inline-flex;align-items:center;min-height:28px;padding:0 12px;background:rgba(150,190,255,.12);color:var(--ink,#f4f8ff);font-family:var(--font-label),sans-serif;font-weight:700;font-size:14px;letter-spacing:.08em;text-transform:uppercase;clip-path:polygon(6px 0,100% 0,calc(100% - 6px) 100%,0 100%)}"
+    },
+    {
+      "name": "Score Bug",
+      "kind": "custom",
+      "refersTo": "plate",
+      "description": "Broadcast strip: slanted status tag, two stacked teams with scores, loser dims.",
+      "html": "<div class=\"ds-bug\"><div class=\"ds-tag\">Final</div><div class=\"ds-teams\"><div><span>Bears</span><b>24</b></div><div class=\"ds-dim\"><span>Hawks</span><b>17</b></div></div></div>",
+      "css": ".ds-bug{display:grid;grid-template-columns:auto 1fr;min-height:68px;background:linear-gradient(180deg,#10264c,#0a1830);box-shadow:inset 0 0 0 1px rgba(160,190,235,.16);clip-path:polygon(0 0,calc(100% - 14px) 0,100% 14px,100% 100%,14px 100%,0 calc(100% - 14px));color:var(--ink,#f4f8ff)}.ds-tag{display:flex;align-items:center;padding:0 24px 0 16px;min-width:76px;background:var(--ink,#f4f8ff);color:var(--on-ink,#06142b);font-family:var(--font-label),sans-serif;font-weight:800;font-size:16px;letter-spacing:.12em;text-transform:uppercase;clip-path:polygon(0 0,100% 0,calc(100% - 12px) 100%,0 100%)}.ds-teams{display:grid;align-content:center;padding:10px 14px}.ds-teams div{display:flex;justify-content:space-between;gap:10px}.ds-teams span{font-family:var(--font-label),sans-serif;font-weight:700;font-size:21px;letter-spacing:.04em;text-transform:uppercase}.ds-teams b{font-family:var(--font-display),sans-serif;font-weight:800;font-size:34px;line-height:1}.ds-dim span,.ds-dim b{color:var(--ink-3,#8196b8)}"
+    },
+    {
+      "name": "Navigation Link",
+      "kind": "nav",
+      "refersTo": "label",
+      "description": "Top-bar link with a scaling blue underline.",
+      "html": "<nav style=\"display:flex\"><a class=\"ds-nav\" href=\"#\" aria-current=\"page\">Scores</a><a class=\"ds-nav\" href=\"#\">Standings</a></nav>",
+      "css": ".ds-nav{position:relative;display:inline-flex;align-items:center;min-height:64px;padding:0 13px;font-family:var(--font-label),sans-serif;font-weight:600;font-size:17px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-2,#b4c4de);text-decoration:none;transition:color .15s}.ds-nav::after{content:'';position:absolute;left:13px;right:13px;bottom:0;height:3px;background:var(--accent,#3b96f2);box-shadow:0 0 14px var(--accent,#3b96f2);transform:scaleX(0);transition:transform .35s cubic-bezier(.16,1,.3,1)}.ds-nav:hover{color:var(--ink,#f4f8ff)}.ds-nav:hover::after{transform:scaleX(.4)}.ds-nav[aria-current=page]{color:#fff}.ds-nav[aria-current=page]::after{transform:scaleX(1)}"
+    }
+  ],
+  "narrative": {
+    "northStar": "CBSN at Dusk",
+    "overview": "The system is the Camp Bauercrest Sports Network graphics package: a dark navy broadcast look made from the camp's own assets, the league shield and the dusk-lake photo. A counselor sees a scoreboard that feels like television; campers see standings like a league table that moves; the wall board reads as a broadcast. It replaced an earlier white \"scorebook\" look that read as bland; the atmosphere is the point, and it stays sleek rather than plain.\n\nNavy and white carry identity. Panels are chamfered plates with a hairline edge that catches light and a short blue tab at the top-left; buttons and tags are parallelograms like a scorebug. Numerals are huge and roll like a mechanical counter. Every page opens on a full-bleed dusk-photo banner with the title set large. Color has jobs: white is the primary fill, crest blue is the accent, red means live, green means confirmed, gold belongs to the banquet.",
+    "keyCharacteristics": [
+      "One dark mode only.",
+      "Chamfered plates, slanted controls, slanted section-head tabs: the silhouette is the brand.",
+      "Big Shoulders numerals and titles, Barlow body, Barlow Condensed labels and buttons.",
+      "Odometer numerals that roll on load and on every change.",
+      "Dusk photo as fixed, heavily scrimmed page atmosphere and as banner with a slow push-in.",
+      "44-58px tap targets wherever a thumb scores."
+    ],
+    "rules": [
+      { "name": "The One Job Rule", "body": "Red is live (and destructive), green is confirmed, amber is attention, gold is banquet, blue is emphasis. No color takes a second meaning.", "section": "colors" },
+      { "name": "The White Fill Rule", "body": "The primary fill is white on navy. Blue is never the primary button; Tailwind blue-family utilities are remapped to the accent and white maps to ink in globals.css.", "section": "colors" },
+      { "name": "The Gold Fence Rule", "body": "Gold appears only on awards and banquet surfaces (.cl-banquet, .board-banquet, award chips). The legacy --bc-gold alias resolves to white ink.", "section": "colors" },
+      { "name": "The Tabular Rule", "body": "Body sets tabular-nums; numerals never jitter.", "section": "typography" },
+      { "name": "The Display Fence Rule", "body": "Big Shoulders is for numerals, titles and section heads; never running text.", "section": "typography" },
+      { "name": "The Filter Glow Rule", "body": "Glow on rolling numerals is filter: drop-shadow on the .rn wrapper, never text-shadow, because each digit column clips overflow.", "section": "elevation" },
+      { "name": "The Scrim Rule", "body": "The photo sits only behind atmosphere and banners, under 78-94% navy scrims, so data never lands on busy pixels.", "section": "elevation" },
+      { "name": "The Compositor Rule", "body": "Animate only transform, opacity and filter. Never put a transform or opacity animation on <main>: it traps the /live fixed overlay's z-index.", "section": "components" }
+    ],
+    "dos": [
+      "Do build pages from PageHeader, Sheet, Field, EmptyState, ErrorNote, SkeletonRows, Meter, ScoreBug in src/components/ui.jsx, and show scores through FlashNumber.",
+      "Do keep white as the primary fill and crest blue as emphasis only.",
+      "Do keep red for live and destructive, green for confirmed, gold inside banquet surfaces only.",
+      "Do pair LIVE red with a label and dot; scoring tap targets stay 44px minimum (52-58px for steppers).",
+      "Do apply glow to rolling numerals as a filter: drop-shadow on the wrapper.",
+      "Do design empty, loading (skeleton rows), error and success states, and keep a reduced-motion path for any new motion."
+    ],
+    "donts": [
+      "Don't use text-shadow glow on rolling numerals.",
+      "Don't animate transform or opacity on <main> or any ancestor of the /live fixed overlay.",
+      "Don't tick state at the top of a large component for live updates; isolate it as ClockButton does.",
+      "Don't use gold outside awards and banquet surfaces, or blue as a primary fill.",
+      "Don't put the photo behind data without a heavy navy scrim, or return to a white-ledger or generic blue-gradient glass-card look.",
+      "Don't use Big Shoulders for running text."
+    ]
+  }
+}

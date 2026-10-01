@@ -3,15 +3,21 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import { useAppMode } from "@/lib/useAppMode";
+import { useRealtimeTable } from "@/lib/useRealtimeTable";
+import FlashNumber from "@/components/FlashNumber";
 import ColorWarBoard from "./ColorWarBoard";
 
-// BANQUET MODE — set true for the last-night banquet board (gold + navy,
-// champions first, no CBSN blue). Set back to false to return to normal.
-const BANQUET = true;
-
-const SCENES_BANQUET = ["champions", "awards", "spotlight", "highlights"];
+import { Meter } from "@/components/ui";
+// Display-board scene set. Which list is active is now controlled from
+// Admin → Display Board (app_settings.display_mode via useAppMode's
+// isBanquet), not a hardcoded source flag — this used to be
+// `const BANQUET = true;`, permanently pinning the board to banquet-only
+// scenes (no live scores, no camp standings) with no way to flip it back
+// without a code change + redeploy.
+const SCENES_BANQUET = ["champions", "recap", "awards", "spotlight", "highlights"];
 const SCENES_NORMAL = [
   "camp",
+  "live",
   "spotlight",
   "averages",
   "awards",
@@ -21,11 +27,12 @@ const SCENES_NORMAL = [
   "leaders_sophomores",
   "highlights",
 ];
-const SCENES = BANQUET ? SCENES_BANQUET : SCENES_NORMAL;
 
 const SCENE_LABELS = {
   champions: "League Champions",
+  recap: "Season Recap",
   camp: "Camp Standings",
+  live: "Live Now",
   spotlight: "Camper Spotlight",
   averages: "Per Game Leaders",
   awards: "Crest Awards",
@@ -62,6 +69,24 @@ function fmtClock(d) {
   });
 }
 
+// One atomic status message for the first live game whose score actually
+// changed since the last poll/realtime tick — never a bare number, and
+// never one message per changed game (a wall of simultaneous live-region
+// announcements is worse than one, per accessibility guidance on status
+// messages).
+function announceScoreChange(prevGames, nextGames) {
+  const prevMap = new Map((prevGames || []).map((g) => [g.id, g]));
+  for (const g of nextGames || []) {
+    const prev = prevMap.get(g.id);
+    if (prev && (Number(prev.score_a) !== Number(g.score_a) || Number(prev.score_b) !== Number(g.score_b))) {
+      const left = g.team_a1 || "Team A";
+      const right = g.team_b1 || "Team B";
+      return `Score update: ${left} ${Number(g.score_a || 0)}, ${right} ${Number(g.score_b || 0)}`;
+    }
+  }
+  return null;
+}
+
 // Isolated so its 1x/second tick never re-renders the rest of the board —
 // same fix already proven on the live scoring page (see comment there about
 // eaten taps from a page re-rendering every 250ms).
@@ -86,8 +111,8 @@ function HighlightsScene({ highlights }) {
   }, []);
 
   if (!highlights.length) return (
-    <div className="flex h-full items-center justify-center text-white/40 text-2xl font-black">
-      No highlights yet.
+    <div className="flex h-full items-center justify-center">
+      <div className="bc-display text-5xl text-[var(--ink-3)]">No highlights yet.</div>
     </div>
   );
 
@@ -104,22 +129,20 @@ function HighlightsScene({ highlights }) {
 
   return (
     <div className="grid grid-cols-1 gap-8 h-full">
-      <div className="overflow-hidden rounded-[40px] border border-white/10 bg-black">
-        <div className="border-b px-8 py-4 flex items-center justify-between" style={{ borderColor: "rgba(245,196,81,0.3)", background: "linear-gradient(90deg, #0b1f3b, #08172c)" }}>
+      <div className="board-card overflow-hidden">
+        <div className="flex items-center justify-between border-b border-[var(--rule)] px-8 py-4">
           <div>
-            <div className="text-sm font-black uppercase tracking-[0.3em] text-white/70">
-              FEATURED HIGHLIGHT
-            </div>
-            <div className="mt-1 text-4xl font-black text-white">
-              {h.title || "Camp Highlight"}
+            <div className="text-lg font-bold uppercase tracking-[0.1em] text-[var(--ink-2)]">Featured highlight</div>
+            <div className="bc-display mt-1 text-5xl leading-none">
+              {h.title || "Camp highlight"}
             </div>
           </div>
-          <div className="text-sm font-black text-white/50">
+          <div className="bc-num text-4xl text-[var(--ink-2)]">
             {safeIndex + 1} / {highlights.length}
           </div>
         </div>
 
-        <div className="h-[calc(100%-96px)] bg-black">
+        <div className="h-[calc(100%-104px)]" style={{ background: "#050e1f" }}>
           {h.file_type === "video" ? (
             <video
               key={h.id}
@@ -133,7 +156,8 @@ function HighlightsScene({ highlights }) {
             <img
               key={h.id}
               src={url}
-              alt=""
+              alt={h.title || "Camp highlight photo"}
+              loading="lazy"
               className="h-full w-full object-contain"
             />
           )}
@@ -144,7 +168,7 @@ function HighlightsScene({ highlights }) {
 }
 
 export default function DisplayPage() {
-  const { isCW, session, blueName, whiteName, blueLogo, whiteLogo, loading: modeLoading } = useAppMode();
+  const { isCW, session, blueName, whiteName, blueLogo, whiteLogo, isBanquet, loading: modeLoading } = useAppMode();
   const [scene, setScene] = useState("camp");
 
   const [campStandings, setCampStandings] = useState([]);
@@ -154,6 +178,18 @@ export default function DisplayPage() {
   const [leadersByLeague, setLeadersByLeague] = useState({ seniors: [], juniors: [], sophomores: [] });
   const [highlights, setHighlights] = useState([]);
   const [spotlight, setSpotlight] = useState([]);
+  const [recap, setRecap] = useState({ gamesPlayed: 0, totalPoints: 0, statEvents: 0, biggest: null });
+
+  // Which scene set is currently active — recomputed whenever admin flips
+  // Season/Banquet mode, not fixed at module load.
+  const SCENES = isBanquet ? SCENES_BANQUET : SCENES_NORMAL;
+
+  // Screen-reader announcement of the most recent live score change. Visual
+  // score updates already propagate instantly via Realtime; without this, a
+  // screen-reader user watching this public board gets no signal at all
+  // that anything changed (WCAG 4.1.3 Status Messages).
+  const [liveAnnouncement, setLiveAnnouncement] = useState("");
+  const prevLiveGamesRef = useRef([]);
 
   const [rotateSeconds, setRotateSeconds] = useState(18);
   const [autoRotate, setAutoRotate] = useState(true);
@@ -366,7 +402,7 @@ export default function DisplayPage() {
       // fixed on the home page in 10ac85a).
       supabase
         .from("live_games")
-        .select("id, sport, league_key, team_a, team_a1, team_a2, team_b, team_b1, team_b2, score_a, score_b")
+        .select("id, sport, league_key, team_a1, team_a2, team_b1, team_b2, score_a, score_b")
         .eq("status", "active")
         .eq("season", "league")
         .eq("session", session)
@@ -374,7 +410,7 @@ export default function DisplayPage() {
         .order("updated_at", { ascending: false }),
       supabase
         .from("live_games")
-        .select("id, sport, league_key, team_a, team_a1, team_a2, team_b, team_b1, team_b2, score_a, score_b")
+        .select("id, sport, league_key, team_a1, team_a2, team_b1, team_b2, score_a, score_b")
         .eq("status", "final")
         .eq("season", "league")
         .eq("session", session)
@@ -389,9 +425,12 @@ export default function DisplayPage() {
         .eq("season", "league")
         .eq("session", session)
         .limit(20000),
+      // Also backs the Season Recap scene (games played, total points,
+      // biggest margin of victory) — reuses this query instead of firing a
+      // separate one for the same "final games this session" rows.
       supabase
         .from("live_games")
-        .select("id, sport")
+        .select("id, sport, score_a, score_b, team_a1, team_b1")
         .eq("status", "final")
         .eq("season", "league")
         .eq("session", session)
@@ -444,7 +483,11 @@ export default function DisplayPage() {
     }
     setChampions(champByLeague);
 
-    setLiveGames(liveRes.data || []);
+    const nextLiveGames = liveRes.data || [];
+    const announcement = announceScoreChange(prevLiveGamesRef.current, nextLiveGames);
+    if (announcement) setLiveAnnouncement(announcement);
+    prevLiveGamesRef.current = nextLiveGames;
+    setLiveGames(nextLiveGames);
     setFinalGames(finalsRes.data || []);
 
     setLeadersByLeague({
@@ -467,19 +510,42 @@ export default function DisplayPage() {
     const gameIds = Object.keys(sportByGame);
     const avgIds = Array.from(new Set(avgTotals.map((t) => String(t.player_id))));
 
-    // ---- Round 2: these two depend on round 1's results (the game ids /
+    // ---- Round 2: these three depend on round 1's results (the game ids /
     // player ids above), so they can't start until round 1 resolves — but
     // they don't depend on EACH OTHER, so they still run together. ----
-    const [rosterRes, departedRes] = await Promise.all([
+    const [rosterRes, departedRes, statEventsRes] = await Promise.all([
       gameIds.length
         ? supabase.from("game_roster").select("game_id, player_id").eq("is_playing", true).in("game_id", gameIds).limit(50000)
         : Promise.resolve({ data: [] }),
       avgIds.length
         ? supabase.from("players").select("id").in("id", avgIds).eq("departed", true)
         : Promise.resolve({ data: [] }),
+      // Season Recap's "moments logged" tile — every individual stat tap
+      // recorded across this session's finalized games.
+      gameIds.length
+        ? supabase.from("live_events").select("id", { count: "exact", head: true }).eq("event_type", "stat").in("game_id", gameIds)
+        : Promise.resolve({ count: 0 }),
     ]);
 
-    if (rosterRes.error || departedRes.error) throw rosterRes.error || departedRes.error;
+    if (rosterRes.error || departedRes.error || statEventsRes.error) throw rosterRes.error || departedRes.error || statEventsRes.error;
+
+    // ---- SEASON RECAP (banquet scene) ----
+    let totalPoints = 0;
+    let biggest = null;
+    for (const g of avgGames) {
+      const a = Number(g.score_a || 0), b = Number(g.score_b || 0);
+      totalPoints += a + b;
+      const margin = Math.abs(a - b);
+      if (a + b > 0 && (!biggest || margin > biggest.margin)) {
+        biggest = { margin, sport: g.sport, team_a1: g.team_a1, team_b1: g.team_b1, score_a: a, score_b: b };
+      }
+    }
+    setRecap({
+      gamesPlayed: avgGames.length,
+      totalPoints,
+      statEvents: statEventsRes.count || 0,
+      biggest,
+    });
 
     // rosters -> games played per player per sport
     const played = {};
@@ -551,12 +617,19 @@ export default function DisplayPage() {
     loadAll();
   }, []);
 
+  // Instant updates: a score/stat tap anywhere pushes a Postgres change
+  // event, so the board refreshes in well under a second instead of
+  // waiting for the next poll.
+  useRealtimeTable(["live_games", "live_events"], loadAll, { enabled: autoRefresh });
+
   useEffect(() => {
     if (!autoRefresh) return;
 
+    // Safety-net poll for a silently-dropped realtime socket -- slow since
+    // the realtime subscription above is doing the real work now.
     const t = setInterval(() => {
       loadAll();
-    }, 15000);
+    }, 60000);
 
     return () => clearInterval(t);
   }, [autoRefresh, session]);
@@ -580,12 +653,23 @@ export default function DisplayPage() {
     }, rotateSeconds * 1000);
 
     return () => clearInterval(t);
-  }, [autoRotate, rotateSeconds]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoRotate, rotateSeconds, isBanquet]);
+
+  // If admin flips Season/Banquet mode while the board is open, jump
+  // straight to that scene set's first scene instead of sitting on
+  // whatever scene name happened to be active (which might not exist in
+  // the other set at all, and would otherwise render blank until the next
+  // rotation tick).
+  useEffect(() => {
+    setScene(SCENES[0]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isBanquet]);
 
  const tickerItems = useMemo(() => {
   const live = liveGames.slice(0, 4).map((g) => {
-    const left = g.team_a || g.team_a1 || "Team A";
-    const right = g.team_b || g.team_b1 || "Team B";
+    const left = g.team_a1 || "Team A";
+    const right = g.team_b1 || "Team B";
     const leagueName = fmtLeague(g.league_id || g.league_key);
     return `LIVE: ${leagueName} ${fmtSport(g.sport)} — ${left} ${Number(g.score_a || 0)}-${Number(g.score_b || 0)} ${right}`;
   });
@@ -593,8 +677,8 @@ export default function DisplayPage() {
   const finals = finalGames.slice(0, 6).map((g) => {
     const a = Number(g.score_a || 0);
     const b = Number(g.score_b || 0);
-    const sideA = [g.team_a, g.team_a2].filter(Boolean).join(" + ");
-    const sideB = [g.team_b, g.team_b2].filter(Boolean).join(" + ");
+    const sideA = [g.team_a1, g.team_a2].filter(Boolean).join(" + ");
+    const sideB = [g.team_b1, g.team_b2].filter(Boolean).join(" + ");
     const winner = a > b ? sideA : sideB;
     const loser = a > b ? sideB : sideA;
     const bowl = g.is_bowl_game ? `${String(g.bowl_name || "BOWL").toUpperCase()}: ` : "";
@@ -626,7 +710,28 @@ export default function DisplayPage() {
     }
   }
 
-  /* ===== DATA HELPERS ===== */
+  /* ===== SCENES ===== */
+  // Night palette. Gold (--banquet) is used only by the banquet scenes:
+  // champions, awards, recap.
+
+  function TrophyIcon({ size = 96 }) {
+    return (
+      <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.25" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+        <path d="M7 4h10v5a5 5 0 0 1-10 0V4z" />
+        <path d="M7 6H4v1.5A3.5 3.5 0 0 0 7.5 11M17 6h3v1.5A3.5 3.5 0 0 1 16.5 11" />
+        <path d="M12 14v4M8.5 20h7M9.5 18h5" />
+      </svg>
+    );
+  }
+
+  function SceneEmpty({ children }) {
+    return (
+      <div className="flex h-full items-center justify-center">
+        <div className="bc-display text-center text-5xl text-[var(--ink-3)]" style={{ maxWidth: 900 }}>{children}</div>
+      </div>
+    );
+  }
+
   function renderChampions() {
     const LEAGUES = [
       { key: "seniors", label: "Senior League" },
@@ -634,41 +739,27 @@ export default function DisplayPage() {
       { key: "sophomores", label: "Sophomore League" },
     ];
     return (
-      <div className="flex h-full flex-col overflow-hidden rounded-[32px] p-10"
-           style={{
-             border: "1px solid rgba(245,196,81,0.35)",
-             background: "linear-gradient(160deg, #0b1f3b 0%, #08172c 100%)",
-             boxShadow: "inset 0 0 120px rgba(245,196,81,0.08)",
-           }}>
-        <div className="mb-8 text-center">
-          <div className="text-sm font-black uppercase tracking-[0.5em]" style={{ color: "#f5c451" }}>
-            2026 Season
-          </div>
-          <div className="mt-2 text-7xl font-black text-white" style={{ fontFamily: "Georgia, serif" }}>
-            League Champions
-          </div>
+      <div className="board-card board-banquet flex h-full flex-col overflow-hidden p-10">
+        <div className="mb-8 flex items-end justify-between border-b-2 pb-4" style={{ borderColor: "var(--banquet)" }}>
+          <div className="bc-display text-7xl leading-none xl:text-8xl">League champions</div>
+          <div className="bc-display text-4xl leading-none" style={{ color: "var(--banquet)" }}>2026 season</div>
         </div>
 
         <div className="grid flex-1 grid-cols-3 gap-8">
           {LEAGUES.map(({ key, label }) => {
             const champ = champions[key];
             return (
-              <div key={key} className="flex flex-col items-center justify-center rounded-[28px] p-8 text-center"
-                   style={{
-                     border: "1px solid rgba(245,196,81,0.30)",
-                     background: "radial-gradient(120% 90% at 50% 0%, rgba(245,196,81,0.12), transparent 65%)",
-                   }}>
-                <div className="text-8xl" style={{ filter: "drop-shadow(0 6px 20px rgba(245,196,81,0.5))" }}>🏆</div>
-                <div className="mt-4 text-xl font-black uppercase tracking-[0.3em]" style={{ color: "#f5c451" }}>
+              <div key={key} className="flex flex-col items-center justify-center rounded-md p-8 text-center" style={{ border: "2px solid var(--banquet)" }}>
+                <div style={{ color: "var(--banquet)" }}><TrophyIcon size={112} /></div>
+                <div className="mt-4 text-2xl font-bold uppercase tracking-[0.12em]" style={{ color: "var(--banquet)" }}>
                   {label}
                 </div>
-                <div className="mt-3 text-5xl font-black text-white" style={{ fontFamily: "Georgia, serif" }}>
+                <div className="bc-display mt-3 text-balance text-7xl leading-[0.95]">
                   {champ ? champ.team_name : "—"}
                 </div>
                 {champ ? (
-                  <div className="mt-4 rounded-full px-6 py-2 text-lg font-black"
-                       style={{ background: "linear-gradient(180deg,#ffe9a8,#f5c451)", color: "#3a2a05" }}>
-                    {champ.wins}-{champ.losses} · {champ.league_points} pts
+                  <div className="bc-num mt-5 text-4xl" style={{ color: "var(--banquet)" }}>
+                    {champ.wins}–{champ.losses} · {champ.league_points} pts
                   </div>
                 ) : null}
               </div>
@@ -688,11 +779,7 @@ export default function DisplayPage() {
       .filter((k) => byAward[k] && byAward[k].length);
 
     if (!order.length) {
-      return (
-        <div className="flex h-full items-center justify-center text-2xl font-black text-white/40">
-          Awards appear once games are played.
-        </div>
-      );
+      return <SceneEmpty>Awards appear once games are played.</SceneEmpty>;
     }
 
     // spotlight one award per rotation tick
@@ -703,38 +790,33 @@ export default function DisplayPage() {
     const label = first?.o_award_label || key;
 
     return (
-      <div className="flex h-full flex-col items-center justify-center overflow-hidden rounded-[32px] border border-[#f5c451]/30 bg-gradient-to-br from-slate-950 to-slate-900 p-10"
-           style={{ boxShadow: "0 0 80px rgba(245,196,81,0.10) inset" }}>
-        <div className="text-sm font-black uppercase tracking-[0.4em] text-[#f5c451]">Crest Awards</div>
-        <div className="mt-2 text-6xl font-black text-white">{label}</div>
+      <div className="board-card board-banquet flex h-full flex-col justify-center overflow-hidden p-10">
+        <div className="text-2xl font-bold uppercase tracking-[0.12em]" style={{ color: "var(--banquet)" }}>Crest Awards</div>
+        <div className="bc-display mt-1 text-8xl leading-none">{label}</div>
 
-        {/* Gold */}
         {first ? (
-          <div className="mt-8 flex flex-col items-center">
-            <div className="text-8xl" style={{ filter: "drop-shadow(0 6px 20px rgba(245,196,81,0.55))" }}>🥇</div>
-            <div className="mt-3 text-7xl font-black text-white">{first.o_player_name}</div>
-            <div className="mt-2 text-xl font-black uppercase tracking-widest text-white/50">
-              {first.o_team_name}
+          <div className="mt-8 grid grid-cols-[auto_1fr_auto] items-center gap-8 rounded-md p-8" style={{ border: "2px solid var(--banquet)" }}>
+            <div className="bc-num text-[11rem] leading-[0.8]" style={{ color: "var(--banquet)" }} aria-label="First place">1</div>
+            <div className="min-w-0">
+              <div className="bc-display text-balance text-8xl leading-[0.95]">{first.o_player_name}</div>
+              <div className="mt-2 text-2xl font-bold uppercase tracking-[0.1em] text-[var(--ink-2)]">
+                {first.o_team_name}
+              </div>
             </div>
-            <div className="mt-4 rounded-full px-8 py-3 text-2xl font-black"
-                 style={{ background: "linear-gradient(180deg,#ffe9a8,#f5c451)", color: "#3a2a05" }}>
-              {first.o_display}
-            </div>
+            <div className="bc-num text-7xl" style={{ color: "var(--banquet)" }}>{first.o_display}</div>
           </div>
         ) : null}
 
-        {/* Silver + bronze */}
         {rest.length ? (
-          <div className="mt-8 grid grid-cols-2 gap-6">
+          <div className="mt-6 grid grid-cols-2 gap-6">
             {rest.map((p) => (
-              <div key={p.o_player_id} className="flex items-center gap-4 rounded-2xl border border-white/10 bg-white/[0.04] px-6 py-4">
-                <div className="text-4xl">{p.o_rank === 2 ? "🥈" : "🥉"}</div>
-                <div>
-                  <div className="text-3xl font-black text-white">{p.o_player_name}</div>
-                  <div className="text-sm font-bold uppercase tracking-widest text-white/40">
-                    {p.o_team_name} · {p.o_display}
-                  </div>
+              <div key={p.o_player_id} className="flex items-center gap-5 border-t-2 border-[var(--rule)] px-2 py-4">
+                <div className="bc-num text-6xl text-[var(--ink-2)]" aria-label={p.o_rank === 2 ? "Second place" : "Third place"}>{p.o_rank}</div>
+                <div className="min-w-0 flex-1">
+                  <div className="truncate text-4xl font-bold">{p.o_player_name}</div>
+                  <div className="text-lg font-bold uppercase tracking-[0.08em] text-[var(--ink-2)]">{p.o_team_name}</div>
                 </div>
+                <div className="bc-num text-4xl">{p.o_display}</div>
               </div>
             ))}
           </div>
@@ -749,11 +831,7 @@ export default function DisplayPage() {
 
     const total = LEAGUES.reduce((n, lg) => n + (avgLeaders[lg]?.length || 0), 0);
     if (!total) {
-      return (
-        <div className="flex h-full items-center justify-center text-2xl font-black text-white/40">
-          Not enough games played yet.
-        </div>
-      );
+      return <SceneEmpty>Not enough games played yet.</SceneEmpty>;
     }
 
     // Rotate through each league's categories so everything gets airtime
@@ -771,53 +849,37 @@ export default function DisplayPage() {
     }
 
     return (
-      <div className="flex h-full flex-col overflow-hidden rounded-[32px] border border-white/10 bg-gradient-to-br from-slate-950 to-slate-900 p-8 shadow-2xl">
-        <div className="mb-6 flex shrink-0 items-center justify-between">
-          <div>
-            <div className="text-sm font-black uppercase tracking-[0.3em] text-blue-500">By League</div>
-            <div className="text-5xl font-black text-white">Per Game Leaders</div>
-          </div>
-          <div className="rounded-2xl border border-blue-500/40 bg-blue-500/15 px-6 py-4">
-            <div className="text-xs font-bold uppercase tracking-widest text-blue-300">BEST AVERAGE</div>
-          </div>
+      <div className="board-card flex h-full flex-col overflow-hidden p-8">
+        <div className="mb-6 flex shrink-0 items-end justify-between border-b-2 border-[var(--rule-strong)] pb-3">
+          <div className="bc-display text-6xl leading-none">Per-game leaders</div>
+          <div className="text-xl font-bold uppercase tracking-[0.1em] text-[var(--ink-2)]">Best average by league</div>
         </div>
 
-        <div className="grid min-h-0 flex-1 grid-cols-3 gap-6 overflow-hidden">
+        <div className="grid min-h-0 flex-1 grid-cols-3 gap-8 overflow-hidden">
           {LEAGUES.map((lg) => (
             <div key={lg} className="flex min-h-0 flex-col gap-4">
-              <div className="shrink-0 text-center text-lg font-black uppercase tracking-[0.3em] text-white/40">
-                {fmtLeague(lg)}
-              </div>
+              <div className="bc-display shrink-0 text-4xl leading-none">{fmtLeague(lg)}</div>
 
               {pageFor(lg).map((r) => (
-                <div
-                  key={r.key}
-                  className="flex-1 rounded-[24px] border border-white/10 bg-white/[0.04] px-6 py-4"
-                >
-                  <div className="text-[11px] font-black uppercase tracking-[0.25em] text-blue-400">
+                <div key={r.key} className="flex-1 border-t-2 border-[var(--rule)] pt-3">
+                  <div className="text-lg font-bold uppercase tracking-[0.08em] text-[var(--ink-2)]">
                     {fmtSport(r.sport)} &middot; {String(r.stat_key).toUpperCase()}
                   </div>
 
-                  <div className="mt-1 flex items-end gap-2">
-                    <div className="text-5xl font-black tabular-nums leading-none text-white">
-                      {r.avg.toFixed(1)}
-                    </div>
-                    <div className="pb-1 text-[11px] font-black uppercase tracking-widest text-white/40">
-                      per game
-                    </div>
+                  <div className="mt-1 flex items-end gap-3">
+                    <div className="bc-num text-8xl leading-[0.85]">{r.avg.toFixed(1)}</div>
+                    <div className="pb-1 text-base font-bold uppercase tracking-[0.08em] text-[var(--ink-2)]">per game</div>
                   </div>
 
-                  <div className="mt-2 truncate text-2xl font-black text-white">
-                    {r.player_name}
-                  </div>
-                  <div className="truncate text-sm font-bold text-white/50">
+                  <div className="mt-2 truncate text-3xl font-bold">{r.player_name}</div>
+                  <div className="truncate text-lg text-[var(--ink-2)]">
                     {r.team_name} &middot; {r.total} in {r.games} game{r.games === 1 ? "" : "s"}
                   </div>
                 </div>
               ))}
 
               {!(avgLeaders[lg] || []).length ? (
-                <div className="flex flex-1 items-center justify-center rounded-[24px] border border-white/5 text-sm font-black uppercase tracking-widest text-white/20">
+                <div className="flex flex-1 items-center justify-center rounded-md border-2 border-dashed border-[var(--rule)] text-xl font-bold uppercase tracking-[0.1em] text-[var(--ink-3)]">
                   No qualifiers yet
                 </div>
               ) : null}
@@ -830,8 +892,6 @@ export default function DisplayPage() {
 
   function renderSpotlight() {
     if (typeof window === "undefined") return null;
-    const medals = ["#FFD700", "#C0C0C0", "#CD7F32"];
-    const ranks = ["#1", "#2", "#3"];
 
     function statLine(sport, stats) {
       const s = String(sport || "").toLowerCase();
@@ -847,66 +907,33 @@ export default function DisplayPage() {
     }
 
     if (!spotlight.length) {
-      return (
-        <div className="flex h-full items-center justify-center text-2xl font-black text-white/40">
-          No performances tracked yet — check back after tonight's games.
-        </div>
-      );
+      return <SceneEmpty>No performances tracked yet. Check back after tonight&apos;s games.</SceneEmpty>;
     }
 
     return (
       <div className="flex h-full flex-col">
-        <div className="mb-8 flex items-center justify-between">
-          <div>
-            <div className="text-sm font-black uppercase tracking-[0.3em] text-blue-400">Recent</div>
-            <div className="text-5xl font-black text-white">Camper Spotlight</div>
-          </div>
-          <div className="rounded-2xl border border-blue-500/30 bg-blue-500/10 px-6 py-3 text-sm font-black uppercase tracking-widest text-blue-300">
-            Top Performances
-          </div>
+        <div className="mb-6 flex items-end justify-between border-b-2 border-[var(--rule-strong)] pb-3">
+          <div className="bc-display text-7xl leading-none">Camper spotlight</div>
+          <div className="text-xl font-bold uppercase tracking-[0.1em] text-[var(--ink-2)]">Top performances</div>
         </div>
 
         <div className={`grid flex-1 gap-6 ${spotlight.length === 3 ? "grid-cols-3" : spotlight.length === 2 ? "grid-cols-2" : "grid-cols-1"}`}>
           {spotlight.map((p, i) => (
-            <div
-              key={i}
-              className="relative flex flex-col justify-between overflow-hidden rounded-[40px] border border-white/10 bg-gradient-to-br from-white/[0.06] to-white/[0.02] p-10"
-              style={{ boxShadow: `0 0 60px ${medals[i]}18` }}
-            >
-              {/* Rank badge */}
-              <div
-                className="absolute right-8 top-8 text-6xl font-black tabular-nums opacity-20"
-                style={{ color: medals[i] }}
-              >
-                {ranks[i]}
+            <div key={i} className="board-card flex flex-col justify-between overflow-hidden p-10">
+              <div className="flex items-start justify-between">
+                <div className="text-lg font-bold uppercase tracking-[0.1em] text-[var(--ink-2)]">
+                  {String(p.sport)}
+                </div>
+                <div className="bc-num text-8xl leading-[0.8]" style={{ color: i === 0 ? "var(--ink)" : "var(--ink-3)" }}>{i + 1}</div>
               </div>
 
-              {/* Sport tag */}
-              <div className="inline-flex w-fit items-center rounded-full border border-white/10 bg-white/5 px-4 py-1.5">
-                <span className="text-xs font-black uppercase tracking-[0.2em] text-white/50">
-                  {String(p.sport).toUpperCase()}
-                </span>
-              </div>
-
-              {/* Name + team */}
               <div className="mt-6 flex-1">
-                <div
-                  className="text-5xl font-black leading-tight text-white xl:text-6xl"
-                  style={{ textShadow: `0 0 40px ${medals[i]}60` }}
-                >
-                  {p.player_name}
-                </div>
-                <div className="mt-3 text-xl font-black uppercase tracking-widest" style={{ color: medals[i] }}>
-                  {p.team_name}
-                </div>
+                <div className="bc-display text-balance text-8xl leading-[0.92]">{p.player_name}</div>
+                <div className="mt-3 text-2xl font-bold uppercase tracking-[0.1em] text-[var(--ink-2)]">{p.team_name}</div>
               </div>
 
-              {/* Stat line */}
-              <div className="mt-8 rounded-2xl border border-white/10 bg-black/20 px-6 py-5">
-                <div className="text-xs font-black uppercase tracking-widest text-white/30">Stat Line</div>
-                <div className="mt-2 text-3xl font-black tabular-nums text-white xl:text-4xl">
-                  {statLine(p.sport, p.stats)}
-                </div>
+              <div className="mt-8 border-t-2 border-[var(--rule)] pt-4">
+                <div className="bc-num text-6xl">{statLine(p.sport, p.stats)}</div>
               </div>
             </div>
           ))}
@@ -915,32 +942,72 @@ export default function DisplayPage() {
     );
   }
 
-  function renderFinals() {
+  function renderRecap() {
+    const tiles = [
+      { label: "Games played", value: recap.gamesPlayed },
+      { label: "Points scored", value: recap.totalPoints },
+      { label: "Stats logged", value: recap.statEvents },
+    ];
     return (
-      <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
-        {finalGames.map((g) => (
-          <div
-            key={g.id}
-            className="rounded-[32px] border border-white/10 bg-gradient-to-br from-slate-900 to-black p-8"
-          >
-            <div className="text-sm font-black uppercase tracking-[0.2em] text-blue-400">
-              FINAL
+      <div className="board-card board-banquet flex h-full flex-col overflow-hidden p-10">
+        <div className="mb-8 flex items-end justify-between border-b-2 pb-4" style={{ borderColor: "var(--banquet)" }}>
+          <div className="bc-display text-8xl leading-none">Season recap</div>
+          <div className="bc-display text-4xl leading-none" style={{ color: "var(--banquet)" }}>The summer, by the numbers</div>
+        </div>
+
+        <div className="grid grid-cols-3 gap-8">
+          {tiles.map((t) => (
+            <div key={t.label} className="flex flex-col justify-center p-6" style={{ borderTop: "2px solid var(--banquet)" }}>
+              <div className="bc-num text-[9rem] leading-[0.85] xl:text-[11rem]">
+                <FlashNumber value={t.value} />
+              </div>
+              <div className="mt-3 text-2xl font-bold uppercase tracking-[0.1em]" style={{ color: "var(--banquet)" }}>
+                {t.label}
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {recap.biggest ? (
+          <div className="mt-8 flex flex-1 flex-col justify-center p-8" style={{ border: "2px solid var(--banquet)" }}>
+            <div className="text-2xl font-bold uppercase tracking-[0.12em]" style={{ color: "var(--banquet)" }}>
+              Biggest blowout
+            </div>
+            <div className="bc-display mt-3 text-7xl leading-none">
+              {recap.biggest.team_a1} {recap.biggest.score_a}–{recap.biggest.score_b} {recap.biggest.team_b1}
+            </div>
+            <div className="mt-2 text-xl font-bold uppercase tracking-[0.1em] text-[var(--ink-2)]">
+              {fmtSport(recap.biggest.sport)} · won by {recap.biggest.margin}
+            </div>
+          </div>
+        ) : null}
+      </div>
+    );
+  }
+
+  function renderLive() {
+    if (!liveGames.length) {
+      return <SceneEmpty>No games live right now. Check back soon.</SceneEmpty>;
+    }
+    return (
+      <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
+        {liveGames.map((g) => (
+          <div key={g.id} className="board-card p-8">
+            <div className="flex items-center justify-between">
+              <span className="bc-live-badge" style={{ fontSize: 16, minHeight: 36, padding: "0 14px" }}>
+                <span className="bc-live-dot" aria-hidden="true" />Live
+              </span>
+              <div className="text-xl font-bold uppercase tracking-[0.08em] text-[var(--ink-2)]">
+                {fmtLeague(g.league_key)} · {fmtSport(g.sport)}
+              </div>
             </div>
 
-            <div className="mt-3 text-lg font-black text-white/60">
-              {fmtLeague(g.league_key)} • {fmtSport(g.sport)}
-            </div>
-
-            <div className="mt-5 text-3xl font-black text-white">
-              {g.team_a1}{g.team_a2 ? ` + ${g.team_a2}` : ""}
-            </div>
-
-            <div className="my-5 text-center text-6xl font-black text-blue-400">
-              {g.score_a} - {g.score_b}
-            </div>
-
-            <div className="text-right text-3xl font-black text-white">
-              {g.team_b1}{g.team_b2 ? ` + ${g.team_b2}` : ""}
+            <div className="mt-6 grid grid-cols-[1fr_auto_1fr] items-center gap-6">
+              <div className="bc-display text-balance text-5xl leading-none xl:text-6xl">{g.team_a1}{g.team_a2 ? ` + ${g.team_a2}` : ""}</div>
+              <div className="bc-num text-8xl leading-none xl:text-9xl">
+                <FlashNumber value={Number(g.score_a || 0)} />–<FlashNumber value={Number(g.score_b || 0)} />
+              </div>
+              <div className="bc-display text-balance text-right text-5xl leading-none xl:text-6xl">{g.team_b1}{g.team_b2 ? ` + ${g.team_b2}` : ""}</div>
             </div>
           </div>
         ))}
@@ -948,45 +1015,66 @@ export default function DisplayPage() {
     );
   }
 
+  function renderFinals() {
+    if (!finalGames.length) {
+      return <SceneEmpty>No finals yet today.</SceneEmpty>;
+    }
+    return (
+      <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
+        {finalGames.map((g) => {
+          const a = Number(g.score_a || 0);
+          const b = Number(g.score_b || 0);
+          return (
+            <div key={g.id} className="board-card p-8">
+              <div className="flex items-center justify-between">
+                <span className="bc-chip" style={{ fontSize: 16, minHeight: 34, background: "var(--ink)", color: "var(--on-ink)", borderColor: "var(--ink)" }}>Final</span>
+                <div className="text-lg font-bold uppercase tracking-[0.08em] text-[var(--ink-2)]">
+                  {fmtLeague(g.league_key)} · {fmtSport(g.sport)}
+                </div>
+              </div>
+
+              <div className="mt-5 grid grid-cols-[1fr_auto] items-center gap-4 border-b border-[var(--rule)] pb-3">
+                <div className={`bc-display text-balance text-5xl leading-none ${a >= b ? "" : "text-[var(--ink-2)]"}`}>{g.team_a1}{g.team_a2 ? ` + ${g.team_a2}` : ""}</div>
+                <div className={`bc-num text-8xl leading-[0.85] ${a >= b ? "" : "text-[var(--ink-3)]"}`}>{a}</div>
+              </div>
+              <div className="mt-3 grid grid-cols-[1fr_auto] items-center gap-4">
+                <div className={`bc-display text-balance text-5xl leading-none ${b >= a ? "" : "text-[var(--ink-2)]"}`}>{g.team_b1}{g.team_b2 ? ` + ${g.team_b2}` : ""}</div>
+                <div className={`bc-num text-8xl leading-[0.85] ${b >= a ? "" : "text-[var(--ink-3)]"}`}>{b}</div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    );
+  }
+
   function renderLeaders(leagueKey) {
     const leaders = leadersByLeague[leagueKey] || [];
+    if (!leaders.length) {
+      return <SceneEmpty>No stat leaders yet for {fmtLeague(leagueKey)}.</SceneEmpty>;
+    }
     return (
       <div className="flex h-full flex-col gap-6">
-        <div className="text-sm font-black uppercase tracking-[0.3em] text-blue-400">
-          {fmtLeague(leagueKey)} Stat Leaders
+        <div className="flex items-end justify-between border-b-2 border-[var(--rule-strong)] pb-3">
+          <div className="bc-display text-7xl leading-none">{fmtLeague(leagueKey)} stat leaders</div>
         </div>
         <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
         {leaders.slice(0, 9).map((p) => (
           <div
             key={`${String(p.sport || "").toLowerCase()}-${String(p.stat_key || "").toLowerCase()}`}
-            className="rounded-[32px] border border-white/10 bg-gradient-to-br from-slate-900 to-black p-8"
+            className="board-card p-8"
           >
-            <div className="text-sm font-black uppercase tracking-[0.2em] text-blue-400">
-              STAT LEADER
+            <div className="flex items-center justify-between text-lg font-bold uppercase tracking-[0.1em] text-[var(--ink-2)]">
+              <span>{fmtSport(p.sport)}</span>
+              <span>{String(p.stat_key || "").toUpperCase()}</span>
             </div>
 
-            <div className="mt-4 text-4xl font-black text-white">
-              {p.player_name}
-            </div>
-
-            <div className="mt-2 text-xl font-bold text-white/60">
-              {p.team_name}
-            </div>
-
-            <div className="mt-8 flex items-end justify-between">
-              <div>
-                <div className="text-lg font-black uppercase text-white/50">
-                  {p.stat_key}
-                </div>
-
-                <div className="text-7xl font-black text-blue-400">
-                  {p.value}
-                </div>
+            <div className="mt-3 flex items-end justify-between gap-4">
+              <div className="min-w-0">
+                <div className="bc-display text-balance text-5xl leading-[0.95]">{p.player_name}</div>
+                <div className="mt-1 text-xl text-[var(--ink-2)]">{p.team_name}</div>
               </div>
-
-              <div className="text-sm font-black uppercase tracking-widest text-white/40">
-                {fmtSport(p.sport)}
-              </div>
+              <div className="bc-num text-9xl leading-[0.8]">{p.value}</div>
             </div>
           </div>
         ))}
@@ -1001,167 +1089,112 @@ export default function DisplayPage() {
     }
 
     return (
-    <main
+    <div
       ref={wrapRef}
-      className="relative min-h-screen overflow-hidden bg-[#050509] text-white"
+      data-theme="night"
+      className="relative min-h-screen overflow-hidden"
+      style={{ color: "var(--ink)", background: "radial-gradient(60% 50% at 85% 0%, rgba(255,128,60,0.12), transparent 70%), linear-gradient(180deg, rgba(5,13,28,0.8), rgba(5,13,28,0.94) 55%, #050d1c), url(/camp-bg.jpg) center 35% / cover no-repeat, #050d1c" }}
     >
-      {/* Background */}
-      <div className="pointer-events-none absolute inset-0">
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(58,113,255,0.30),transparent_35%),radial-gradient(circle_at_bottom_right,rgba(30,64,175,0.22),transparent_40%)]" />
-        <div className="absolute inset-0 bg-[linear-gradient(120deg,rgba(255,255,255,0.06)_1px,transparent_1px)] bg-[length:48px_48px] opacity-[0.08]" />
-      </div>
+      <h1 className="sr-only">Crest League Live — {isBanquet ? "Banquet" : "Season"} display board</h1>
+      {/* Announces the latest live score change for screen-reader viewers —
+          the visual board updates instantly via Realtime, but nothing said
+          so before this. */}
+      <div aria-live="polite" className="sr-only">{liveAnnouncement}</div>
 
-      {/* Top compact ESPN-style header */}
-      <header className="relative z-10 flex h-[72px] items-center justify-between border-b border-white/10 bg-black/65 px-6 backdrop-blur-xl">
+      {/* Header: network mark, current scene, clock. Staff controls only
+          appear when the mouse moves over the header or a control has focus,
+          so the room never sees buttons. */}
+      <header className="group relative z-10 flex h-[72px] items-center justify-between border-b-2 border-[var(--rule-strong)] px-6">
         <div className="flex items-center gap-5">
-          <div className="flex items-center gap-2 rounded-xl border px-4 py-2" style={{ borderColor: "rgba(245,196,81,0.4)", background: "rgba(0,0,0,0.4)", boxShadow: "0 0 18px rgba(245,196,81,0.3)" }}>
-            <span
-              className="text-2xl font-black italic tracking-tighter"
-              style={{
-                color: "#f5c451",
-                textShadow: "0 0 6px #f5c451, 0 0 14px #f5c451, 0 0 22px rgba(245,196,81,0.6)",
-              }}
-            >
-              CBSN
-            </span>
+          <img src="/crest-logo.png" alt="" width="56" height="56" className="h-14 w-14" style={{ filter: "drop-shadow(0 6px 12px rgba(0,0,0,0.6))" }} />
+          <div className="grid h-11 place-items-center px-4 bc-num text-3xl leading-none" style={{ background: "var(--ink)", color: "var(--on-ink)", clipPath: "polygon(8px 0, 100% 0, calc(100% - 8px) 100%, 0 100%)" }}>
+            CBSN
           </div>
-
-          <div className="hidden text-sm font-black uppercase tracking-[0.25em] text-white/50 md:block">
+          <div className="hidden text-lg font-bold uppercase tracking-[0.1em] text-[var(--ink-2)] md:block">
             Camp Bauercrest Sports Network
           </div>
 
-          {BANQUET ? (
-            <div className="rounded-lg border border-amber-400/40 bg-amber-500/10 px-2.5 py-1 text-[10px] font-black uppercase tracking-widest text-amber-300">
-              Banquet Mode
+          {isBanquet ? (
+            <div className="rounded-[4px] border-[1.5px] px-3 py-1 text-sm font-bold uppercase tracking-[0.1em]" style={{ borderColor: "var(--banquet)", color: "var(--banquet)" }}>
+              Banquet
             </div>
           ) : null}
         </div>
 
         <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2 opacity-0 transition-opacity duration-200 focus-within:opacity-100 group-hover:opacity-100">
+            <button onClick={loadAll} className="btn btn-secondary btn-sm">Refresh</button>
+            <button onClick={() => setAutoRefresh((x) => !x)} className="btn btn-secondary btn-sm">Auto {autoRefresh ? "on" : "off"}</button>
+            <button onClick={() => setAutoRotate((x) => !x)} className="btn btn-secondary btn-sm">Rotate {autoRotate ? "on" : "off"}</button>
+            <select
+              value={rotateSeconds}
+              aria-label="Seconds per scene"
+              onChange={(e) => setRotateSeconds(Number(e.target.value))}
+              style={{ minHeight: 44 }}
+            >
+              <option value={12}>12s</option>
+              <option value={18}>18s</option>
+              <option value={25}>25s</option>
+              <option value={35}>35s</option>
+            </select>
+            <button onClick={goFullscreen} className="btn btn-sm">Fullscreen</button>
+          </div>
 
-          <button
-            onClick={loadAll}
-            className="h-10 rounded-xl border border-white/15 bg-white/10 px-4 text-sm font-black hover:bg-white/20"
-          >
-            Refresh
-          </button>
-
-          <button
-            onClick={() => setAutoRefresh((x) => !x)}
-            className="h-10 rounded-xl border border-white/15 bg-white/10 px-4 text-sm font-black hover:bg-white/20"
-          >
-            Auto {autoRefresh ? "On" : "Off"}
-          </button>
-
-          <button
-            onClick={() => setAutoRotate((x) => !x)}
-            className="h-10 rounded-xl border border-white/15 bg-white/10 px-4 text-sm font-black hover:bg-white/20"
-          >
-            Rotate {autoRotate ? "On" : "Off"}
-          </button>
-
-          <button
-            onClick={goFullscreen}
-            className="h-10 rounded-xl border px-4 text-sm font-black text-white hover:brightness-110" style={{ borderColor: "rgba(245,196,81,0.4)", background: "rgba(245,196,81,0.15)" }}
-          >
-            Fullscreen
-          </button>
-
-          <div className="hidden h-10 items-center rounded-xl border border-white/15 bg-white/10 px-4 text-sm font-black tabular-nums text-white/80 lg:flex">
+          <div className="bc-num hidden text-5xl leading-none lg:block">
             <LiveClock />
           </div>
         </div>
       </header>
 
-      {/* Scene tabs compact row */}
-      <section className="relative z-10 flex h-[58px] items-center justify-between border-b border-white/10 bg-[#0b0b10]/80 px-6 backdrop-blur-xl">
-        <div className="flex items-center gap-2">
-          {SCENES.map((s) => (
-            <button
-              key={s}
-              onClick={() => setScene(s)}
-              className={cx(
-                "h-10 rounded-xl px-4 text-sm font-black uppercase tracking-wide transition",
-                scene === s
-                  ? "text-black shadow-lg"
-                  : "border border-white/10 bg-white/5 text-white/70 hover:bg-white/10 hover:text-white"
-              )}
-              style={scene === s ? { background: "linear-gradient(180deg,#ffe9a8,#f5c451)" } : {}}
-            >
-              {SCENE_LABELS[s]}
-            </button>
-          ))}
-        </div>
-
-        <div className="flex items-center gap-3">
-          <div className="hidden text-xs font-black uppercase tracking-[0.25em] text-white/40 md:block">
-            Current Scene
-          </div>
-
-          <div className="rounded-xl border border-blue-500/30 bg-blue-500/10 px-4 py-2 text-sm font-black uppercase tracking-wide text-blue-300">
-            {SCENE_LABELS[scene]}
-          </div>
-
-          <select
-            value={rotateSeconds}
-            onChange={(e) => setRotateSeconds(Number(e.target.value))}
-            className="h-10 rounded-xl border border-white/15 bg-white/10 px-3 text-sm font-black text-white outline-none"
+      {/* Scene strip: doubles as the "what's on" indicator */}
+      <nav aria-label="Board scenes" className="relative z-10 flex h-[56px] items-center gap-1 overflow-x-auto border-b border-[var(--rule)] px-6">
+        {SCENES.map((s) => (
+          <button
+            key={s}
+            onClick={() => setScene(s)}
+            aria-current={scene === s ? "true" : undefined}
+            className="h-10 shrink-0 rounded-[4px] px-3.5 text-[17px] font-bold uppercase tracking-[0.06em] transition-colors"
+            style={scene === s
+              ? { background: "var(--ink)", color: "var(--on-ink)" }
+              : { color: "var(--ink-2)" }}
           >
-            <option value={12}>12s</option>
-            <option value={18}>18s</option>
-            <option value={25}>25s</option>
-            <option value={35}>35s</option>
-          </select>
-        </div>
-      </section>
+            {SCENE_LABELS[s]}
+          </button>
+        ))}
+      </nav>
 
       {/* Main board area */}
-      <section className="relative z-10 h-[calc(100vh-72px-58px-52px)] p-6">
-        <div className="h-full overflow-hidden">
+      <section className="relative z-10 h-[calc(100vh-72px-56px-56px)] p-6">
+        <div key={scene} className="scene-in h-full overflow-hidden">
           {scene === "camp" && (
-            <div className="rounded-[32px] border border-white/10 bg-gradient-to-br from-slate-950 to-slate-900 p-8 shadow-2xl">
-              <div className="mb-8 flex items-center justify-between">
-                <div>
-                  <div className="text-sm font-black uppercase tracking-[0.3em] text-blue-500">
-                    Camp-Wide
-                  </div>
-                  <div className="text-5xl font-black text-white">
-                    Overall Camp Standings
-                  </div>
-                </div>
-
-                <div className="rounded-2xl border border-blue-500/40 bg-blue-500/15 px-6 py-4">
-                  <div className="text-xs font-bold uppercase tracking-widest text-blue-300">
-                    ALL AGE GROUPS
-                  </div>
-                </div>
+            <div className="board-card flex h-full flex-col p-8">
+              <div className="mb-6 flex flex-wrap items-end justify-between gap-x-6 gap-y-1 border-b-2 border-[var(--rule-strong)] pb-3">
+                <div className="bc-display text-5xl leading-none md:text-7xl">Camp standings</div>
+                <div className="text-xl font-bold uppercase tracking-[0.1em] text-[var(--ink-2)]">All age groups</div>
               </div>
 
-              <div className="grid h-[calc(100%-160px)] grid-cols-1 gap-6 xl:grid-cols-2">
+              <div className="grid min-h-0 flex-1 auto-rows-fr grid-cols-1 gap-x-10 xl:grid-cols-2">
                 {campStandings.map((t, i) => (
                   <div
                     key={`${t.league_id}-${t.team_name}-${i}`}
-                    className={cx(
-                      "flex items-center justify-between rounded-[32px] border border-white/10 bg-white/[0.04] p-10",
-                      i === 0 && "border-blue-500/40 bg-blue-500/10"
-                    )}
+                    className="grid min-w-0 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-4 border-b border-[var(--rule)] py-2 md:gap-6"
                   >
-                    <div>
-                      <div className="text-lg font-black uppercase tracking-[0.2em] text-white/40">
-                        #{i + 1} • ALL LEAGUES
-                       </div>
-                      <div className="mt-2 text-6xl font-black text-white xl:text-7xl">
+                    <div
+                      className="bc-num grid h-14 w-14 place-items-center rounded-[4px] text-4xl leading-none md:h-20 md:w-20 md:text-6xl"
+                      style={i === 0 ? { background: "var(--ink)", color: "var(--on-ink)" } : { color: "var(--ink-2)", border: "2px solid var(--rule)" }}
+                    >
+                      {i + 1}
+                    </div>
+                    <div className="min-w-0">
+                      <div className="bc-display text-balance leading-[0.92]" style={{ fontSize: "clamp(26px, 4.2vw, 88px)", overflowWrap: "anywhere" }}>
                         {t.team_name}
                       </div>
+                      <div className="mt-2">
+                        <Meter value={Number(t.league_points || 0)} max={Math.max(1, ...campStandings.map((x) => Number(x.league_points || 0)))} lead={i === 0} index={i} />
+                      </div>
                     </div>
-
-                    <div className="text-right">
-                      <div className="text-lg font-black uppercase tracking-[0.2em] text-blue-300">
-                        POINTS
-                      </div>
-                      <div className="text-8xl font-black text-blue-400 xl:text-9xl">
-                        {Number(t.league_points || 0)}
-                      </div>
+                    <div className="bc-num leading-[0.85]" style={{ fontSize: "clamp(48px, 9vw, 190px)" }}>
+                      <FlashNumber value={Number(t.league_points || 0)} />
                     </div>
                   </div>
                 ))}
@@ -1171,6 +1204,8 @@ export default function DisplayPage() {
 
           {scene === "averages" && renderAverages()}
           {scene === "champions" && renderChampions()}
+          {scene === "recap" && renderRecap()}
+          {scene === "live" && renderLive()}
           {scene === "awards" && renderAwards()}
           {scene === "finals" && renderFinals()}
           {scene === "spotlight" && renderSpotlight()}
@@ -1183,14 +1218,7 @@ export default function DisplayPage() {
 
       {/* Bottom ticker */}
       <Ticker items={tickerItems} />
-
-      {/* Error overlay */}
-      {false && (
-        <div className="absolute right-4 top-24 z-50 rounded-xl border border-blue-500/30 bg-blue-950/90 px-4 py-3 text-sm font-bold text-blue-100">
-          Error loading board
-        </div>
-      )}
-    </main>
+    </div>
   );
 }
 
@@ -1199,18 +1227,13 @@ function Ticker({ items }) {
   const text = items && items.length ? items.join("     •     ") : "";
   if (!text) return null;
   return (
-    <footer className="absolute bottom-0 left-0 right-0 z-20 flex h-[52px] overflow-hidden border-t-2" style={{ borderColor: "rgba(245,196,81,0.5)", background: "#08172c", boxShadow: "0 -4px 20px rgba(245,196,81,0.2)" }}>
-      <div className="flex shrink-0 items-center bg-black px-5">
-        <div
-          className="text-sm font-black uppercase tracking-[0.25em]"
-          style={{ color: "#f5c451", textShadow: "0 0 8px #f5c451" }}
-        >
-          CBSN Ticker
-        </div>
+    <footer className="absolute bottom-0 left-0 right-0 z-20 flex h-[56px] overflow-hidden border-t-2 border-[var(--rule-strong)]" style={{ background: "var(--sheet)" }}>
+      <div className="flex shrink-0 items-center px-5" style={{ background: "var(--ink)", color: "var(--on-ink)" }}>
+        <div className="bc-display text-2xl">Ticker</div>
       </div>
 
       <div className="relative flex flex-1 items-center overflow-hidden">
-        <div className="animate-[ticker_55s_linear_infinite] whitespace-nowrap px-8 text-xl font-black uppercase tracking-wide text-white">
+        <div className="animate-[ticker_55s_linear_infinite] whitespace-nowrap px-8 text-2xl font-bold uppercase tracking-[0.04em]">
           {text}     •     {text}
         </div>
       </div>

@@ -3,6 +3,9 @@
 import { useEffect, useRef, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import { useAppMode } from "@/lib/useAppMode";
+import { useNotifyingErr } from "@/lib/useNotifyingErr";
+import { PageHeader, Sheet, EmptyState, ErrorNote, SkeletonRows, Meter } from "@/components/ui";
+import FlashNumber from "@/components/FlashNumber";
 const STAFF_SPORT_KEY = "staff";    // staff standings should live under standings.sport='staff'
 
 function norm(s) {
@@ -27,7 +30,7 @@ function sortStandings(arr) {
 
 export default function StandingsPage() {
   const { season, session } = useAppMode();
-  const [err, setErr] = useState("");  const [loading, setLoading] = useState(true);
+  const [err, setErr] = useNotifyingErr();  const [loading, setLoading] = useState(true);
 
   // Tabs: overall | staff | non_game
   const [tab, setTab] = useState("overall");
@@ -137,148 +140,101 @@ export default function StandingsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [includeNonGame]);
 
+  const topPts = Math.max(1, ...overallRows.map((r) => Number(r.points) || 0));
+  const topNg = Math.max(1, ...nonGameRows.map((r) => Number(r.points) || 0));
+
   return (
     <div className="pb-10">
-      <div className="mt-6 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-        <div>
-          <div className="bc-eyebrow">Camp Bauercrest</div>
-          <h1 className="bc-page-title mt-1">Camp <span className="bc-accent-text">Standings</span></h1>
-          <div className="text-sm text-white/70">
-            Camp-wide standings combining every age group into one table per team.
-          </div>
-        </div>
-
-        <div className="flex flex-wrap items-center gap-2">
-          {/* Tabs */}
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => {
-                setTab("overall");
-                refreshTab("overall");
-              }}
-              className={`rounded-xl border px-3 py-2 text-sm font-black ${
-                tab === "overall" ? "border-emerald-400/30 bg-emerald-500/10" : "border-white/15 bg-white/5 hover:bg-white/10"
-              }`}
-            >
-              Overall
-            </button>
-
-            <button
-              onClick={() => {
-                setTab("non_game");
-                refreshTab("non_game");
-              }}
-              className={`rounded-xl border px-3 py-2 text-sm font-black ${
-                tab === "non_game" ? "border-emerald-400/30 bg-emerald-500/10" : "border-white/15 bg-white/5 hover:bg-white/10"
-              }`}
-            >
-              Non-Game
-            </button>
-          </div>
-
+      <PageHeader title="Camp standings" description="Every age group combined into one table per team." pos="50% 28%">
+        <div className="seg" role="group" aria-label="Standings view" style={{ minWidth: 260 }}>
           <button
-            className="rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm font-bold hover:bg-white/10"
-            onClick={() => refreshTab(tab)}
+            aria-pressed={tab === "overall"}
+            onClick={() => {
+              setTab("overall");
+              refreshTab("overall");
+            }}
           >
-            Refresh
+            Overall
+          </button>
+          <button
+            aria-pressed={tab === "non_game"}
+            onClick={() => {
+              setTab("non_game");
+              refreshTab("non_game");
+            }}
+          >
+            Non-game
           </button>
         </div>
-      </div>
+        <button className="btn btn-secondary" onClick={() => refreshTab(tab)}>
+          Refresh
+        </button>
+      </PageHeader>
 
-      {err ? (
-        <div className="mt-4 rounded-xl border border-red-700 bg-red-950/40 p-3 text-sm text-red-200">{err}</div>
-      ) : null}
+      {err ? <div className="mt-4"><ErrorNote onRetry={() => refreshTab(tab)}>{err}</ErrorNote></div> : null}
 
       {loading ? (
-        <div className="mt-6 text-white/70">Loading…</div>
+        <Sheet className="mt-6" title="Standings">
+          <SkeletonRows rows={4} label="Loading standings" />
+        </Sheet>
       ) : (
         <>
           {/* OVERALL TAB */}
           {tab === "overall" ? (
-            <div className="mt-6 rounded-2xl border border-white/10 bg-white/5 p-5">
-              <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-                <div>
-                  <div className="text-lg font-black">Overall Camp Standings</div>
-                  <div className="text-sm text-white/70">
-                    Toggle whether to include Non-Game Points.
-                  </div>
-                </div>
-
-                <div className="flex flex-wrap items-center gap-3">
-                  <label className="flex items-center gap-2 text-sm font-bold">
-                    <input
-                      type="checkbox"
-                      checked={includeNonGame}
-                      onChange={(e) => setIncludeNonGame(e.target.checked)}
-                    />
-                    Include Non-Game
-                  </label>
-
-                </div>
+            <section className="mt-6" aria-labelledby="overall-h">
+              <div className="bc-section-head reveal">
+                <h2 id="overall-h">Overall</h2>
+                <label className="flex min-h-[44px] items-center gap-3 font-semibold">
+                  <input
+                    type="checkbox"
+                    checked={includeNonGame}
+                    onChange={(e) => setIncludeNonGame(e.target.checked)}
+                  />
+                  Include non-game points
+                </label>
               </div>
 
-              <div className="mt-4 overflow-x-auto">
-                <table className="w-full text-left text-sm">
-                  <thead className="text-white/70">
-                    <tr>
-                      <th className="py-2">Team</th>
-                      <th className="py-2">Points</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {overallRows.length ? (
-                      overallRows.map((r) => (
-                        <tr key={`overall-${r.team_name}`} className="border-t border-white/10">
-                          <td className="py-3 font-extrabold">{r.team_name}</td>
-                          <td className="py-3 font-black">{r.points}</td>
-                        </tr>
-                      ))
-                    ) : (
-                      <tr>
-                        <td className="py-4 text-white/60" colSpan={2}>
-                          No overall points yet.
-                        </td>
-                      </tr>
-                    )}
-                  </tbody>
-                </table>
-              </div>
-            </div>
+              {overallRows.length ? (
+                <ul className="grid gap-3">
+                  {overallRows.map((r, i) => (
+                    <li key={`overall-${r.team_name}`} className={`lb-row reveal ${i === 0 ? "lead" : ""}`} style={{ "--i": i }}>
+                      <div className="lb-rank">{i + 1}</div>
+                      <div className="lb-name min-w-0">{r.team_name}</div>
+                      <FlashNumber as="div" className="lb-val" value={Number(r.points)} />
+                      <div className="lb-sub"><Meter value={r.points} max={topPts} lead={i === 0} index={i} /></div>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <EmptyState title="No points yet">Standings appear once a game is finalized.</EmptyState>
+              )}
+            </section>
           ) : null}
 
           {/* NON-GAME TAB */}
           {tab === "non_game" ? (
-            <div className="mt-6 rounded-2xl border border-white/10 bg-white/5 p-5">
-              <div className="text-lg font-black">Non-Game Points</div>
-              <div className="text-sm text-white/70">Spirit, cheering, songs, community, etc.</div>
-
-              <div className="mt-4 overflow-x-auto">
-                <table className="w-full text-left text-sm">
-                  <thead className="text-white/70">
-                    <tr>
-                      <th className="py-2">Team</th>
-                      <th className="py-2">Points</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {nonGameRows.length ? (
-                      nonGameRows.map((r) => (
-                        <tr key={`ng-${r.team_name}`} className="border-t border-white/10">
-                          <td className="py-3 font-extrabold">{r.team_name}</td>
-                          <td className="py-3 font-black">{r.points}</td>
-                        </tr>
-                      ))
-                    ) : (
-                      <tr>
-                        <td className="py-4 text-white/60" colSpan={2}>
-                          No non-game points yet. Add them from Add Results → Non-Game Points.
-                        </td>
-                      </tr>
-                    )}
-                  </tbody>
-                </table>
+            <section className="mt-6" aria-labelledby="ng-h">
+              <div className="bc-section-head reveal">
+                <h2 id="ng-h">Non-game points</h2>
+                <span className="bc-label">Spirit, cheering, songs, community</span>
               </div>
-            </div>
+              {nonGameRows.length ? (
+                <ul className="grid gap-3">
+                  {nonGameRows.map((r, i) => (
+                    <li key={`ng-${r.team_name}`} className={`lb-row reveal ${i === 0 ? "lead" : ""}`} style={{ "--i": i }}>
+                      <div className="lb-rank">{i + 1}</div>
+                      <div className="lb-name min-w-0">{r.team_name}</div>
+                      <FlashNumber as="div" className="lb-val" value={Number(r.points)} />
+                      <div className="lb-sub"><Meter value={r.points} max={topNg} lead={i === 0} index={i} /></div>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <EmptyState title="No non-game points yet">
+                  Add them from Post Games, then Non-Game Points.
+                </EmptyState>
+              )}
+            </section>
           ) : null}
         </>
       )}

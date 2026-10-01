@@ -2,11 +2,32 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabase";
+import { useNotifyingErr } from "@/lib/useNotifyingErr";
+import { useConfirmDialog } from "@/lib/useConfirmDialog";
+import { downloadTextFile, buildPlayerCardsCSV, buildPlayerStatsCSV } from "./exportUtils";
+import LoginPanel from "./components/LoginPanel";
+import PerLeagueStandings from "./components/PerLeagueStandings";
+import ConfirmBox from "./components/ConfirmBox";
+import TradesPanel from "./components/TradesPanel";
+import ExportsPanel from "./components/ExportsPanel";
+import DangerZonePanel from "./components/DangerZonePanel";
+import StuckGamesPanel from "./components/StuckGamesPanel";
+import RebuildPanel from "./components/RebuildPanel";
+import FinalGamesPanel from "./components/FinalGamesPanel";
+import NonGamePointsPanel from "./components/NonGamePointsPanel";
+import SessionControlPanel from "./components/SessionControlPanel";
+import AwardsControlPanel from "./components/AwardsControlPanel";
+import DisplayModePanel from "./components/DisplayModePanel";
+import ArchivePanel from "./components/ArchivePanel";
+import ColorWarControlPanel from "./components/ColorWarControlPanel";
 
+import { PageHeader, ErrorNote } from "@/components/ui";
 export default function AdminPage() {
-  const [err, setErr] = useState("");
+  const [err, setErr] = useNotifyingErr();
   const [msg, setMsg] = useState("");
   const [busy, setBusy] = useState(false);
+  const { confirmAsync, confirmModal } = useConfirmDialog();
+  const [switchingDisplayMode, setSwitchingDisplayMode] = useState(false);
 
   const [authed, setAuthed] = useState(false);
   const [pw, setPw] = useState("");
@@ -42,7 +63,7 @@ export default function AdminPage() {
   const [switchingMode, setSwitchingMode] = useState(false);
   const [cwBlueNameInput, setCwBlueNameInput] = useState("");
   const [cwWhiteNameInput, setCwWhiteNameInput] = useState("");
- 
+
  useEffect(() => {
     if (authed) loadCwSettings();
   }, [authed]);
@@ -318,8 +339,9 @@ export default function AdminPage() {
     const fullName =
       `${String(player.first_name ?? "").trim()} ${String(player.last_name ?? "").trim()}`.trim() || String(player.id);
 
-    const ok = confirm(
-      `Trade this player?\n\n${fullName}\n${tradeLeague}: ${tradeFromTeam} → ${tradeToTeam}\n\nThis only affects FUTURE rosters. Past games stay unchanged.`
+    const ok = await confirmAsync(
+      `${fullName}\n${tradeLeague}: ${tradeFromTeam} → ${tradeToTeam}\n\nThis only affects FUTURE rosters. Past games stay unchanged.`,
+      { title: "Trade this player?", confirmLabel: "Trade", danger: false }
     );
     if (!ok) return;
 
@@ -365,17 +387,17 @@ export default function AdminPage() {
         // players.team_name already changed at this point — there's no
         // transaction tying these three writes together, so a failure here
         // means a real partial trade, not a clean rollback. Say so plainly
-        // instead of a false "✅ Traded" — this needs manual SQL cleanup,
+        // instead of a false "Traded" — this needs manual SQL cleanup,
         // exactly like the comments above warn about.
         setErr(
-          `⚠️ Partial trade: ${fullName}'s team changed to ${tradeToTeam}, but ` +
+          `Partial trade: ${fullName}'s team changed to ${tradeToTeam}, but ` +
           `${[totalsErr && "player_totals", eventsErr && "live_events"].filter(Boolean).join(" and ")} ` +
           `did NOT update (${(totalsErr || eventsErr)?.message}). Fix this in SQL before the next leaderboard rebuild, or it will fail.`
         );
         return;
       }
 
-      setMsg(`✅ Traded ${fullName}: ${tradeFromTeam} → ${tradeToTeam} (${updated.league_id}).`);
+      setMsg(`Traded ${fullName}: ${tradeFromTeam} → ${tradeToTeam} (${updated.league_id}).`);
       setConfirmText("");
 
       // refresh list so they disappear from FROM team
@@ -464,8 +486,9 @@ export default function AdminPage() {
       return;
     }
 
-    const ok = confirm(
-      "Force-close this stuck game?\n\nThis will delete it WITHOUT updating standings or stat leaders.\nUse this only for games that never finished and have no valid score."
+    const ok = await confirmAsync(
+      "This will delete it WITHOUT updating standings or stat leaders.\nUse this only for games that never finished and have no valid score.",
+      { title: "Force-close this stuck game?", confirmLabel: "Force Close" }
     );
     if (!ok) return;
 
@@ -473,7 +496,7 @@ export default function AdminPage() {
     try {
       const { error } = await supabase.rpc("delete_unfinalized_game", { gid });
       if (error) throw error;
-      setMsg("✅ Stuck game removed.");
+      setMsg("Stuck game removed.");
       setConfirmText("");
       await loadStuckGames();
     } catch (e) {
@@ -516,7 +539,7 @@ export default function AdminPage() {
         return;
       }
 
-      setMsg(`✅ Win points updated to ${pts} and standings rebuilt.`);
+      setMsg(`Win points updated to ${pts} and standings rebuilt.`);
       setOverrideGameId(null);
       setOverridePoints("");
       setConfirmText("");
@@ -540,7 +563,7 @@ export default function AdminPage() {
       const { error } = await supabase.rpc("admin_clear_snapshots");
       if (error) throw error;
 
-      setMsg("✅ Cleared standings + stat leaders. (Games remain untouched.)");
+      setMsg("Cleared standings + stat leaders. (Games remain untouched.)");
       setConfirmText("");
     } catch (e) {
       setErr(e?.message ?? String(e));
@@ -557,8 +580,9 @@ export default function AdminPage() {
       return;
     }
 
-    const ok = confirm(
-      "⚠️ FINAL WARNING ⚠️\n\nThis permanently deletes EVERY game ever played this summer — every box score, every stat, every finalized result. This is NOT just test data once the season has started.\n\nThis cannot be undone.\n\nAre you absolutely sure you want to wipe the entire season?"
+    const ok = await confirmAsync(
+      "This permanently deletes EVERY game ever played this summer — every box score, every stat, every finalized result. This is NOT just test data once the season has started.\n\nThis cannot be undone. Are you absolutely sure you want to wipe the entire season?",
+      { title: "Final warning", confirmLabel: "Wipe Season" }
     );
     if (!ok) return;
 
@@ -569,7 +593,7 @@ export default function AdminPage() {
       });
       if (error) throw error;
 
-      setMsg(`✅ Season reset complete. (Highlights ${keepHighlights ? "kept" : "cleared"}.)`);
+      setMsg(`Season reset complete. (Highlights ${keepHighlights ? "kept" : "cleared"}.)`);
       setConfirmText("");
       setFinalGames([]);
       setNgRows([]);
@@ -593,7 +617,7 @@ export default function AdminPage() {
       const { error } = await supabase.rpc("rebuild_leaderboards");
       if (error) throw error;
 
-      setMsg("✅ Rebuilt standings + stat leaders from finalized games.");
+      setMsg("Rebuilt standings + stat leaders from finalized games.");
       setConfirmText("");
     } catch (e) {
       setErr(e?.message ?? String(e));
@@ -610,8 +634,9 @@ export default function AdminPage() {
       return;
     }
 
-    const ok = confirm(
-      "Delete this FINALIZED game?\n\nThis will remove the game + events + roster, then rebuild standings + stat leaders.\n\nThis cannot be undone."
+    const ok = await confirmAsync(
+      "This will remove the game + events + roster, then rebuild standings + stat leaders.\n\nThis cannot be undone.",
+      { title: "Delete this finalized game?", confirmLabel: "Delete" }
     );
     if (!ok) return;
 
@@ -620,7 +645,7 @@ export default function AdminPage() {
       const { error } = await supabase.rpc("admin_delete_finalized_game", { gid });
       if (error) throw error;
 
-      setMsg("✅ Finalized game deleted. Standings + stat leaders rebuilt.");
+      setMsg("Finalized game deleted. Standings + stat leaders rebuilt.");
       setConfirmText("");
       await loadFinalGames();
     } catch (e) {
@@ -638,7 +663,10 @@ export default function AdminPage() {
       return;
     }
 
-    const ok = confirm("Delete this Non-Game Points entry?\n\nThis will remove it from totals immediately.");
+    const ok = await confirmAsync(
+      "This will remove it from totals immediately.",
+      { title: "Delete this Non-Game Points entry?", confirmLabel: "Delete" }
+    );
     if (!ok) return;
 
     setBusy(true);
@@ -650,7 +678,7 @@ export default function AdminPage() {
 
       if (error) throw error;
 
-      setMsg("✅ Non-game points entry deleted.");
+      setMsg("Non-game points entry deleted.");
       setConfirmText("");
       await loadNonGamePoints();
     } catch (e) {
@@ -674,8 +702,34 @@ export default function AdminPage() {
     } else {
       setAuthed(true);
       setPw("");
-      setMsg("✅ Admin unlocked.");
+      setMsg("Admin unlocked.");
     }
+  }
+
+  async function switchDisplayMode(targetMode) {
+    setErr(""); setMsg("");
+    setSwitchingDisplayMode(true);
+    try {
+      const { error } = await supabase.from("app_settings")
+        .update({ display_mode: targetMode, updated_at: new Date().toISOString() })
+        .eq("id", 1);
+      if (error) { setErr(error.message); return; }
+      setMsg(targetMode === "banquet"
+        ? "Display board switched to Banquet mode."
+        : "Display board switched to Season mode.");
+      await loadCwSettings();
+    } finally {
+      setSwitchingDisplayMode(false);
+    }
+  }
+
+  async function toggleLeagueEnded() {
+    const cur = Boolean(cwSettings?.league_ended);
+    const { error } = await supabase.from("app_settings")
+      .update({ league_ended: !cur }).eq("id", 1);
+    if (error) { setErr(error.message); return; }
+    setMsg(!cur ? "Awards now show FINAL winners." : "Awards back to live race.");
+    await loadCwSettings();
   }
 
   function labelMatchup(g) {
@@ -690,24 +744,6 @@ export default function AdminPage() {
   // ----------------------------
   // CSV EXPORT (WIDE FORMAT)
   // ----------------------------
-
-  function csvEscape(v) {
-    const s = v === null || v === undefined ? "" : String(v);
-    if (/[",\n\r]/.test(s)) return `"${s.replace(/"/g, '""')}"`;
-    return s;
-  }
-
-  function downloadTextFile(filename, text) {
-    const blob = new Blob([text], { type: "text/csv;charset=utf-8" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = filename;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    URL.revokeObjectURL(url);
-  }
 
   async function loadArchive(lid) {
     setArchiveLoading(true);
@@ -781,7 +817,7 @@ export default function AdminPage() {
       setCwWhiteNameInput(data.cw_white_name || "White");
     }
   }
- 
+
   async function saveCwNames() {
     setErr(""); setMsg("");
     const { error } = await supabase.from("app_settings")
@@ -791,7 +827,7 @@ export default function AdminPage() {
     setMsg("Color War team names saved.");
     await loadCwSettings();
   }
- 
+
   async function switchMode(targetMode) {
     // targetMode: 'league' | 'color_war'
     setErr(""); setMsg("");
@@ -805,15 +841,15 @@ export default function AdminPage() {
         .update({ mode: targetMode, updated_at: new Date().toISOString() })
         .eq("id", 1);
       if (error) { setErr(error.message); setSwitchingMode(false); return; }
- 
+
       // Auto-rebuild the season we're entering so the board is never stale.
       const seasonArg = targetMode === "color_war" ? "cw" : "league";
       const { error: rbErr } = await supabase.rpc("rebuild_leaderboards", { p_season: seasonArg });
       if (rbErr) { setErr(`Mode switched, but rebuild failed: ${rbErr.message}. Re-run rebuild manually.`); }
- 
+
       setModeSwitchText("");
       setMsg(targetMode === "color_war"
-        ? "🔵⚪ Switched to COLOR WAR. The whole app now shows Blue vs White."
+        ? "Switched to Color War. The whole app now shows Blue vs White."
         : "Switched back to LEAGUE. All league data restored exactly as before.");
       await loadCwSettings();
     } finally {
@@ -840,7 +876,7 @@ export default function AdminPage() {
       if (rbErr) setErr(`Session switched, but rebuild failed: ${rbErr.message}. Re-run manually.`);
 
       setSessionSwitchText("");
-      setMsg("✅ Session 2 is now live. Session 1 is frozen and preserved. The whole app now shows Session 2.");
+      setMsg("Session 2 is now live. Session 1 is frozen and preserved. The whole app now shows Session 2.");
       await loadCwSettings();
     } finally {
       setSwitchingSession(false);
@@ -885,16 +921,21 @@ export default function AdminPage() {
           .select("game_id, player_id, team_side")
           .eq("is_playing", true)
           .limit(50000),
+        // Also carries `sport` for the best-single-game lookup below --
+        // live_events has no sport column of its own (confirmed live:
+        // "column live_events.sport does not exist", despite CLAUDE.md's
+        // schema notes claiming otherwise), so each event's sport has to be
+        // derived from its game instead.
         supabase
           .from("live_games")
-          .select("id, score_a, score_b, session, status")
+          .select("id, sport, score_a, score_b, session, status")
           .eq("status", "final")
           .limit(5000),
         // 4) Best single games: per player, the game where they logged the
         //    most of a single stat (e.g. 5 goals in one game).
         supabase
           .from("live_events")
-          .select("game_id, player_id, sport, stat_key, delta")
+          .select("game_id, player_id, stat_key, delta")
           .eq("event_type", "stat")
           .limit(100000),
       ]);
@@ -905,83 +946,10 @@ export default function AdminPage() {
       if (gErr) throw gErr;
       if (eErr) throw eErr;
 
-      const gameById = {};
-      for (const g of games || []) gameById[g.id] = g;
+      const { csv, count } = buildPlayerCardsCSV(players, totals, rosters, games, events);
+      downloadTextFile(`crest_player_cards_${new Date().toISOString().slice(0,10)}.csv`, csv);
 
-      // ---- aggregate ----
-      // combined totals per player: {pid: {"sport stat": value}}
-      const totMap = {};
-      for (const t of totals || []) {
-        const pid = String(t.player_id);
-        const key = `${String(t.sport).toUpperCase()} ${String(t.stat_key).toUpperCase()}`;
-        totMap[pid] = totMap[pid] || {};
-        totMap[pid][key] = (totMap[pid][key] || 0) + Number(t.value || 0);
-      }
-
-      // wins per player
-      const winMap = {};
-      for (const r of rosters || []) {
-        const g = gameById[r.game_id];
-        if (!g) continue;
-        const won = (r.team_side === "A" && Number(g.score_a) > Number(g.score_b)) ||
-                    (r.team_side === "B" && Number(g.score_b) > Number(g.score_a));
-        if (won) winMap[String(r.player_id)] = (winMap[String(r.player_id)] || 0) + 1;
-      }
-
-      // best single game per player: {pid: "5 G · SOCCER"}
-      const perGameStat = {}; // pid -> {game_id -> {statkey -> sum, sport}}
-      for (const e of events || []) {
-        const pid = String(e.player_id);
-        perGameStat[pid] = perGameStat[pid] || {};
-        const gk = e.game_id;
-        perGameStat[pid][gk] = perGameStat[pid][gk] || { sport: e.sport, stats: {} };
-        const sk = String(e.stat_key).toUpperCase();
-        perGameStat[pid][gk].stats[sk] = (perGameStat[pid][gk].stats[sk] || 0) + Number(e.delta || 0);
-      }
-      const bestGameMap = {};
-      for (const pid of Object.keys(perGameStat)) {
-        let best = null;
-        for (const gk of Object.keys(perGameStat[pid])) {
-          const g = perGameStat[pid][gk];
-          for (const sk of Object.keys(g.stats)) {
-            const v = g.stats[sk];
-            if (!best || v > best.value) best = { value: v, stat: sk, sport: String(g.sport).toUpperCase() };
-          }
-        }
-        if (best) bestGameMap[pid] = `${best.value} ${best.stat} · ${best.sport} (single game)`;
-      }
-
-      // ---- build rows ----
-      const rows = [];
-      for (const p of players || []) {
-        const pid = String(p.id);
-        const totals = totMap[pid] || {};
-        // sort stat totals descending, make a readable line
-        const totalsLine = Object.entries(totals)
-          .filter(([k, v]) => v > 0)
-          .sort((a, b) => b[1] - a[1])
-          .map(([k, v]) => `${v} ${k}`)
-          .join(", ");
-        rows.push({
-          player_id: pid,
-          first_name: p.first_name,
-          last_name: p.last_name,
-          league: p.league_id,
-          team: p.team_name,
-          bunk: p.bunk,
-          sessions: p.active_session === "s2" ? (p.s1_team ? "Both" : "Session 2") : "Session 1",
-          total_wins: winMap[pid] || 0,
-          best_single_game: bestGameMap[pid] || "",
-          all_stat_totals: totalsLine,
-        });
-      }
-
-      const header = ["player_id","first_name","last_name","league","team","bunk","sessions","total_wins","best_single_game","all_stat_totals"];
-      const lines = [header.join(",")];
-      for (const r of rows) lines.push(header.map((h) => csvEscape(r[h])).join(","));
-      downloadTextFile(`crest_player_cards_${new Date().toISOString().slice(0,10)}.csv`, lines.join("\n"));
-
-      setMsg(`✅ Player card data exported — ${rows.length} players.`);
+      setMsg(`Player card data exported — ${count} players.`);
     } catch (e) {
       setErr(e?.message ?? String(e)); setMsg("");
     } finally {
@@ -995,8 +963,6 @@ export default function AdminPage() {
 
     try {
       setMsg("Building CSV...");
-
-      const norm2 = (s) => String(s ?? "").trim().toLowerCase();
 
       // These three are independent of each other, so they run together
       // instead of one-after-another.
@@ -1022,63 +988,10 @@ export default function AdminPage() {
       if (rErr) throw rErr;
       if (tErr) throw tErr;
 
-      const statColSet = new Set();
-
-      for (const rr of rules || []) {
-        const sport = norm2(rr.sport);
-        const keys = String(rr.stat_keys ?? "")
-          .split(",")
-          .map((x) => x.trim())
-          .filter(Boolean);
-
-        for (const k of keys) statColSet.add(`${sport}_${norm2(k)}`);
-      }
-
-      for (const tt of totals || []) {
-        statColSet.add(`${norm2(tt.sport)}_${norm2(tt.stat_key)}`);
-      }
-
-      const statCols = Array.from(statColSet).sort();
-
-      const totalsMap = new Map();
-      for (const t of totals || []) {
-        const key = `${norm2(t.league_id)}|${String(t.player_id)}|${norm2(t.sport)}|${norm2(t.stat_key)}`;
-        totalsMap.set(key, (totalsMap.get(key) || 0) + Number(t.value || 0));
-      }
-
-      const header = ["league_id", "team_name", "player_id", "player_name", ...statCols];
-
-      const lines = [];
-      lines.push(header.join(","));
-
-      for (const p of players || []) {
-        const league = norm2(p.league_id);
-        const playerId = String(p.id);
-
-        const playerName =
-          `${String(p.first_name ?? "").trim()} ${String(p.last_name ?? "").trim()}`.trim() || playerId;
-
-        const row = {};
-        row.league_id = league;
-        row.team_name = String(p.team_name ?? "");
-        row.player_id = playerId;
-        row.player_name = playerName;
-
-        for (const col of statCols) row[col] = 0;
-
-        for (const col of statCols) {
-          const [sport, stat] = col.split("_");
-          const k = `${league}|${playerId}|${sport}|${stat}`;
-          if (totalsMap.has(k)) row[col] = totalsMap.get(k);
-        }
-
-        lines.push(header.map((h) => csvEscape(row[h])).join(","));
-      }
-
-      const csv = lines.join("\n");
+      const csv = buildPlayerStatsCSV(players, rules, totals);
       downloadTextFile(`crest_player_stats_${new Date().toISOString().slice(0, 10)}.csv`, csv);
 
-      setMsg("✅ CSV downloaded.");
+      setMsg("CSV downloaded.");
     } catch (e) {
       setErr(e?.message ?? String(e));
       setMsg("");
@@ -1089,773 +1002,113 @@ export default function AdminPage() {
 
   return (
     <div className="pb-10">
-      <div className="mt-6">
-        <div className="text-2xl font-black">Admin Tools</div>
-        <div className="text-sm text-white/70">Used For Deleting Games and Fixing Snapshots.</div>
-      </div>
+      {confirmModal}
 
-      {err ? (
-        <div className="mt-4 rounded-xl border border-red-700 bg-red-950/40 p-3 text-sm text-red-200">{err}</div>
-      ) : null}
+      <PageHeader title="Admin tools" description="Scoring corrections, rosters, season controls, and exports." />
+
+      {err ? <div className="mt-4"><ErrorNote>{err}</ErrorNote></div> : null}
       {msg ? (
-        <div className="mt-4 rounded-xl border border-emerald-400/30 bg-emerald-500/10 p-3 text-sm text-emerald-100">
+        <div role="status" className="mt-4 rounded-md border-[1.5px] border-[var(--good)] p-3 text-sm font-semibold text-[var(--good-ink)]">
           {msg}
         </div>
       ) : null}
 
       {!authed ? (
-        <div className="mt-6 rounded-2xl border border-white/10 bg-white/5 p-5">
-          <div className="text-lg font-black">Unlock Admin</div>
-          <div className="mt-1 text-sm text-white/70">Enter the admin password</div>
-
-          <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-end">
-            <div className="flex-1">
-              <div className="mb-1 text-xs font-bold text-white/60">Password</div>
-              <input
-                type="password"
-                className="w-full rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm font-bold text-white placeholder:text-white/30"
-                value={pw}
-                onChange={(e) => setPw(e.target.value)}
-                placeholder="••••••••"
-              />
-            </div>
-            <button onClick={login} className="rounded-xl bg-white px-4 py-2 text-sm font-black text-slate-950 hover:bg-white/90">
-              Unlock
-            </button>
-          </div>
-
-          <div className="mt-3 text-xs text-white/50">Contact Ethan Esterson If Password Needed</div>
-
-          {/* Install instructions — moved here from the old Install page */}
-          <div className="mt-6 border-t border-white/10 pt-5">
-            <div className="text-lg font-black">📲 Install Crest League Live</div>
-            <div className="mt-1 text-sm text-white/60">Add the app to your home screen in 20 seconds.</div>
-            <div className="mt-4 grid gap-4 md:grid-cols-2">
-              <div className="rounded-xl border border-white/10 bg-black/20 p-4">
-                <div className="font-black">iPhone (Safari)</div>
-                <ol className="mt-2 list-decimal space-y-1 pl-5 text-sm text-white/75">
-                  <li>Open this site in <b>Safari</b>.</li>
-                  <li>Tap the <b>Share</b> button.</li>
-                  <li>Tap <b>Add to Home Screen</b>.</li>
-                  <li>Name it <b>Crest Live</b>, then <b>Add</b>.</li>
-                </ol>
-              </div>
-              <div className="rounded-xl border border-white/10 bg-black/20 p-4">
-                <div className="font-black">Android (Chrome)</div>
-                <ol className="mt-2 list-decimal space-y-1 pl-5 text-sm text-white/75">
-                  <li>Open this site in <b>Chrome</b>.</li>
-                  <li>Tap the <b>3-dot menu</b>.</li>
-                  <li>Tap <b>Add to Home screen</b>.</li>
-                  <li>Confirm <b>Add</b>.</li>
-                </ol>
-              </div>
-            </div>
-          </div>
-        </div>
+        <LoginPanel pw={pw} setPw={setPw} login={login} />
       ) : (
         <>
-          {/* Per-League Standings — group leader view */}
-          <div className="mt-6 rounded-2xl border border-blue-400/20 bg-blue-950/10 p-5">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <div>
-                <div className="text-lg font-black">Per-League Standings</div>
-                <div className="mt-1 text-sm text-white/70">
-                  For group leaders. Includes non-game points. The public Standings page now shows camp-wide totals only.
-                </div>
-              </div>
+          <PerLeagueStandings
+            league={adminStandingsLeague}
+            setLeague={setAdminStandingsLeague}
+            rows={adminStandingsRows}
+            loading={adminStandingsLoading}
+            onRefresh={() => loadAdminStandingsForLeague(adminStandingsLeague)}
+          />
 
-              <div className="flex items-center gap-2">
-                <select
-                  value={adminStandingsLeague}
-                  onChange={(e) => setAdminStandingsLeague(e.target.value)}
-                  className="rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm font-bold text-white"
-                >
-                  <option value="seniors">Seniors</option>
-                  <option value="juniors">Juniors</option>
-                  <option value="sophomores">Sophomores</option>
-                </select>
-                <button
-                  onClick={() => loadAdminStandingsForLeague(adminStandingsLeague)}
-                  className="rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm font-bold hover:bg-white/10"
-                >
-                  Refresh
-                </button>
-              </div>
-            </div>
+          <ConfirmBox value={confirmText} onChange={setConfirmText} />
 
-            <div className="mt-4 overflow-x-auto">
-              {adminStandingsLoading ? (
-                <div className="py-4 text-sm text-white/60">Loading…</div>
-              ) : (
-                <table className="w-full text-left text-sm">
-                  <thead className="text-white/70">
-                    <tr>
-                      <th className="py-2">#</th>
-                      <th className="py-2">Team</th>
-                      <th className="py-2">W</th>
-                      <th className="py-2">L</th>
-                      <th className="py-2">Pts</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {adminStandingsRows.length ? (
-                      adminStandingsRows.map((r, i) => (
-                        <tr key={`${r.team_name}-${i}`} className="border-t border-white/10">
-                          <td className="py-3 text-white/50">{i + 1}</td>
-                          <td className="py-3 font-extrabold">{r.team_name}</td>
-                          <td className="py-3">{r.wins}</td>
-                          <td className="py-3">{r.losses}</td>
-                          <td className="py-3 font-black">{r.league_points}</td>
-                        </tr>
-                      ))
-                    ) : (
-                      <tr>
-                        <td className="py-4 text-white/60" colSpan={5}>
-                          No standings yet for this league.
-                        </td>
-                      </tr>
-                    )}
-                  </tbody>
-                </table>
-              )}
-            </div>
-          </div>
+          <TradesPanel
+            loadingTradeMeta={loadingTradeMeta}
+            onRefresh={loadTradeMeta}
+            tradeLeague={tradeLeague} setTradeLeague={setTradeLeague} leagueOptions={leagueOptions}
+            tradeFromTeam={tradeFromTeam} setTradeFromTeam={setTradeFromTeam}
+            tradeToTeam={tradeToTeam} setTradeToTeam={setTradeToTeam}
+            teamOptions={teamOptions}
+            tradeSearch={tradeSearch} setTradeSearch={setTradeSearch}
+            filteredFromPlayers={filteredFromPlayers}
+            busy={busy} onTrade={doTradePlayer}
+          />
 
-          <div className="mt-6 rounded-2xl border border-white/10 bg-white/5 p-5">
-            <div className="text-lg font-black">Confirmation</div>
-            <div className="mt-1 text-sm text-white/70">Type the required word to enable a dangerous action.</div>
+          <ExportsPanel
+            exporting={exporting} onExportStats={exportPlayerStatsCSV}
+            exportingCards={exportingCards} onExportCards={exportPlayerCards}
+          />
 
-            <div className="mt-3">
-              <div className="mb-1 text-xs font-bold text-white/60">Type here</div>
-              <input
-                className="w-full rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm font-bold text-white placeholder:text-white/30"
-                value={confirmText}
-                onChange={(e) => setConfirmText(e.target.value)}
-                placeholder='Type "CLEAR", "RESET", "REBUILD", "DELETE", or "TRADE"'
-              />
-            </div>
-          </div>
+          <DangerZonePanel
+            busy={busy} onClearSnapshots={doClearSnapshots}
+            keepHighlights={keepHighlights} setKeepHighlights={setKeepHighlights}
+            onResetSeason={doResetSeason}
+          />
 
-          {/* Trades */}
-          <div className="mt-6 rounded-2xl border border-white/10 bg-white/5 p-5">
-            <div className="flex items-center justify-between gap-3">
-              <div>
-                <div className="text-lg font-black">Trades</div>
-                <div className="mt-1 text-sm text-white/70">
-                  Trade players <b>within the same age league</b>. This only changes which team they appear on for{" "}
-                  <b>future rosters</b>.
-                </div>
-                <div className="mt-2 text-xs text-white/60">
-                  Required confirmation word: <b>TRADE</b>
-                </div>
-              </div>
+          <StuckGamesPanel
+            stuckGames={stuckGames} onLoad={loadStuckGames}
+            busy={busy} onForceClose={forceCloseGame}
+            labelMatchup={labelMatchup}
+          />
 
-              <button
-                onClick={loadTradeMeta}
-                disabled={busy || loadingTradeMeta}
-                className="rounded-xl border border-white/15 bg-white/5 px-4 py-2 text-sm font-black hover:bg-white/10 disabled:opacity-60"
-              >
-                {loadingTradeMeta ? "Loading…" : "Refresh Lists"}
-              </button>
-            </div>
+          <RebuildPanel busy={busy} onRebuild={doRebuildLeaderboards} />
 
-            <div className="mt-4 grid gap-3 md:grid-cols-3">
-              <div>
-                <div className="mb-1 text-xs font-bold text-white/60">League</div>
-                <select
-                  value={tradeLeague}
-                  onChange={(e) => setTradeLeague(e.target.value)}
-                  className="w-full rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm font-bold text-white"
-                >
-                  <option value="">Select league…</option>
-                  {leagueOptions.map((l) => (
-                    <option key={l} value={l}>
-                      {l}
-                    </option>
-                  ))}
-                </select>
-              </div>
+          <FinalGamesPanel
+            showFinalGames={showFinalGames} setShowFinalGames={setShowFinalGames}
+            finalGames={finalGames} loadingFinal={loadingFinal} onRefresh={loadFinalGames}
+            busy={busy} onDelete={deleteFinalGame}
+            overrideGameId={overrideGameId} setOverrideGameId={setOverrideGameId}
+            overridePoints={overridePoints} setOverridePoints={setOverridePoints}
+            onSaveOverride={updateGameWinPoints}
+            labelMatchup={labelMatchup}
+          />
 
-              <div>
-                <div className="mb-1 text-xs font-bold text-white/60">From Team</div>
-                <select
-                  value={tradeFromTeam}
-                  onChange={(e) => setTradeFromTeam(e.target.value)}
-                  className="w-full rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm font-bold text-white"
-                >
-                  <option value="">Select team…</option>
-                  {teamOptions.map((t) => (
-                    <option key={t} value={t}>
-                      {t}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <div className="mb-1 text-xs font-bold text-white/60">To Team</div>
-                <select
-                  value={tradeToTeam}
-                  onChange={(e) => setTradeToTeam(e.target.value)}
-                  className="w-full rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm font-bold text-white"
-                >
-                  <option value="">Select team…</option>
-                  {teamOptions
-                    .filter((t) => t !== tradeFromTeam)
-                    .map((t) => (
-                      <option key={t} value={t}>
-                        {t}
-                      </option>
-                    ))}
-                </select>
-              </div>
-            </div>
-
-            <div className="mt-4">
-              <div className="mb-1 text-xs font-bold text-white/60">Search Players (name/id/role)</div>
-              <input
-                value={tradeSearch}
-                onChange={(e) => setTradeSearch(e.target.value)}
-                placeholder="Search…"
-                className="w-full rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm font-bold text-white placeholder:text-white/30"
-              />
-            </div>
-
-            {!tradeLeague || !tradeFromTeam ? (
-              <div className="mt-4 text-sm text-white/60">Choose a League and From Team to load players.</div>
-            ) : !filteredFromPlayers.length ? (
-              <div className="mt-4 text-sm text-white/60">No players found on that team.</div>
-            ) : (
-              <div className="mt-4 grid gap-2">
-                {filteredFromPlayers.map((p) => {
-                  const full =
-                    `${String(p.first_name ?? "").trim()} ${String(p.last_name ?? "").trim()}`.trim() || String(p.id);
-                  const role = String(p.role ?? "");
-                  return (
-                    <div key={p.id} className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-white/10 bg-black/20 p-4">
-                      <div className="min-w-0">
-                        <div className="truncate text-base font-black">{full}</div>
-                        <div className="mt-1 text-xs text-white/60">
-                          {p.league_id} • {p.team_name} • ID: {p.id}
-                          {role ? <span className="ml-2 text-white/50">• Role: {role}</span> : null}
-                        </div>
-                      </div>
-
-                      <button
-                        disabled={busy || !tradeToTeam || tradeToTeam === tradeFromTeam}
-                        onClick={() => doTradePlayer(p)}
-                        className="rounded-2xl border border-amber-400/30 bg-amber-500/10 px-4 py-3 text-sm font-black text-amber-100 hover:bg-amber-500/15 disabled:opacity-60"
-                        title="Trade player"
-                      >
-                        Trade → {tradeToTeam || "Select TO team"}
-                      </button>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-
-          {/* Export CSV */}
-          <div className="mt-6 rounded-2xl border border-white/10 bg-white/5 p-5">
-            <div className="text-lg font-black">Export Player Stats (CSV)</div>
-            <div className="mt-1 text-sm text-white/70">
-              Downloads a CSV of every player across all leagues with their total stats (from <b>player_totals</b>).
-            </div>
-
-            <button
-              disabled={exporting}
-              onClick={exportPlayerStatsCSV}
-              className="mt-4 w-full rounded-2xl border border-white/15 bg-white/5 px-4 py-3 text-sm font-black hover:bg-white/10 disabled:opacity-60"
-            >
-              {exporting ? "Exporting…" : "Download Player Stats CSV"}
-            </button>
-
-            <div className="mt-6 border-t border-white/10 pt-5">
-              <div className="text-lg font-black">🃏 Player Card Data (for imaging team)</div>
-              <div className="mt-1 text-sm text-white/70">
-                The master keepsake file. One row per camper across <b>both sessions</b> — name, league, team, bunk, total wins, best single-game performance, and every stat total. This is what the imaging team turns into cards.
-              </div>
-              <button
-                disabled={exportingCards}
-                onClick={exportPlayerCards}
-                className="mt-4 w-full rounded-2xl border border-amber-400/30 bg-amber-500/10 px-4 py-3 text-sm font-black text-amber-100 hover:bg-amber-500/15 disabled:opacity-60"
-              >
-                {exportingCards ? "Building…" : "Download Player Card Data"}
-              </button>
-            </div>
-          </div>
-
-          <div className="mt-6 grid gap-6 md:grid-cols-2">
-            <div className="rounded-2xl border border-white/10 bg-white/5 p-5">
-              <div className="text-lg font-black">Clear Standings + Leaders</div>
-              <div className="mt-1 text-sm text-white/70">
-                Empties snapshot tables. <b>Does not delete games.</b>
-              </div>
-              <div className="mt-4 text-xs text-white/60">
-                Required confirmation word: <b>CLEAR</b>
-              </div>
-
-              <button
-                disabled={busy}
-                onClick={doClearSnapshots}
-                className="mt-4 w-full rounded-2xl border border-white/15 bg-white/5 px-4 py-3 text-sm font-black hover:bg-white/10 disabled:opacity-60"
-              >
-                {busy ? "Working…" : "Clear Snapshots"}
-              </button>
-            </div>
-
-            <div className="rounded-2xl border border-red-700/30 bg-red-950/20 p-5">
-              <div className="text-lg font-black text-red-100">⚠️ Reset Season — Permanent Deletion</div>
-              <div className="mt-1 text-sm text-red-200/80">
-                Deletes <b>every game, stat, box score, and roster ever recorded</b> — not just test data. Once the season has started, this is irreversible. <b>Keeps leagues/players/points rules</b>.
-              </div>
-
-              <label className="mt-4 flex items-center gap-2 text-sm font-bold text-red-100">
-                <input type="checkbox" checked={keepHighlights} onChange={(e) => setKeepHighlights(e.target.checked)} />
-                Keep highlights (recommended)
-              </label>
-
-              <div className="mt-2 text-xs text-red-200/70">
-                Required confirmation word: <b>RESET</b>
-              </div>
-
-              <button
-                disabled={busy}
-                onClick={doResetSeason}
-                className="mt-4 w-full rounded-2xl border border-red-400/30 bg-red-500/10 px-4 py-3 text-sm font-black text-red-100 hover:bg-red-500/15 disabled:opacity-60"
-              >
-                {busy ? "Working…" : "RESET SEASON"}
-              </button>
-            </div>
-          </div>
-          <div className="mt-6 rounded-2xl border border-amber-500/20 bg-amber-950/20 p-5">
-            <div className="flex items-center justify-between gap-3">
-              <div>
-                <div className="text-lg font-black text-amber-100">Stuck Games</div>
-                <div className="mt-1 text-sm text-amber-200/70">
-                  Games stuck in "active" status that were never finalized. Safe to remove if the game never finished.
-                </div>
-              </div>
-              <button
-                onClick={loadStuckGames}
-                className="shrink-0 rounded-xl border border-white/15 bg-white/10 px-4 py-2 text-sm font-black hover:bg-white/20"
-              >
-                Load
-              </button>
-            </div>
-
-            <div className="mt-3 text-xs text-white/60">
-              Required confirmation word: <span className="font-black text-white">DELETE</span>
-            </div>
-
-            {stuckGames.length === 0 ? (
-              <div className="mt-4 text-sm text-white/60">
-                No stuck games found. Hit Load to check.
-              </div>
-            ) : (
-              <div className="mt-4 grid gap-3">
-                {stuckGames.map((g) => (
-                  <div key={g.id} className="rounded-2xl border border-amber-500/20 bg-black/20 p-4">
-                    <div className="flex flex-wrap items-center justify-between gap-3">
-                      <div className="min-w-0">
-                        <div className="text-xs text-white/60">{new Date(g.created_at).toLocaleString()}</div>
-                        <div className="mt-1 truncate text-lg font-black">{labelMatchup(g)}</div>
-                        <div className="mt-1 text-sm text-white/70">
-                          {g.league_key} • {g.sport} • Level {g.level}
-                        </div>
-                        <div className="mt-1 text-xl font-black tabular-nums">
-                          {Number(g.score_a || 0)} – {Number(g.score_b || 0)}
-                        </div>
-                        <div className="mt-1 text-xs text-white/50">ID: {g.id}</div>
-                      </div>
-                      <button
-                        onClick={() => forceCloseGame(g.id)}
-                        disabled={busy}
-                        className="shrink-0 rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-2 text-sm font-black text-red-200 hover:bg-red-500/20 disabled:opacity-40"
-                      >
-                        Force Remove
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-          <div className="mt-6 rounded-2xl border border-white/10 bg-white/5 p-5">
-            <div className="text-lg font-black">Rebuild Leaderboards</div>
-            <div className="mt-1 text-sm text-white/70">Recalculates standings + stat leaders from all finalized games.</div>
-            <div className="mt-3 text-xs text-white/60">
-              Required confirmation word: <b>REBUILD</b>
-            </div>
-
-            <button
-              disabled={busy}
-              onClick={doRebuildLeaderboards}
-              className="mt-4 w-full rounded-2xl border border-white/15 bg-white/5 px-4 py-3 text-sm font-black hover:bg-white/10 disabled:opacity-60"
-            >
-              {busy ? "Working…" : "Rebuild Leaderboards"}
-            </button>
-          </div>
-
-          {/* Finalized games */}
-          <div className="mt-6 rounded-2xl border border-white/10 bg-white/5 p-5">
-            <div className="flex items-center justify-between gap-3">
-              <div>
-                <div className="text-lg font-black">Finalized Games</div>
-                <div className="mt-1 text-sm text-white/70">Admin-only delete. Rebuilds standings + leaders.</div>
-              </div>
-
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={() => setShowFinalGames((v) => !v)}
-                  className="rounded-xl border border-white/15 bg-white/5 px-4 py-2 text-sm font-black hover:bg-white/10"
-                >
-                  {showFinalGames ? "Hide" : `Show (${finalGames.length})`}
-                </button>
-                <button
-                  onClick={loadFinalGames}
-                  disabled={busy || loadingFinal}
-                  className="rounded-xl border border-white/15 bg-white/5 px-4 py-2 text-sm font-black hover:bg-white/10 disabled:opacity-60"
-                >
-                  {loadingFinal ? "Loading…" : "Refresh"}
-                </button>
-              </div>
-            </div>
-
-            {showFinalGames ? (
-            <>
-            <div className="mt-3 text-xs text-white/60">
-              Required confirmation word to delete: <b>DELETE</b>
-            </div>
-
-            {!finalGames.length ? (
-              <div className="mt-4 text-sm text-white/60">{loadingFinal ? "Loading…" : "No finalized games found."}</div>
-            ) : (
-              <div className="mt-4 grid gap-3">
-                {finalGames.map((g) => (
-                  <div key={g.id} className="rounded-2xl border border-white/10 bg-black/20 p-4">
-                    <div className="flex flex-wrap items-center justify-between gap-3">
-                      <div className="min-w-0">
-                        <div className="text-xs text-white/60">{new Date(g.created_at).toLocaleString()}</div>
-                        <div className="mt-1 truncate text-lg font-black">{labelMatchup(g)}</div>
-                        <div className="mt-1 text-sm text-white/70">
-                          {g.league_key} • {g.sport} • Level {g.level} • {g.mode}{" "}
-                          {g.is_staff_game ? (
-                            <span className="ml-2 rounded-full border border-purple-400/30 bg-purple-500/10 px-2 py-0.5 text-[11px] font-black text-purple-100">
-                              STAFF
-                            </span>
-                          ) : null}
-                        </div>
-                        <div className="mt-1 text-xs text-white/50">ID: {g.id}</div>
-                      </div>
-
-                      <div className="flex flex-col items-end gap-2">
-                        <div className="flex items-center gap-3">
-                          <div className="rounded-2xl border border-white/10 bg-white/5 p-3 text-center">
-                            <div className="text-xs text-white/60">Final</div>
-                            <div className="mt-1 text-3xl font-black tabular-nums">
-                              {Number(g.score_a || 0)} - {Number(g.score_b || 0)}
-                            </div>
-                          </div>
-
-                          <button
-                            disabled={busy}
-                            onClick={() => deleteFinalGame(g.id)}
-                            className="rounded-2xl border border-red-400/30 bg-red-500/10 px-4 py-3 text-sm font-black text-red-100 hover:bg-red-500/15 disabled:opacity-60"
-                          >
-                            {busy ? "Working…" : "Delete Final Game"}
-                          </button>
-                        </div>
-
-                        {overrideGameId === g.id ? (
-                          <div className="flex items-center gap-2">
-                            <input
-                              type="number"
-                              min="0"
-                              value={overridePoints}
-                              onChange={(e) => setOverridePoints(e.target.value)}
-                              placeholder="New win pts"
-                              className="w-28 rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm font-black text-amber-100 outline-none"
-                            />
-                            <button
-                              disabled={busy}
-                              onClick={() => updateGameWinPoints(g.id)}
-                              className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm font-black text-amber-100 hover:bg-amber-500/20 disabled:opacity-60"
-                            >
-                              Save
-                            </button>
-                            <button
-                              onClick={() => { setOverrideGameId(null); setOverridePoints(""); }}
-                              className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm font-black hover:bg-white/10"
-                            >
-                              Cancel
-                            </button>
-                          </div>
-                        ) : (
-                          <button
-                            onClick={() => { setOverrideGameId(g.id); setOverridePoints(""); }}
-                            className="rounded-xl border border-amber-500/20 bg-amber-500/5 px-3 py-2 text-xs font-black text-amber-200 hover:bg-amber-500/10"
-                          >
-                            Override Win Points
-                          </button>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-            </>
-            ) : null}
-          </div>
-
-          {/* Non-game points */}
-          <div className="mt-6 rounded-2xl border border-white/10 bg-white/5 p-5">
-            <div className="flex items-center justify-between gap-3">
-              <div>
-                <div className="text-lg font-black">Non-Game Points Entries</div>
-                <div className="mt-1 text-sm text-white/70">Soft-delete entries (removes from totals immediately).</div>
-              </div>
-
-              <button
-                onClick={loadNonGamePoints}
-                disabled={busy || loadingNG}
-                className="rounded-xl border border-white/15 bg-white/5 px-4 py-2 text-sm font-black hover:bg-white/10 disabled:opacity-60"
-              >
-                {loadingNG ? "Loading…" : "Refresh"}
-              </button>
-            </div>
-
-            <div className="mt-3 text-xs text-white/60">
-              Required confirmation word to delete: <b>DELETE</b>
-            </div>
-
-            {!ngRows.length ? (
-              <div className="mt-4 text-sm text-white/60">{loadingNG ? "Loading…" : "No non-game entries found."}</div>
-            ) : (
-              <div className="mt-4 grid gap-3">
-                {ngRows.map((r) => (
-                  <div key={r.id} className="rounded-2xl border border-white/10 bg-black/20 p-4">
-                    <div className="flex flex-wrap items-center justify-between gap-3">
-                      <div className="min-w-0">
-                        <div className="text-xs text-white/60">
-                          {r.entry_date} • {r.league_id}
-                        </div>
-                        <div className="mt-1 truncate text-lg font-black">
-                          {r.team_name} +{Number(r.points || 0)}
-                        </div>
-                        <div className="mt-1 text-sm text-white/70">{r.reason}</div>
-                        {r.notes ? <div className="mt-1 text-xs text-white/60">{r.notes}</div> : null}
-                        <div className="mt-1 text-xs text-white/40">ID: {r.id}</div>
-                      </div>
-
-                      <button
-                        disabled={busy}
-                        onClick={() => deleteNonGame(r.id)}
-                        className="rounded-2xl border border-red-400/30 bg-red-500/10 px-4 py-3 text-sm font-black text-red-100 hover:bg-red-500/15 disabled:opacity-60"
-                      >
-                        {busy ? "Working…" : "Delete Entry"}
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
+          <NonGamePointsPanel
+            ngRows={ngRows} loadingNG={loadingNG} onRefresh={loadNonGamePoints}
+            busy={busy} onDelete={deleteNonGame}
+          />
 
           <div className="mt-6 text-xs text-white/50">
             After deleting staff/non-game entries, the Staff tab + Non-Game tab + Overall toggles should reflect changes immediately.
           </div>
 
-          {/* ================= SESSION CONTROL ================= */}
-          <div className={`mt-8 rounded-2xl border p-5 ${cwSettings?.current_session === "s2" ? "border-purple-400/50 bg-purple-500/10" : "border-amber-400/30 bg-amber-500/5"}`}>
-            <div className="text-lg font-black">Session Control</div>
-            <div className="mt-1 text-sm text-white/60">
-              Current session:{" "}
-              <span className="font-black text-purple-300">
-                {cwSettings?.current_session === "s2" ? "SESSION 2" : "SESSION 1"}
-              </span>
-            </div>
+          <SessionControlPanel
+            cwSettings={cwSettings}
+            sessionSwitchText={sessionSwitchText} setSessionSwitchText={setSessionSwitchText}
+            switchingSession={switchingSession} onStartSession2={startNewSession}
+          />
 
-            {cwSettings?.current_session !== "s2" ? (
-              <div className="mt-4 rounded-xl border border-white/10 bg-black/20 p-4">
-                <div className="text-sm font-bold text-white/80">
-                  Start Session 2 — freezes all of Session 1 (kept forever, just hidden) and starts a fresh season with the new rosters. Standings, leaders, and games all reset to empty for Session 2. This also switches the app back to League mode.
-                </div>
-                <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-end">
-                  <label className="text-sm">
-                    <div className="mb-1 text-xs font-bold text-white/60">Type START SESSION 2 to confirm</div>
-                    <input value={sessionSwitchText} onChange={(e) => setSessionSwitchText(e.target.value)}
-                      placeholder="START SESSION 2"
-                      className="w-full rounded-xl border border-amber-400/40 bg-slate-950 px-3 py-2 font-black tracking-wide text-white outline-none focus:border-amber-400/70 sm:w-64" />
-                  </label>
-                  <button disabled={switchingSession} onClick={startNewSession}
-                    className="rounded-xl border border-purple-400/40 bg-purple-500/15 px-5 py-2.5 text-sm font-black text-purple-100 hover:bg-purple-500/25 disabled:opacity-50">
-                    {switchingSession ? "Starting…" : "→ Start Session 2"}
-                  </button>
-                </div>
-              </div>
-            ) : (
-              <div className="mt-4 rounded-xl border border-purple-400/20 bg-black/20 p-4 text-sm text-white/70">
-                Session 2 is live. Session 1 is frozen and preserved in the database. There is no switch back — Session 1 remains viewable via the archive (read-only).
-              </div>
-            )}
-          </div>
-          {/* ================= END SESSION CONTROL ================= */}
+          <AwardsControlPanel cwSettings={cwSettings} onToggle={toggleLeagueEnded} />
 
-          {/* ================= AWARDS CONTROL ================= */}
-          <div className="mt-8 rounded-2xl border border-amber-400/20 bg-amber-500/5 p-5">
-            <div className="text-lg font-black">🏆 Awards</div>
-            <div className="mt-1 text-sm text-white/60">
-              The Awards page shows live leaders during the session. When league play is over, mark it final to crown winners.
-            </div>
-            <button
-              onClick={async () => {
-                const cur = Boolean(cwSettings?.league_ended);
-                const { error } = await supabase.from("app_settings")
-                  .update({ league_ended: !cur }).eq("id", 1);
-                if (error) { setErr(error.message); return; }
-                setMsg(!cur ? "Awards now show FINAL winners." : "Awards back to live race.");
-                await loadCwSettings();
-              }}
-              className="mt-4 rounded-xl border border-amber-400/40 bg-amber-500/15 px-5 py-2.5 text-sm font-black text-amber-100 hover:bg-amber-500/25"
-            >
-              {cwSettings?.league_ended ? "↩ Reopen (back to live race)" : "🏆 Mark league final (crown winners)"}
-            </button>
-          </div>
-          {/* ================= END AWARDS CONTROL ================= */}
+          <DisplayModePanel
+            cwSettings={cwSettings}
+            switching={switchingDisplayMode}
+            onSwitch={switchDisplayMode}
+          />
 
-          {/* ================= SESSION 1 ARCHIVE (read-only) ================= */}
-          <div className="mt-8 rounded-2xl border border-white/10 bg-white/[0.03] p-5">
-            <div className="flex items-center justify-between">
-              <div>
-                <div className="text-lg font-black">Session 1 Archive</div>
-                <div className="mt-1 text-sm text-white/60">Read-only view of frozen Session 1 standings + stat leaders. Does not affect the current session.</div>
-              </div>
-              <button
-                onClick={() => { const n = !archiveOpen; setArchiveOpen(n); if (n) loadArchive(archiveLeague); }}
-                className="rounded-xl border border-white/15 bg-white/10 px-4 py-2 text-sm font-black hover:bg-white/15">
-                {archiveOpen ? "Hide" : "View Session 1"}
-              </button>
-            </div>
+          <ArchivePanel
+            archiveOpen={archiveOpen}
+            onToggle={() => { const n = !archiveOpen; setArchiveOpen(n); if (n) loadArchive(archiveLeague); }}
+            archiveLeague={archiveLeague}
+            onSelectLeague={(lg) => { setArchiveLeague(lg); loadArchive(lg); }}
+            archiveLoading={archiveLoading}
+            archiveStandings={archiveStandings}
+            archiveLeaders={archiveLeaders}
+          />
 
-            {archiveOpen ? (
-              <div className="mt-5">
-                <div className="flex items-center gap-2">
-                  {["seniors", "juniors", "sophomores"].map((lg) => (
-                    <button key={lg}
-                      onClick={() => { setArchiveLeague(lg); loadArchive(lg); }}
-                      className={`rounded-xl border px-3 py-2 text-sm font-black ${archiveLeague === lg ? "border-emerald-400/30 bg-emerald-500/10" : "border-white/15 bg-white/5 hover:bg-white/10"}`}>
-                      {lg.charAt(0).toUpperCase() + lg.slice(1)}
-                    </button>
-                  ))}
-                </div>
-
-                {archiveLoading ? (
-                  <div className="mt-4 text-sm text-white/60">Loading…</div>
-                ) : (
-                  <div className="mt-4 grid gap-5 lg:grid-cols-2">
-                    <div className="rounded-2xl border border-white/10 bg-black/20 p-4">
-                      <div className="mb-2 text-sm font-black uppercase tracking-widest text-white/50">Final Standings</div>
-                      <table className="w-full text-left text-sm">
-                        <thead className="text-white/50"><tr><th className="py-1">#</th><th>Team</th><th>W</th><th>L</th><th>Pts</th></tr></thead>
-                        <tbody>
-                          {archiveStandings.map((r, i) => (
-                            <tr key={r.team_name} className="border-t border-white/10">
-                              <td className="py-2 text-white/40">{i + 1}</td>
-                              <td className="py-2 font-black">{r.team_name}</td>
-                              <td className="py-2">{r.wins}</td>
-                              <td className="py-2">{r.losses}</td>
-                              <td className="py-2 font-black">{r.total}</td>
-                            </tr>
-                          ))}
-                          {!archiveStandings.length ? <tr><td colSpan={5} className="py-3 text-white/50">No data.</td></tr> : null}
-                        </tbody>
-                      </table>
-                    </div>
-
-                    <div className="rounded-2xl border border-white/10 bg-black/20 p-4">
-                      <div className="mb-2 text-sm font-black uppercase tracking-widest text-white/50">Top Stat Leaders</div>
-                      <div className="grid gap-1">
-                        {archiveLeaders.map((r, i) => (
-                          <div key={i} className="flex items-center justify-between border-t border-white/10 py-1.5 text-sm">
-                            <div className="truncate font-bold">{r.player_name}</div>
-                            <div className="ml-3 shrink-0 text-white/60">{r.value} {String(r.stat_key).toUpperCase()} · {String(r.sport).toUpperCase()}</div>
-                          </div>
-                        ))}
-                        {!archiveLeaders.length ? <div className="py-3 text-white/50">No data.</div> : null}
-                      </div>
-                    </div>
-                  </div>
-                )}
-              </div>
-            ) : null}
-          </div>
-          {/* ================= END SESSION 1 ARCHIVE ================= */}
-
-
-          {/* ================= COLOR WAR CONTROL ================= */}
-          <div className={`mt-8 rounded-2xl border p-5 ${cwSettings?.mode === "color_war" ? "border-blue-400/50 bg-blue-500/10" : "border-white/10 bg-white/5"}`}>
-            <div className="flex items-center justify-between">
-              <div>
-                <div className="text-lg font-black">Color War Control</div>
-                <div className="mt-1 text-sm text-white/60">
-                  Current mode:{" "}
-                  <span className={cwSettings?.mode === "color_war" ? "font-black text-blue-300" : "font-black text-emerald-300"}>
-                    {cwSettings?.mode === "color_war" ? "COLOR WAR" : "LEAGUE"}
-                  </span>
-                </div>
-              </div>
-            </div>
-
-            <div className="mt-5 grid gap-3 sm:grid-cols-2">
-              <label className="text-sm">
-                <div className="mb-1 text-xs font-bold text-white/60">Blue Team Name</div>
-                <input value={cwBlueNameInput} onChange={(e) => setCwBlueNameInput(e.target.value)}
-                  placeholder="Blue Avalanche"
-                  className="w-full rounded-xl border border-blue-400/30 bg-slate-950 px-3 py-2 text-white outline-none focus:border-blue-400/60" />
-              </label>
-              <label className="text-sm">
-                <div className="mb-1 text-xs font-bold text-white/60">White Team Name</div>
-                <input value={cwWhiteNameInput} onChange={(e) => setCwWhiteNameInput(e.target.value)}
-                  placeholder="White Knockout"
-                  className="w-full rounded-xl border border-white/30 bg-slate-950 px-3 py-2 text-white outline-none focus:border-white/60" />
-              </label>
-            </div>
-            <button onClick={saveCwNames}
-              className="mt-3 rounded-xl border border-white/15 bg-white/10 px-4 py-2 text-sm font-black hover:bg-white/15">
-              Save Team Names
-            </button>
-
-            <div className="mt-6 rounded-xl border border-white/10 bg-black/20 p-4">
-              <div className="text-sm font-bold text-white/80">
-                {cwSettings?.mode === "color_war"
-                  ? "Switch back to LEAGUE — restores all league teams, standings, and stats exactly as they were. Color War data is kept."
-                  : "Switch to COLOR WAR — the whole app shows Blue vs White for the week. League data is untouched and returns when you switch back."}
-              </div>
-              <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-end">
-                <label className="text-sm">
-                  <div className="mb-1 text-xs font-bold text-white/60">Type SWITCH to confirm</div>
-                  <input value={modeSwitchText} onChange={(e) => setModeSwitchText(e.target.value)}
-                    placeholder="SWITCH"
-                    className="w-full rounded-xl border border-amber-400/40 bg-slate-950 px-3 py-2 font-black tracking-widest text-white outline-none focus:border-amber-400/70 sm:w-48" />
-                </label>
-                {cwSettings?.mode === "color_war" ? (
-                  <button disabled={switchingMode} onClick={() => switchMode("league")}
-                    className="rounded-xl border border-emerald-400/40 bg-emerald-500/15 px-5 py-2.5 text-sm font-black text-emerald-100 hover:bg-emerald-500/25 disabled:opacity-50">
-                    {switchingMode ? "Switching…" : "→ Switch to LEAGUE"}
-                  </button>
-                ) : (
-                  <button disabled={switchingMode} onClick={() => switchMode("color_war")}
-                    className="rounded-xl border border-blue-400/40 bg-blue-500/15 px-5 py-2.5 text-sm font-black text-blue-100 hover:bg-blue-500/25 disabled:opacity-50">
-                    {switchingMode ? "Switching…" : "→ Switch to COLOR WAR"}
-                  </button>
-                )}
-              </div>
-            </div>
-          </div>
-          {/* ================= END COLOR WAR CONTROL ================= */}
+          <ColorWarControlPanel
+            cwSettings={cwSettings}
+            cwBlueNameInput={cwBlueNameInput} setCwBlueNameInput={setCwBlueNameInput}
+            cwWhiteNameInput={cwWhiteNameInput} setCwWhiteNameInput={setCwWhiteNameInput}
+            onSaveNames={saveCwNames}
+            modeSwitchText={modeSwitchText} setModeSwitchText={setModeSwitchText}
+            switchingMode={switchingMode} onSwitchMode={switchMode}
+          />
         </>
       )}
     </div>

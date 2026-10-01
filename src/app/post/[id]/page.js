@@ -4,8 +4,11 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
+import { useNotifyingErr } from "@/lib/useNotifyingErr";
 import { notifyGameFinalized } from "@/lib/notifyGame";
+import { useConfirmDialog } from "@/lib/useConfirmDialog";
 
+import { PageHeader, EmptyState, ErrorNote, SkeletonRows } from "@/components/ui";
 function norm(s) {
   return String(s ?? "").trim().toLowerCase();
 }
@@ -75,7 +78,8 @@ export default function PostDraftEditorPage() {
   const router = useRouter();
   const id = params?.id;
 
-  const [err, setErr] = useState("");
+  const [err, setErr] = useNotifyingErr();
+  const { confirmAsync, confirmModal } = useConfirmDialog();
   const [msg, setMsg] = useState("");
   const [game, setGame] = useState(null);
 
@@ -507,12 +511,15 @@ export default function PostDraftEditorPage() {
         if (anyStats) break;
       }
       if (!anyStats) {
-        const proceed = confirm("This game has NO player stats logged.\n\nFor player cards we want every goal/point/hit recorded. Add stats first, or finalize anyway?");
+        const proceed = await confirmAsync(
+          "For player cards we want every goal/point/hit recorded. Add stats first, or finalize anyway?",
+          { title: "No player stats logged", confirmLabel: "Finalize Anyway" }
+        );
         if (!proceed) return;
       }
     }
 
-    const ok = confirm("Finalize this post-game draft?\n\nThis updates standings + stat leaders.");
+    const ok = await confirmAsync("This updates standings + stat leaders.", { title: "Finalize this post-game draft?", confirmLabel: "Finalize", danger: false });
     if (!ok) return;
 
     setFinalizing(true);
@@ -542,13 +549,16 @@ export default function PostDraftEditorPage() {
 
   if (!game) {
     return (
-      <div className="min-h-screen bg-slate-950 text-slate-100">
-        <div className="mx-auto max-w-4xl px-4 py-6">
-          <div className="text-lg font-black">Loading draft…</div>
-          {err ? (
-            <div className="mt-4 rounded-xl border border-red-700 bg-red-950/40 p-3 text-sm text-red-200">{err}</div>
-          ) : null}
-        </div>
+      <div className="pb-10 pt-4">
+        {err ? (
+          <ErrorNote>{err}</ErrorNote>
+        ) : (
+          <div aria-busy="true">
+            <div className="bc-skel" style={{ width: 220, height: 40 }} />
+            <div className="bc-card mt-6 p-5"><SkeletonRows rows={2} label="Loading draft" /></div>
+            <div className="bc-card mt-6 p-5"><SkeletonRows rows={5} label="Loading roster" /></div>
+          </div>
+        )}
       </div>
     );
   }
@@ -564,19 +574,21 @@ export default function PostDraftEditorPage() {
     if (!showBatting) return null;
     const idx = list.findIndex((x) => x.player_id === p.player_id);
     return (
-      <div className="shrink-0 flex items-center gap-1.5">
-        <div className="w-5 text-center text-xs font-black opacity-70">{idx + 1}</div>
+      <div className="flex shrink-0 items-center gap-1.5">
+        <div className="w-5 text-center text-sm font-bold text-[var(--ink-2)]">{idx + 1}</div>
         <button
           onClick={() => moveInOrder(p, "up")}
           disabled={idx === 0}
-          className="h-9 w-9 rounded-lg border border-white/10 bg-white/10 text-sm font-black disabled:opacity-40"
+          aria-label={`Move ${p.player_name} up`}
+          className="step step-undo"
         >
           ↑
         </button>
         <button
           onClick={() => moveInOrder(p, "down")}
           disabled={idx === list.length - 1}
-          className="h-9 w-9 rounded-lg border border-white/10 bg-white/10 text-sm font-black disabled:opacity-40"
+          aria-label={`Move ${p.player_name} down`}
+          className="step step-undo"
         >
           ↓
         </button>
@@ -584,214 +596,144 @@ export default function PostDraftEditorPage() {
     );
   };
 
-  return (
-    <div className="min-h-screen bg-slate-950 text-slate-100">
-      <div className="mx-auto max-w-6xl px-4 py-6">
-        <div className="flex items-center justify-between gap-4">
-          <div>
-            <div className="flex items-center gap-2">
-              <div className="text-2xl font-black tracking-tight">{isStaff ? "Staff Game Draft" : "Post Game Draft"}</div>
-              {isStaff ? (
-                <span className="rounded-full border border-purple-400/30 bg-purple-500/10 px-2 py-1 text-[11px] font-black text-purple-100">
-                  STAFF
-                </span>
-              ) : null}
-            </div>
-
-            <div className="mt-1 text-sm text-white/70">
-              {game.played_on} • {game.league_key} • {game.sport} • Level {game.level} •{" "}
-              <span className="font-bold text-yellow-300">draft</span>
-            </div>
-          </div>
-
-          <div className="flex gap-2">
-            <Link
-              href="/post"
-              className="rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-sm font-semibold hover:bg-white/10"
-            >
-              Back
-            </Link>
-            <Link
-              href="/"
-              className="rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-sm font-semibold hover:bg-white/10"
-            >
-              Home
-            </Link>
-          </div>
+  // Plain function (not a component) so rows keep their DOM between renders.
+  const renderRoster = (list, side, label) => (
+    <div>
+      <h3 className="bc-select-label" style={{ fontSize: 13 }}>{label} players</h3>
+      {!list.length ? (
+        <div className="mt-2 text-[var(--ink-2)]">
+          No roster yet. Tap <b>Build roster</b>.
         </div>
+      ) : (
+        <div className="mt-3 grid gap-3">
+          {list.map((p) => (
+            <div key={`${side}-${p.player_id}`} className="lv-row">
+              <div className="flex items-center justify-between gap-2">
+                <div className="lv-name">
+                  {isCap(p.player_id) ? (
+                    <>
+                      <span className="lv-cap" aria-hidden="true">C</span>
+                      <span className="sr-only">Captain </span>
+                    </>
+                  ) : null}
+                  <span>{p.player_name}</span>
+                </div>
 
-        {err ? (
-          <div className="mt-4 rounded-xl border border-red-700 bg-red-950/40 p-3 text-sm text-red-200">{err}</div>
-        ) : null}
+                <RowHeaderRightControls list={list} p={p} side={side} />
+              </div>
+
+              {p.team_name ? <div className="mt-1 text-sm text-[var(--ink-2)]">{p.team_name}</div> : null}
+
+              <div className="mt-3 flex flex-wrap gap-2">
+                {statKeys.map((k) => (
+                  <div key={`${side}-${p.player_id}-${k}`} className="lv-stat" style={{ padding: "4px 4px 4px 10px" }}>
+                    <div className="lv-stat-read">
+                      <span className="lv-stat-cap">{statCaption(k)}</span>
+                      <span className="lv-stat-val">{getTotal(p.player_id, k)}</span>
+                    </div>
+                    <button
+                      onClick={() => addStat(p, k, 1)}
+                      aria-label={`Add ${statCaption(k)} for ${p.player_name}`}
+                      className="step"
+                    >
+                      +1
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+
+  return (
+    <div className="pb-10">
+      {confirmModal}
+      <div>
+        <PageHeader
+          title={isStaff ? "Staff game draft" : "Post game draft"}
+          description={`${game.played_on} · ${game.league_key} · ${game.sport} · Level ${game.level}`}
+        >
+          <span className="bc-chip" style={{ borderColor: "var(--warn)", color: "var(--warn-ink)" }}>Draft</span>
+          {isStaff ? <span className="bc-chip">Staff</span> : null}
+          <Link href="/post" className="btn btn-secondary btn-sm">Back</Link>
+          <Link href="/" className="btn btn-secondary btn-sm">Home</Link>
+        </PageHeader>
+
+        {err ? <div className="mt-4"><ErrorNote>{err}</ErrorNote></div> : null}
         {msg ? (
-          <div className="mt-4 rounded-xl border border-emerald-400/30 bg-emerald-500/10 p-3 text-sm text-emerald-100">{msg}</div>
+          <div role="status" className="mt-4 rounded-md border-[1.5px] border-[var(--good)] p-3 text-sm font-semibold text-[var(--good-ink)]">{msg}</div>
         ) : null}
 
         {/* Score Entry */}
-        <div className="mt-6 rounded-2xl border border-white/10 bg-white/5 p-5">
-          <div className="text-sm tracking-widest text-white/60">FINAL SCORE ENTRY</div>
+        <section className="bc-card bc-card-pad mt-6" aria-labelledby="score-entry-h">
+          <div className="bc-section-head"><h2 id="score-entry-h">Final score</h2></div>
 
-          <div className="mt-4 grid gap-4 md:grid-cols-3 md:items-end">
-            <div>
-              <div className="text-xs text-white/60">HOME</div>
-              <div className="text-2xl font-black">{leftLabel}</div>
+          <div className="mt-4 grid gap-4 md:grid-cols-[1fr_auto_1fr] md:items-end">
+            <label className="block">
+              <span className="bc-select-label">Home · {leftLabel}</span>
               <input
                 type="number"
                 min="0"
-                className="mt-2 w-full rounded-xl border border-slate-800 bg-slate-950 px-3 py-2 text-xl font-black tabular-nums outline-none focus:border-slate-500"
+                inputMode="numeric"
+                className="bc-num w-full"
+                style={{ fontSize: 40, minHeight: 64 }}
                 value={scoreAInput}
                 onChange={(e) => setScoreAInput(e.target.value)}
               />
-            </div>
+            </label>
 
-            <button
-              onClick={saveScore}
-              disabled={saving}
-              className="rounded-xl bg-white px-4 py-3 text-sm font-extrabold text-slate-950 hover:bg-white/90 disabled:opacity-60"
-            >
-              {saving ? "Saving..." : "Save Score"}
+            <button onClick={saveScore} disabled={saving} className="btn btn-secondary md:mb-0.5">
+              {saving ? "Saving…" : "Save score"}
             </button>
 
-            <div className="text-right">
-              <div className="text-xs text-white/60">AWAY</div>
-              <div className="text-2xl font-black">{rightLabel}</div>
+            <label className="block">
+              <span className="bc-select-label">Away · {rightLabel}</span>
               <input
                 type="number"
                 min="0"
-                className="mt-2 w-full rounded-xl border border-slate-800 bg-slate-950 px-3 py-2 text-xl font-black tabular-nums outline-none focus:border-slate-500"
+                inputMode="numeric"
+                className="bc-num w-full"
+                style={{ fontSize: 40, minHeight: 64 }}
                 value={scoreBInput}
                 onChange={(e) => setScoreBInput(e.target.value)}
               />
-            </div>
+            </label>
           </div>
 
           <button
             onClick={finalizeDraft}
             disabled={finalizing}
-            className="mt-5 w-full rounded-2xl border border-emerald-400/30 bg-emerald-500/10 px-6 py-3 text-sm font-black text-emerald-100 hover:bg-emerald-500/15 disabled:opacity-60"
+            className="btn btn-good mt-5 w-full"
+            style={{ minHeight: 56, fontSize: 18 }}
           >
-            {finalizing ? "Finalizing..." : "Finalize Draft"}
+            {finalizing ? "Finalizing…" : "Finalize draft"}
           </button>
-        </div>
+        </section>
 
         {/* Optional Stats */}
-        <div className="mt-6 rounded-2xl border border-white/10 bg-white/5 p-5">
-          <div className="flex items-center justify-between gap-3">
-            <div>
-              <div className="text-lg font-black">Optional Player Stats</div>
-              <div className="text-sm text-white/70">If you don’t need stats, finalize with score only.</div>
-            </div>
-
+        <section className="bc-card bc-card-pad mt-6" aria-labelledby="opt-stats-h">
+          <div className="bc-section-head">
+            <h2 id="opt-stats-h">Player stats</h2>
             {!rosterA.length && !rosterB.length ? (
-              <button
-                onClick={buildRosterIfMissing}
-                className="rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-sm font-semibold hover:bg-white/10"
-              >
-                Build Roster
+              <button onClick={buildRosterIfMissing} className="btn btn-secondary btn-sm ml-auto">
+                Build roster
               </button>
             ) : null}
           </div>
+          <p className="text-[var(--ink-2)]">Optional. If you don&rsquo;t need stats, finalize with the score only.</p>
 
           {!statKeys.length ? (
-            <div className="mt-4 text-sm text-white/60">No stat keys configured for this sport.</div>
+            <div className="mt-4"><EmptyState title="No stats for this sport">No stat keys are configured, so finalize with the score only.</EmptyState></div>
           ) : (
-            <div className="mt-5 grid gap-6 md:grid-cols-2">
-              <div>
-                <div className="text-base font-black">{leftLabel} Players</div>
-                {!rosterA.length ? (
-                  <div className="mt-2 text-sm text-white/60">
-                    No roster yet. Click <b>Build Roster</b>.
-                  </div>
-                ) : (
-                  <div className="mt-3 grid gap-3">
-                    {rosterA.map((p) => (
-                      <div key={`A-${p.player_id}`} className="rounded-2xl border border-white/10 bg-black/20 p-4">
-                        <div className="flex items-center justify-between gap-2">
-                          <div className="min-w-0 flex-1 truncate font-black">
-                            {isCap(p.player_id) ? "⭐ " : ""}
-                            {p.player_name}
-                          </div>
-
-                          <RowHeaderRightControls list={rosterA} p={p} side="A" />
-                        </div>
-
-                        {p.team_name ? <div className="mt-1 text-xs text-white/50">{p.team_name}</div> : null}
-
-                        <div className="mt-2 flex flex-wrap gap-2 text-xs text-white/80">
-                          {statKeys.map((k) => (
-                            <div key={`A-${p.player_id}-${k}`} className="rounded-lg border border-white/10 bg-white/5 px-2 py-1">
-                              <span className="font-extrabold">{statCaption(k)}</span>{" "}
-                              <span className="tabular-nums">{getTotal(p.player_id, k)}</span>
-                            </div>
-                          ))}
-                        </div>
-
-                        <div className="mt-3 flex flex-wrap gap-2">
-                          {statKeys.map((k) => (
-                            <button
-                              key={`A-btn-${p.player_id}-${k}`}
-                              onClick={() => addStat(p, k, 1)}
-                              className="h-11 rounded-xl border border-white/10 bg-white/10 px-3 text-sm font-extrabold hover:bg-white/15"
-                            >
-                              +{statCaption(k)}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-
-              <div>
-                <div className="text-base font-black">{rightLabel} Players</div>
-                {!rosterB.length ? (
-                  <div className="mt-2 text-sm text-white/60">
-                    No roster yet. Click <b>Build Roster</b>.
-                  </div>
-                ) : (
-                  <div className="mt-3 grid gap-3">
-                    {rosterB.map((p) => (
-                      <div key={`B-${p.player_id}`} className="rounded-2xl border border-white/10 bg-black/20 p-4">
-                        <div className="flex items-center justify-between gap-2">
-                          <div className="min-w-0 flex-1 truncate font-black">
-                            {isCap(p.player_id) ? "⭐ " : ""}
-                            {p.player_name}
-                          </div>
-
-                          <RowHeaderRightControls list={rosterB} p={p} side="B" />
-                        </div>
-
-                        {p.team_name ? <div className="mt-1 text-xs text-white/50">{p.team_name}</div> : null}
-
-                        <div className="mt-2 flex flex-wrap gap-2 text-xs text-white/80">
-                          {statKeys.map((k) => (
-                            <div key={`B-${p.player_id}-${k}`} className="rounded-lg border border-white/10 bg-white/5 px-2 py-1">
-                              <span className="font-extrabold">{statCaption(k)}</span>{" "}
-                              <span className="tabular-nums">{getTotal(p.player_id, k)}</span>
-                            </div>
-                          ))}
-                        </div>
-
-                        <div className="mt-3 flex flex-wrap gap-2">
-                          {statKeys.map((k) => (
-                            <button
-                              key={`B-btn-${p.player_id}-${k}`}
-                              onClick={() => addStat(p, k, 1)}
-                              className="h-11 rounded-xl border border-white/10 bg-white/10 px-3 text-sm font-extrabold hover:bg-white/15"
-                            >
-                              +{statCaption(k)}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
+            <div className="mt-5 grid gap-8 md:grid-cols-2">
+              {renderRoster(rosterA, "A", leftLabel)}
+              {renderRoster(rosterB, "B", rightLabel)}
             </div>
           )}
-        </div>
+        </section>
       </div>
     </div>
   );

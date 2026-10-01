@@ -3,8 +3,11 @@
 import { useEffect, useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
+import { useNotifyingErr } from "@/lib/useNotifyingErr";
 import { getSportRules } from "@/lib/sportRules";
 
+import { Sheet, ErrorNote, SkeletonRows } from "@/components/ui";
+import FlashNumber from "@/components/FlashNumber";
 function norm(s) {
   return String(s ?? "").trim().toLowerCase();
 }
@@ -47,7 +50,7 @@ export default function PastGameDetailPage() {
   const gameId = params?.id;
 
   const [loading, setLoading] = useState(true);
-  const [err, setErr] = useState("");
+  const [err, setErr] = useNotifyingErr();
   const [game, setGame] = useState(null);
   const [rosterA, setRosterA] = useState([]);
   const [rosterB, setRosterB] = useState([]);
@@ -267,16 +270,27 @@ export default function PastGameDetailPage() {
 
   if (loading) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-slate-950 text-slate-300">
-        Loading box score…
+      <div className="pb-10" aria-busy="true">
+        <div className="bc-skel" style={{ width: 160, height: 44 }} />
+        <div className="bc-card mt-4 p-5">
+          <div className="bc-skel" style={{ width: "60%", height: 16 }} />
+          <div className="bc-skel mt-6" style={{ height: 72 }} />
+        </div>
+        <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-[1fr_340px]">
+          <div className="bc-card bc-card-pad"><SkeletonRows rows={8} label="Loading box score" /></div>
+          <div className="bc-card bc-card-pad"><SkeletonRows rows={4} label="Loading game details" /></div>
+        </div>
       </div>
     );
   }
 
   if (!game) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-slate-950 p-6 text-center text-red-300">
-        {err || "Game not found."}
+      <div className="pb-10 pt-4">
+        <button onClick={() => router.push("/past-games")} className="btn btn-secondary btn-sm mb-4">
+          Back to past games
+        </button>
+        <ErrorNote>{err || "Game not found."}</ErrorNote>
       </div>
     );
   }
@@ -290,34 +304,33 @@ export default function PastGameDetailPage() {
 
   function BoxScoreTable({ players, sideLabel }) {
     return (
-      <div className="rounded-2xl border border-slate-800 bg-slate-900/60 p-4">
-        <div className="mb-3 text-lg font-extrabold text-white">{sideLabel}</div>
+      <Sheet title={sideLabel}>
         {statDefs.length === 0 ? (
-          <div className="text-sm text-slate-500">No individual stats tracked for this sport.</div>
+          <div className="text-sm text-[var(--ink-2)]">No individual stats tracked for this sport.</div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full text-sm">
+            <table className="bc-table">
               <thead>
-                <tr className="text-left text-xs uppercase tracking-wide text-slate-500">
-                  <th className="py-1.5 pr-2">Player</th>
+                <tr>
+                  <th>Player</th>
                   {statDefs.map((sd) => (
-                    <th key={sd.key} className="py-1.5 px-2 text-center">{sd.label}</th>
+                    <th key={sd.key} className="text-center">{sd.label}</th>
                   ))}
                 </tr>
               </thead>
               <tbody>
                 {players.length === 0 ? (
                   <tr>
-                    <td colSpan={statDefs.length + 1} className="py-3 text-slate-500">
+                    <td colSpan={statDefs.length + 1} className="py-3 text-[var(--ink-2)]">
                       No players recorded.
                     </td>
                   </tr>
                 ) : (
                   players.map((p) => (
-                    <tr key={p.player_id} className="border-t border-slate-800">
-                      <td className="py-1.5 pr-2 font-bold text-white">{p.player_name || p.player_id}</td>
+                    <tr key={p.player_id}>
+                      <td className="font-bold">{p.player_name || p.player_id}</td>
                       {statDefs.map((sd) => (
-                        <td key={sd.key} className="py-1.5 px-2 text-center font-bold tabular-nums text-slate-200">
+                        <td key={sd.key} className={`bc-num text-center text-xl ${p.totals[sd.key] ? "" : "text-[var(--ink-3)]"}`}>
                           {p.totals[sd.key] ?? 0}
                         </td>
                       ))}
@@ -328,143 +341,111 @@ export default function PastGameDetailPage() {
             </table>
           </div>
         )}
-      </div>
+      </Sheet>
     );
   }
 
+  const aWon = scoreA > scoreB;
+
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100">
-      <div className="mx-auto max-w-6xl p-4">
-        <button
-          onClick={() => router.push("/past-games")}
-          className="mb-4 rounded-lg border border-slate-700 bg-slate-900 px-3 py-1.5 text-sm font-semibold text-slate-300 hover:bg-slate-800"
-        >
-          ← Back to Past Games
-        </button>
-
-        {/* Header / Final Score */}
-        <div className="rounded-2xl border border-slate-800 bg-gradient-to-br from-slate-900 to-slate-950 p-6">
-          <div className="flex flex-wrap items-center gap-2 text-xs font-bold uppercase tracking-wide text-slate-400">
-            <span>{fmtLeague(game.league_key)}</span>
-            <span>·</span>
-            <span>{fmtSport(game.sport)}</span>
-            <span>·</span>
-            <span>Level {game.level}</span>
-            <span>·</span>
-            <span>{game.mode}</span>
-            {game.is_bowl_game ? (
-              <span className="ml-2 rounded-full border border-amber-400/30 bg-amber-500/10 px-2 py-0.5 text-amber-200">
-                {String(game.bowl_name || "BOWL").toUpperCase()}
-              </span>
-            ) : null}
+    <div className="pb-10">
+      {/* Headline board: the final, set like a stadium scoreboard */}
+      <header className="cl-hero" style={{ "--hero-pos": "50% 55%" }}>
+        <div className="cl-hero-bg" aria-hidden="true" />
+        <div className="cl-hero-in">
+          <div className="flex flex-wrap items-center gap-2 reveal">
+            <button onClick={() => router.push("/past-games")} className="btn btn-secondary btn-sm">
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M10 3L5 8l5 5" /></svg>
+              Past games
+            </button>
+            <span className="bc-chip">{fmtLeague(game.league_key)}</span>
+            <span className="bc-chip">{fmtSport(game.sport)}</span>
+            <span className="bc-chip">Level {game.level}</span>
+            <span className="bc-chip">{game.mode}</span>
+            {game.is_bowl_game ? <span className="bc-chip">{String(game.bowl_name || "Bowl")}</span> : null}
           </div>
+          <h1 className="sr-only">{leftLabel} vs {rightLabel} — final {scoreA} to {scoreB}</h1>
 
-          <div className="mt-4 grid grid-cols-3 items-center gap-4">
-            <div className="text-right sm:text-left">
-              <div className="text-lg font-black text-white sm:text-2xl">{leftLabel}</div>
+          <div className="mt-2 grid grid-cols-[1fr_auto_1fr] items-end gap-3">
+            <div className="min-w-0 reveal" style={{ "--i": 1 }}>
+              <div className={`bc-display mb-2 text-balance text-2xl leading-[0.95] sm:text-4xl ${aWon ? "" : "text-[var(--ink-2)]"}`} style={{ textShadow: "0 2px 18px rgba(5,13,28,0.9)" }}>{leftLabel}</div>
+              <FlashNumber as="div" className={`bc-num leading-[0.85] ${aWon ? "" : "text-[var(--ink-2)]"}`} value={scoreA} />
             </div>
-            <div className="text-center">
-              <div className="text-4xl font-black tabular-nums text-white sm:text-5xl">
-                {scoreA} - {scoreB}
-              </div>
-            </div>
-            <div className="text-left sm:text-right">
-              <div className="text-lg font-black text-white sm:text-2xl">{rightLabel}</div>
+            <div className="bc-tag-final reveal" style={{ "--i": 2 }}>Final</div>
+            <div className="min-w-0 text-right reveal" style={{ "--i": 1 }}>
+              <div className={`bc-display mb-2 text-balance text-2xl leading-[0.95] sm:text-4xl ${aWon ? "text-[var(--ink-2)]" : ""}`} style={{ textShadow: "0 2px 18px rgba(5,13,28,0.9)" }}>{rightLabel}</div>
+              <FlashNumber as="div" className={`bc-num leading-[0.85] ${aWon ? "text-[var(--ink-2)]" : ""}`} value={scoreB} />
             </div>
           </div>
-
-          <div className="mt-3 text-center text-sm text-slate-400">
-            <span className="font-bold text-emerald-400">{winner}</span> wins by {margin}
+          <div className="reveal text-lg text-[var(--ink-2)]" style={{ "--i": 3 }}>
+            <span className="font-bold text-[var(--good-ink)]">{winner}</span> wins by {margin} · {new Date(game.created_at).toLocaleDateString()}
           </div>
         </div>
+      </header>
 
-        <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-[1fr_320px]">
-          {/* Box score */}
-          <div className="space-y-4">
-            <BoxScoreTable players={enrichedA} sideLabel={leftLabel} />
-            <BoxScoreTable players={enrichedB} sideLabel={rightLabel} />
-          </div>
+      <div className="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-[1fr_360px]">
+        {/* Box score */}
+        <div className="space-y-6">
+          <BoxScoreTable players={enrichedA} sideLabel={leftLabel} />
+          <BoxScoreTable players={enrichedB} sideLabel={rightLabel} />
+        </div>
 
-          {/* Quick Stats panel */}
-          <div className="space-y-4">
-            {talkingPoints.length > 0 ? (
-              <div className="rounded-2xl border border-blue-500/20 bg-blue-950/20 p-4">
-                <div className="text-xs font-black uppercase tracking-widest text-blue-300">Talking Points</div>
-                <div className="mt-3 space-y-2">
-                  {talkingPoints.map((tp, i) => (
-                    <div key={i} className="rounded-lg border border-blue-500/10 bg-slate-950/40 px-3 py-2 text-sm text-slate-200">
-                      {tp}
+        {/* Quick stats panel */}
+        <div className="space-y-6">
+          {playerOfGame ? (
+            <Sheet title="Player of the game">
+              <div className="bc-display text-5xl leading-[0.95]">{playerOfGame.player_name || playerOfGame.player_id}</div>
+              <div className="bc-label mt-2">{playerOfGame.team_name}</div>
+              <div className="bc-num mt-3 text-4xl">
+                {statDefs.map((sd) => `${playerOfGame.totals[sd.key] ?? 0} ${sd.label}`).join(" · ")}
+              </div>
+            </Sheet>
+          ) : null}
+
+          {talkingPoints.length > 0 ? (
+            <Sheet title="Talking points" index={1}>
+              <ul className="grid gap-3">
+                {talkingPoints.map((tp, i) => (
+                  <li key={i} className="border-t border-[var(--rule)] pt-3 first:border-t-0 first:pt-0">{tp}</li>
+                ))}
+              </ul>
+            </Sheet>
+          ) : null}
+
+          {seriesRecord ? (
+            <Sheet title="Season series" index={2}>
+              <div className="flex items-center justify-between gap-3">
+                <div className={seriesRecord.xWins >= seriesRecord.yWins ? "font-bold" : "text-[var(--ink-3)]"}>
+                  {seriesRecord.teamX}
+                </div>
+                <div className="bc-num text-5xl">
+                  {seriesRecord.xWins}–{seriesRecord.yWins}
+                </div>
+                <div className={`text-right ${seriesRecord.yWins >= seriesRecord.xWins ? "font-bold" : "text-[var(--ink-3)]"}`}>
+                  {seriesRecord.teamY}
+                </div>
+              </div>
+            </Sheet>
+          ) : null}
+
+          {teamLeaders.length > 0 ? (
+            <Sheet title="Team leaders" index={3}>
+              <ul>
+                {teamLeaders.map((tl, i) => (
+                  <li key={i} className="flex items-center justify-between gap-3 border-t border-[var(--rule)] py-2 first:border-t-0 first:pt-0">
+                    <div className="min-w-0">
+                      <div className="truncate text-lg font-bold">{tl.player.player_name || tl.player.player_id}</div>
+                      <div className="bc-label" style={{ fontSize: 13 }}>{tl.player.team_name}</div>
                     </div>
-                  ))}
-                </div>
-              </div>
-            ) : null}
-
-            {seriesRecord ? (
-              <div className="rounded-2xl border border-slate-800 bg-slate-900/60 p-4">
-                <div className="text-xs font-black uppercase tracking-widest text-slate-400">Season Series</div>
-                <div className="mt-3 flex items-center justify-between">
-                  <div className={seriesRecord.xWins >= seriesRecord.yWins ? "text-base font-black text-white" : "text-base font-bold text-slate-400"}>
-                    {seriesRecord.teamX}
-                  </div>
-                  <div className="text-2xl font-black tabular-nums text-emerald-300">
-                    {seriesRecord.xWins} - {seriesRecord.yWins}
-                  </div>
-                  <div className={seriesRecord.yWins >= seriesRecord.xWins ? "text-base font-black text-white" : "text-base font-bold text-slate-400"}>
-                    {seriesRecord.teamY}
-                  </div>
-                </div>
-              </div>
-            ) : null}
-
-            <div className="rounded-2xl border border-emerald-500/20 bg-emerald-950/20 p-4">
-              <div className="text-xs font-black uppercase tracking-widest text-emerald-300">Quick Stats</div>
-
-              {playerOfGame ? (
-                <div className="mt-3">
-                  <div className="text-[11px] font-bold uppercase tracking-wide text-slate-400">Player of the Game</div>
-                  <div className="mt-1 text-lg font-black text-white">
-                    {playerOfGame.player_name || playerOfGame.player_id}
-                  </div>
-                  <div className="text-xs text-slate-400">{playerOfGame.team_name}</div>
-                  <div className="mt-1 text-sm text-emerald-300">
-                    {statDefs.map((sd) => `${playerOfGame.totals[sd.key] ?? 0} ${sd.label}`).join(" · ")}
-                  </div>
-                </div>
-              ) : (
-                <div className="mt-3 text-sm text-slate-500">No stats tracked for this sport.</div>
-              )}
-            </div>
-
-            {teamLeaders.length > 0 ? (
-              <div className="rounded-2xl border border-slate-800 bg-slate-900/60 p-4">
-                <div className="text-xs font-black uppercase tracking-widest text-slate-400">Team Leaders</div>
-                <div className="mt-3 space-y-2">
-                  {teamLeaders.map((tl, i) => (
-                    <div key={i} className="flex items-center justify-between rounded-lg border border-slate-800 bg-slate-950/40 px-3 py-2">
-                      <div>
-                        <div className="text-sm font-bold text-white">{tl.player.player_name || tl.player.player_id}</div>
-                        <div className="text-[11px] text-slate-500">{tl.player.team_name}</div>
-                      </div>
-                      <div className="text-right">
-                        <div className="text-lg font-black tabular-nums text-emerald-300">{tl.value}</div>
-                        <div className="text-[10px] uppercase text-slate-500">{tl.statLabel}</div>
-                      </div>
+                    <div className="text-right">
+                      <div className="bc-num text-4xl leading-none">{tl.value}</div>
+                      <div className="bc-label" style={{ fontSize: 13 }}>{tl.statLabel}</div>
                     </div>
-                  ))}
-                </div>
-              </div>
-            ) : null}
-
-            <div className="rounded-2xl border border-slate-800 bg-slate-900/60 p-4">
-              <div className="text-xs font-black uppercase tracking-widest text-slate-400">Game Info</div>
-              <div className="mt-2 space-y-1 text-sm text-slate-300">
-                <div>Date: {new Date(game.created_at).toLocaleDateString()}</div>
-                <div>Final: {scoreA} - {scoreB}</div>
-                <div>Margin: {margin}</div>
-              </div>
-            </div>
-          </div>
+                  </li>
+                ))}
+              </ul>
+            </Sheet>
+          ) : null}
         </div>
       </div>
     </div>

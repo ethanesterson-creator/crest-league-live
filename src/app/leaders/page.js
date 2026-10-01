@@ -4,8 +4,11 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { supabase } from "@/lib/supabase";
 import { useAppMode } from "@/lib/useAppMode";
+import { useNotifyingErr } from "@/lib/useNotifyingErr";
 import { getSportRules } from "@/lib/sportRules";
 
+import { PageHeader, Field, Sheet, EmptyState, ErrorNote, SkeletonRows, Meter } from "@/components/ui";
+import FlashNumber from "@/components/FlashNumber";
 const SPORTS = [
   "Hoop",
   "Soccer",
@@ -39,7 +42,7 @@ function prettyStatLabel(sportName, statKey) {
 
 export default function LeadersPage() {
   const { season, session } = useAppMode();
-  const [err, setErr] = useState("");  const [loading, setLoading] = useState(true);
+  const [err, setErr] = useNotifyingErr();  const [loading, setLoading] = useState(true);
 
   const [leagues, setLeagues] = useState([]);
   const [leagueId, setLeagueId] = useState("seniors");
@@ -123,22 +126,17 @@ export default function LeadersPage() {
 
   const statLabel = useMemo(() => prettyStatLabel(sport, statKey), [sport, statKey]);
 
+  const leaderVal = Math.max(1, ...rows.map((r) => Number(r.value) || 0));
+  const top3 = rows.slice(0, 3);
+  const rest = rows.slice(3);
+
   return (
     <div className="pb-10">
-      <div className="mt-6 flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
-        <div>
-          <div className="bc-eyebrow">Camp Bauercrest</div>
-          <h1 className="bc-page-title mt-1">Stat <span className="bc-accent-text">Leaders</span></h1>
-          <div className="text-sm text-white/70">
-            Updates automatically after you finalize a game.
-          </div>
-        </div>
-
-        <div className="flex flex-wrap items-end gap-3">
-          <div>
-            <div className="mb-1 text-xs font-bold text-white/60">League</div>
+      <PageHeader title="Stat leaders" description="Updates the moment a game is finalized." pos="50% 88%">
+        <div className="grid w-full grid-cols-2 gap-3 md:flex md:w-auto md:items-end">
+          <Field label="League">
             <select
-              className="rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm font-bold text-white"
+              className="bc-select"
               value={leagueId}
               onChange={(e) => setLeagueId(e.target.value)}
             >
@@ -155,12 +153,11 @@ export default function LeadersPage() {
                 </option>
               ))}
             </select>
-          </div>
+          </Field>
 
-          <div>
-            <div className="mb-1 text-xs font-bold text-white/60">Sport</div>
+          <Field label="Sport">
             <select
-              className="rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm font-bold text-white"
+              className="bc-select"
               value={sport}
               onChange={(e) => setSport(e.target.value)}
             >
@@ -170,12 +167,11 @@ export default function LeadersPage() {
                 </option>
               ))}
             </select>
-          </div>
+          </Field>
 
-          <div>
-            <div className="mb-1 text-xs font-bold text-white/60">Stat</div>
+          <Field label="Stat">
             <select
-              className="rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm font-bold text-white"
+              className="bc-select"
               value={statKey}
               onChange={(e) => setStatKey(e.target.value)}
             >
@@ -185,74 +181,68 @@ export default function LeadersPage() {
                 </option>
               ))}
             </select>
-          </div>
+          </Field>
 
-          <button
-            className="rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm font-bold hover:bg-white/10"
-            onClick={() => loadLeaders()}
-          >
+          <button className="btn btn-secondary self-end" onClick={() => loadLeaders()}>
             Refresh
           </button>
         </div>
+      </PageHeader>
+
+      {err ? <div className="mt-4"><ErrorNote onRetry={() => loadLeaders()}>{err}</ErrorNote></div> : null}
+
+      <div className="bc-section-head reveal mt-6">
+        <h2>{prettyLeague(leagueId)} · {sport} · {statLabel}</h2>
+        <span className="bc-label">Top 50</span>
       </div>
 
-      {err ? (
-        <div className="mt-4 rounded-xl border border-red-700 bg-red-950/40 p-3 text-sm text-red-200">
-          {err}
-        </div>
-      ) : null}
-
-      <div className="mt-6 rounded-2xl border border-white/10 bg-white/5 p-5">
-        <div className="flex items-baseline justify-between gap-3">
-          <div className="text-lg font-black">
-            {prettyLeague(leagueId)} • {sport} • {statLabel}
+      {loading ? (
+        <Sheet><SkeletonRows rows={8} label="Loading stat leaders" /></Sheet>
+      ) : rows.length ? (
+        <>
+          {/* Podium: the top three, #1 raised in the middle */}
+          <div className="podium" key={`${leagueId}-${sport}-${statKey}`}>
+            {top3.map((r, i) => (
+              <Link
+                key={`${r.player_id}-${r.stat_key}`}
+                href={`/player/${r.player_id}`}
+                className={`pod reveal ${i === 0 ? "first" : ""}`}
+                style={{ "--i": i === 0 ? 1 : i === 1 ? 0 : 2 }}
+              >
+                <div className="pod-ghost" aria-hidden="true">{i + 1}</div>
+                <div className="pod-name">{r.player_name}</div>
+                <FlashNumber as="div" className="pod-val" value={Number(r.value)} />
+                <div className="mt-2 bc-label">{statLabel} · {r.team_name}</div>
+              </Link>
+            ))}
           </div>
-          <div className="text-xs text-white/60">Top 50</div>
-        </div>
 
-        {loading ? (
-          <div className="mt-4 text-white/70">Loading…</div>
-        ) : (
-          <div className="mt-4 overflow-x-auto">
-            <table className="w-full text-left text-sm">
-              <thead className="text-white/70">
-                <tr>
-                  <th className="py-2">#</th>
-                  <th className="py-2">Player</th>
-                  <th className="py-2">Team</th>
-                  <th className="py-2 text-right">{statLabel}</th>
-                </tr>
-              </thead>
-              <tbody>
-                {rows.length ? (
-                  rows.map((r, idx) => (
-                    <tr key={`${r.player_id}-${r.stat_key}`} className="border-t border-white/10">
-                      <td className="py-3 font-black">{idx + 1}</td>
-                      <td className="py-3 font-extrabold">
-                        <Link href={`/player/${r.player_id}`} className="hover:text-blue-300 hover:underline">
-                          {r.player_name}
-                        </Link>
-                      </td>
-                      <td className="py-3 text-white/80">{r.team_name}</td>
-                      <td className="py-3 text-right font-black tabular-nums">{r.value}</td>
-                    </tr>
-                  ))
-                ) : (
-                  <tr>
-                    <td className="py-4 text-white/60" colSpan={4}>
-                      No stats yet for this filter. Finalize a game to populate stat leaders.
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-
-            <div className="mt-3 text-xs text-white/50">
-              Tip: Stat leaders update when a game is finalized (they pull from <b>player_totals</b>).
-            </div>
-          </div>
-        )}
-      </div>
+          {/* The rest of the table, each row scaled against the leader */}
+          {rest.length ? (
+            <Sheet className="mt-6" title="The chasing pack">
+              <ul>
+                {rest.map((r, idx) => (
+                  <li key={`${r.player_id}-${r.stat_key}`} className="grid grid-cols-[44px_1fr_auto] items-center gap-x-4 gap-y-2 border-t border-[var(--rule)] py-3 first:border-t-0">
+                    <span className="bc-rank">{idx + 4}</span>
+                    <div className="min-w-0">
+                      <Link href={`/player/${r.player_id}`} className="block truncate text-xl font-bold hover:text-[var(--accent-2)]">
+                        {r.player_name}
+                      </Link>
+                      <div className="bc-label" style={{ fontSize: 13 }}>{r.team_name}</div>
+                    </div>
+                    <FlashNumber as="div" className="bc-num text-4xl leading-none" value={Number(r.value)} />
+                    <div className="col-span-3"><Meter value={r.value} max={leaderVal} index={idx} /></div>
+                  </li>
+                ))}
+              </ul>
+            </Sheet>
+          ) : null}
+        </>
+      ) : (
+        <EmptyState title="No stats yet">
+          Nothing for this filter. Finalize a game to populate the leaderboard.
+        </EmptyState>
+      )}
     </div>
   );
 }

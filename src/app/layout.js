@@ -1,5 +1,7 @@
-import { Geist, Geist_Mono } from "next/font/google";
+import { Barlow, Barlow_Condensed, Geist_Mono, Big_Shoulders } from "next/font/google";
 import "./globals.css";
+import GlobalErrorReporter from "./GlobalErrorReporter";
+import AppShell from "./AppShell";
 
 // ============================================================================
 // OFF-SEASON LOCK
@@ -9,16 +11,37 @@ import "./globals.css";
 // The database stays frozen and untouched. Set back to false next summer to
 // reopen the app exactly as it was.
 // ============================================================================
-const OFF_SEASON = true;
+const OFF_SEASON = false; // TEMP for redesign — RELOCK TO true BEFORE MERGE
 
-const geistSans = Geist({
-  variable: "--font-geist-sans",
+// UI face: Barlow, the DIN-flavoured sports workhorse for body, forms, tables.
+const barlow = Barlow({
+  variable: "--font-ui",
+  weight: ["400", "500", "600", "700", "800"],
   subsets: ["latin"],
+  display: "swap",
+});
+
+// Label face: Barlow Condensed for nav, tags, table heads, scoreboard captions.
+const barlowCondensed = Barlow_Condensed({
+  variable: "--font-label",
+  weight: ["500", "600", "700", "800"],
+  subsets: ["latin"],
+  display: "swap",
 });
 
 const geistMono = Geist_Mono({
   variable: "--font-geist-mono",
   subsets: ["latin"],
+});
+
+// Scoreboard face: condensed, engineered numerals and page titles. Used via
+// .bc-display / .bc-num / .bc-page-title, never for running text.
+const bigShoulders = Big_Shoulders({
+  variable: "--font-display",
+  axes: ["opsz"],
+  adjustFontFallback: false,
+  subsets: ["latin"],
+  display: "swap",
 });
 
 export const metadata = {
@@ -41,143 +64,49 @@ export const metadata = {
 };
 
 export const viewport = {
-  themeColor: "#0B1B3A",
+  themeColor: "#050D1C",
   width: "device-width",
   initialScale: 1,
-  maximumScale: 1,
-  userScalable: false,
 };
 
 export default function RootLayout({ children }) {
   return (
     <html lang="en">
-      <body className={`${geistSans.variable} ${geistMono.variable} antialiased`}>
+      <body className={`${barlow.variable} ${barlowCondensed.variable} ${geistMono.variable} ${bigShoulders.variable} antialiased`}>
         {OFF_SEASON ? (
-          <div style={{
-            minHeight: "100vh", display: "flex", flexDirection: "column",
-            alignItems: "center", justifyContent: "center", textAlign: "center",
-            padding: "24px",
-            background: "radial-gradient(circle at 50% 30%, #12305c 0%, #0b1f3b 50%, #050d1c 100%)",
-            color: "#fff",
-          }}>
-            <div style={{ fontSize: "72px" }}>🏆</div>
-            <div style={{
-              fontSize: "14px", fontWeight: 900, letterSpacing: "0.5em",
-              textTransform: "uppercase", color: "#f5c451", marginTop: "8px",
-            }}>
-              Camp Bauercrest
-            </div>
-            <h1 style={{
-              fontSize: "clamp(40px, 8vw, 84px)", fontWeight: 900, lineHeight: 1.05,
-              margin: "12px 0", fontFamily: "Georgia, serif",
-              background: "linear-gradient(180deg, #ffe9a8, #f5c451 55%, #b8860b)",
-              WebkitBackgroundClip: "text", backgroundClip: "text",
-              WebkitTextFillColor: "transparent",
-            }}>
-              See You Next Summer
-            </h1>
-            <div style={{ fontSize: "18px", color: "rgba(255,255,255,0.6)", fontWeight: 600, maxWidth: "480px" }}>
-              Crest League Live is closed for the season. Thanks for an incredible summer of camp sports.
-            </div>
-            <div style={{
-              marginTop: "28px", fontSize: "13px", fontWeight: 800,
-              letterSpacing: "0.2em", textTransform: "uppercase", color: "rgba(245,196,81,0.6)",
-            }}>
-              2026 Season Complete
+          <div
+            data-theme="night"
+            style={{
+              minHeight: "100vh", display: "flex", flexDirection: "column",
+              justifyContent: "flex-end", padding: "32px 24px 48px",
+              background: "var(--paper)", color: "var(--ink)",
+            }}
+          >
+            <div style={{ maxWidth: 960, width: "100%", margin: "0 auto" }}>
+              <div style={{
+                fontSize: 14, fontWeight: 700, letterSpacing: "0.12em",
+                textTransform: "uppercase", color: "var(--ink-2)",
+                borderBottom: "2px solid var(--ink)", paddingBottom: 12, marginBottom: 24,
+              }}>
+                Camp Bauercrest &middot; Crest League Live
+              </div>
+              <h1 className="bc-display" style={{
+                fontSize: "clamp(56px, 14vw, 160px)", lineHeight: 0.9, margin: 0,
+              }}>
+                See you<br />next summer
+              </h1>
+              <p style={{ fontSize: 18, color: "var(--ink-2)", maxWidth: 480, marginTop: 24 }}>
+                Crest League Live is closed for the season. Thanks for an incredible summer of camp sports.
+              </p>
+              <div className="bc-num" style={{ marginTop: 32, fontSize: 28, color: "var(--ink-3)" }}>
+                2026 season complete
+              </div>
             </div>
           </div>
         ) : (
         <>
-        {/* Top App Bar */}
-        <header
-          style={{
-            position: "sticky",
-            top: 0,
-            zIndex: 50,
-            background: "rgba(8, 23, 44, 0.85)",
-            backdropFilter: "blur(10px)",
-            borderBottom: "1px solid rgba(255,255,255,0.12)",
-          }}
-        >
-          <div
-            className="bc-container"
-            style={{ display: "flex", flexWrap: "wrap", rowGap: 6, alignItems: "center", gap: 12, paddingTop: 10, paddingBottom: 10 }}
-          >
-            <div style={{ fontWeight: 900, letterSpacing: 0.5 }}>
-              Crest League Live
-            </div>
-
-            <div className="bc-faint" style={{ fontSize: 12 }}>
-              Created By Ethan Esterson
-            </div>
-
-            {/* Nav links — wraps instead of overflowing on narrow phones,
-                where 9 links don't fit in one row. */}
-            <div
-              style={{
-                marginLeft: "auto",
-                display: "flex",
-                flexWrap: "wrap",
-                rowGap: 6,
-                gap: 14,
-                alignItems: "center",
-              }}
-            >
-              <a className="bc-muted" href="/" style={{ fontSize: 14 }}>
-                Home
-              </a>
-
-              <a className="bc-muted" href="/standings" style={{ fontSize: 14 }}>
-                Standings
-              </a>
-
-              <a className="bc-muted" href="/leaders" style={{ fontSize: 14 }}>
-                Leaders
-              </a>
-
-              <a className="bc-muted" href="/past-games" style={{ fontSize: 14 }}>
-                Past Games
-              </a>
-
-              <a className="bc-muted" href="/display" style={{ fontSize: 14 }}>
-                Display
-              </a>
-
-              <a className="bc-muted" href="/highlights" style={{ fontSize: 14 }}>
-                Highlights
-              </a>
-
-              <a className="bc-muted" href="/admin" style={{ fontSize: 14 }}>
-                Admin
-              </a>
-
-              <a className="bc-muted" href="/awards" style={{ fontSize: 14 }}>
-                Awards
-              </a>
-
-              <a className="bc-muted" href="/post" style={{ fontSize: 14 }}>
-                Post Games
-              </a>
-
-
-              {/* Next later:
-                  - Stat Leaders
-                  - Display Board
-              */}
-            </div>
-          </div>
-        </header>
-
-        {/* Page content */}
-        <main className="bc-container">{children}</main>
-
-        {/* Footer */}
-        <footer
-          className="bc-container bc-faint"
-          style={{ paddingTop: 24, paddingBottom: 24, fontSize: 12 }}
-        >
-          Built for Camp Bauercrest — Crest League Live
-        </footer>
+        <GlobalErrorReporter />
+        <AppShell>{children}</AppShell>
         </>
         )}
       </body>

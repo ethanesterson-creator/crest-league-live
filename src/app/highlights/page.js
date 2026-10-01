@@ -2,12 +2,16 @@
 
 import { useEffect, useRef, useState } from "react";
 import { supabase } from "@/lib/supabase";
+import { useNotifyingErr } from "@/lib/useNotifyingErr";
+import { useConfirmDialog } from "@/lib/useConfirmDialog";
 
+import { PageHeader, EmptyState, ErrorNote } from "@/components/ui";
 export default function HighlightsAdminPage() {
   const [items, setItems] = useState([]);
   const [uploading, setUploading] = useState(false);
   const [progress, setProgress] = useState("");
-  const [err, setErr] = useState("");
+  const [err, setErr] = useNotifyingErr();
+  const { confirmAsync, confirmModal } = useConfirmDialog();
   const fileInputRef = useRef(null);
 
   async function load() {
@@ -84,7 +88,8 @@ export default function HighlightsAdminPage() {
   }
 
   async function deleteItem(item) {
-    if (!confirm("Delete this photo permanently?")) return;
+    const ok = await confirmAsync("This cannot be undone.", { title: "Delete this photo permanently?", confirmLabel: "Delete" });
+    if (!ok) return;
     await supabase.storage.from("highlights").remove([item.file_path]);
     const { error } = await supabase.from("highlights").delete().eq("id", item.id);
     if (error) { setErr(error.message); return; }
@@ -97,84 +102,81 @@ export default function HighlightsAdminPage() {
   }
 
   return (
-    <main className="min-h-screen bg-[#0a1628] px-4 py-8 text-white">
-      <div className="mx-auto max-w-4xl">
-        <h1 className="text-3xl font-black">Highlights Manager</h1>
-        <p className="mt-1 text-sm text-white/50">
-          Upload photos for the display board. They rotate automatically in the Highlights scene.
-        </p>
+    <div className="pb-10">
+      {confirmModal}
+      <PageHeader
+        title="Highlights"
+        description="Upload photos for the wall display. They rotate automatically in the Highlights scene."
+      />
 
-        {err ? (
-          <div className="mt-4 rounded-xl border border-red-500/40 bg-red-950/40 px-4 py-3 text-sm font-bold text-red-200">{err}</div>
-        ) : null}
+      {err ? <div className="mt-4"><ErrorNote>{err}</ErrorNote></div> : null}
 
-        {/* Upload zone */}
-        <label
-          className={`mt-6 flex cursor-pointer flex-col items-center justify-center rounded-3xl border-2 border-dashed px-6 py-12 text-center transition ${uploading ? "border-white/10 bg-white/[0.02] opacity-60" : "border-blue-500/40 bg-blue-500/5 active:bg-blue-500/10"}`}
-        >
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept="image/*,video/*"
-            multiple
-            className="hidden"
-            disabled={uploading}
-            onChange={(e) => handleFiles(e.target.files)}
-          />
-          <div className="text-5xl">📸</div>
-          <div className="mt-3 text-lg font-black">
-            {uploading ? progress : "Tap to upload photos or videos"}
-          </div>
-          <div className="mt-1 text-xs text-white/40">
-            Select multiple at once. They go live on the board immediately.
-          </div>
-        </label>
+      {/* Upload zone */}
+      <label className={`upload-plate mt-6 ${uploading ? "opacity-60" : ""}`}>
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="image/*,video/*"
+          multiple
+          className="sr-only"
+          disabled={uploading}
+          onChange={(e) => handleFiles(e.target.files)}
+        />
+        <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <path d="M4 8h3l2-3h6l2 3h3v11H4z" /><circle cx="12" cy="13" r="3.5" />
+        </svg>
+        <div className="bc-display mt-2 text-4xl leading-none">
+          {uploading ? progress : "Upload photos or videos"}
+        </div>
+        {!uploading ? <span className="btn mt-3" aria-hidden="true">Choose files</span> : null}
+        <div className="mt-2 text-sm text-[var(--ink-2)]">
+          Select several at once. They go live on the board immediately.
+        </div>
+      </label>
 
-        {progress && !uploading ? (
-          <div className="mt-3 rounded-xl border border-emerald-500/40 bg-emerald-950/40 px-4 py-3 text-sm font-black text-emerald-200">{progress}</div>
-        ) : null}
+      {progress && !uploading ? (
+        <div role="status" className="mt-3 rounded-md border-[1.5px] border-[var(--good)] px-4 py-3 text-sm font-bold text-[var(--good-ink)]">{progress}</div>
+      ) : null}
 
-        {/* Photo grid */}
-        <div className="mt-8 grid grid-cols-2 gap-4 sm:grid-cols-3">
+      {/* Photo grid */}
+      {items.length ? (
+        <div className="mt-8 grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
           {items.map((item) => (
-            <div key={item.id} className={`overflow-hidden rounded-2xl border ${item.show_on_board ? "border-emerald-500/40" : "border-white/10 opacity-50"} bg-white/[0.03]`}>
-              <div className="aspect-video bg-black">
+            <div key={item.id} className={`overflow-hidden rounded-md border bg-[var(--sheet)] ${item.show_on_board ? "border-[var(--ink)]" : "border-[var(--rule)]"}`}>
+              <div className="aspect-video bg-[var(--ink)]">
                 {item.file_type === "video" ? (
-                  <video src={publicUrl(item.file_path)} className="h-full w-full object-cover" muted playsInline />
+                  <video src={publicUrl(item.file_path)} className={`h-full w-full object-cover ${item.show_on_board ? "" : "opacity-40"}`} muted playsInline />
                 ) : (
-                  <img src={publicUrl(item.file_path)} alt="" className="h-full w-full object-cover" loading="lazy" />
+                  <img src={publicUrl(item.file_path)} alt={item.title || "Camp highlight photo"} className={`h-full w-full object-cover ${item.show_on_board ? "" : "opacity-40"}`} loading="lazy" />
                 )}
               </div>
               <div className="space-y-2 p-3">
                 <input
                   defaultValue={item.title || ""}
+                  aria-label="Caption"
                   placeholder="Caption (optional)"
                   onBlur={(e) => { if (e.target.value !== (item.title || "")) updateTitle(item, e.target.value); }}
-                  className="w-full rounded-lg border border-white/10 bg-white/5 px-2 py-1.5 text-xs text-white outline-none placeholder:text-white/25 focus:border-white/30"
+                  className="w-full"
                 />
-                <div className="flex items-center gap-3">
+                <div className="flex items-center gap-2">
                   <button
                     onClick={() => toggleBoard(item)}
-                    className={`h-10 flex-1 rounded-lg border px-2 text-xs font-black ${item.show_on_board ? "border-emerald-500/40 bg-emerald-500/15 text-emerald-200" : "border-white/10 bg-white/5 text-white/40"}`}
+                    aria-pressed={!!item.show_on_board}
+                    className={`btn btn-sm flex-1 ${item.show_on_board ? "" : "btn-secondary"}`}
                   >
-                    {item.show_on_board ? "On Board ✓" : "Hidden"}
+                    {item.show_on_board ? "On the board" : "Hidden"}
                   </button>
-                  <button
-                    onClick={() => deleteItem(item)}
-                    className="h-10 shrink-0 rounded-lg border border-red-500/30 bg-red-500/10 px-3 text-xs font-black text-red-300"
-                  >
-                    Delete
-                  </button>
+                  <button onClick={() => deleteItem(item)} className="btn btn-danger btn-sm">Delete</button>
                 </div>
               </div>
             </div>
           ))}
         </div>
-
-        {!items.length && (
-          <div className="mt-8 text-center text-sm text-white/30">No photos yet. Upload some above.</div>
-        )}
-      </div>
-    </main>
+      ) : (
+        <div className="mt-8">
+          <EmptyState title="No photos yet">Upload some above and they will rotate on the wall display.</EmptyState>
+        </div>
+      )}
+    </div>
   );
 }

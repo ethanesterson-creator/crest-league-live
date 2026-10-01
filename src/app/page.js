@@ -3,8 +3,11 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { supabase } from "@/lib/supabase";
+import { useNotifyingErr } from "@/lib/useNotifyingErr";
 import { useAppMode } from "@/lib/useAppMode";
 import { getSportRules } from "@/lib/sportRules";
+import { useConfirmDialog } from "@/lib/useConfirmDialog";
+import { PageHeader, ScoreBug } from "@/components/ui";
 
 const SPORTS = [
   "Hoop",
@@ -92,8 +95,9 @@ function SportIcon({ sport, color }) {
 
 export default function HomePage() {
   const { season, session, isCW, blueName, whiteName } = useAppMode();
+  const { confirmAsync, confirmModal } = useConfirmDialog();
   const [status, setStatus] = useState("Checking…");
-  const [err, setErr] = useState("");
+  const [err, setErr] = useNotifyingErr();
   const [creating, setCreating] = useState(false);
   const [games, setGames] = useState([]);
 
@@ -302,7 +306,7 @@ export default function HomePage() {
     setErr("");
     const { error } = await supabase.from("live_games").select("id").is("played_on", null).limit(1);
 
-    setStatus(error ? `Supabase error: ${error.message}` : "Connected ✅");
+    setStatus(error ? `Supabase error: ${error.message}` : "Connected");
     if (error) setErr(error.message);
   }
 
@@ -507,7 +511,7 @@ export default function HomePage() {
   async function deleteGame(id) {
     try {
       setErr("");
-      const ok = confirm("Delete this game? (Only allowed if NOT finalized)");
+      const ok = await confirmAsync("Only allowed if the game is NOT finalized.", { title: "Delete this game?", confirmLabel: "Delete" });
       if (!ok) return;
 
       const { error } = await supabase.rpc("delete_unfinalized_game", { gid: id });
@@ -534,477 +538,419 @@ export default function HomePage() {
     .filter(Boolean)
     .join(" · ");
 
+  const liveGamesNow = games.filter((g) => g.status === "active");
+
+  const connected = status.startsWith("Connected");
+
   return (
-    <div className="min-h-screen text-slate-100">
-      <div className="mx-auto max-w-4xl p-4">
-        {/* Header */}
-        <div className="flex items-center justify-between">
-          <div>
-            <div className="text-[11px] font-black uppercase tracking-[0.3em]" style={{ color: "#7ea6ff" }}>Camp Bauercrest</div>
-            <h1 className="mt-1 text-4xl font-black tracking-tight" style={{ textShadow: "0 2px 20px rgba(58,113,255,0.3)" }}>
-              Crest <span style={{ background: "linear-gradient(180deg,#9dbaff,#3a71ff)", WebkitBackgroundClip: "text", backgroundClip: "text", WebkitTextFillColor: "transparent" }}>League Live</span>
-            </h1>
-            <div className="mt-1 text-sm text-slate-300">
-              Status: <span className="font-semibold" style={{ color: "#5b8cff" }}>{status}</span>
-            </div>
+    <div>
+      {confirmModal}
+
+      <PageHeader
+        title="Scores"
+        description="Start a game, score it live, and the whole camp sees it update."
+        tall
+        crest
+        pos="50% 70%"
+      >
+        <span className="flex items-center gap-2 font-semibold text-[var(--ink-2)]" role="status">
+          <span aria-hidden="true" className="inline-block h-2.5 w-2.5 rounded-full" style={{ background: connected ? "var(--good)" : "var(--live)", boxShadow: connected ? "0 0 12px var(--good)" : "0 0 12px var(--live)" }} />
+          {connected ? "Connected" : status}
+        </span>
+        <button onClick={loadGames} className="btn btn-secondary btn-sm">Refresh</button>
+      </PageHeader>
+
+      {/* Live now: the fastest route back into a game being scored. */}
+      {liveGamesNow.length ? (
+        <section className="mt-6" aria-label="Games live now">
+          <div className="bc-section-head reveal">
+            <h2>Live now</h2>
+            <span className="bc-live-badge"><span className="bc-live-dot" aria-hidden="true" />{liveGamesNow.length} on air</span>
           </div>
-          <button
-            onClick={loadGames}
-            className="rounded-xl border px-4 py-2 text-sm font-black hover:brightness-110"
-            style={{ borderColor: "rgba(58,113,255,0.4)", background: "rgba(58,113,255,0.12)", color: "#bcd4ff" }}
-          >
-            Refresh
-          </button>
-        </div>
-
-        {/* Create game card */}
-        <div className="mt-4 rounded-2xl border border-slate-800 bg-slate-900/60 p-4 shadow">
-          <div className="text-lg font-bold">Create Live Game</div>
-
-          {/* Sport — horizontally-scrolling chip strip, keeps this compact on phones */}
-          <div className="mt-3">
-            <div className="mb-1.5 text-xs font-bold uppercase tracking-wider text-slate-400">Sport</div>
-            <div className="-mx-1 flex gap-2 overflow-x-auto px-1 pb-1" style={{ scrollbarWidth: "none" }}>
-              {SPORTS.map((s) => {
-                const active = norm(sport) === norm(s);
-                return (
-                  <button
-                    key={s}
-                    type="button"
-                    disabled={matchupType === "crest_cup"}
-                    onClick={() => setSport(s)}
-                    className="flex shrink-0 flex-col items-center gap-1 rounded-2xl border px-3.5 py-2.5 disabled:opacity-60"
-                    style={
-                      active
-                        ? { borderColor: "#3a71ff", background: "rgba(58,113,255,0.18)", boxShadow: "0 0 0 3px rgba(58,113,255,0.15)" }
-                        : { borderColor: "rgba(255,255,255,0.1)", background: "rgba(255,255,255,0.04)" }
-                    }
-                  >
-                    <SportIcon sport={s} color={active ? "#bcd4ff" : "rgba(255,255,255,0.55)"} />
-                    <span className="text-[11px] font-extrabold" style={{ color: active ? "#fff" : "rgba(255,255,255,0.7)" }}>
-                      {s}
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
-            {matchupType === "crest_cup" ? <div className="mt-1 text-xs text-slate-400">Crest Cup is Soccer only.</div> : null}
-          </div>
-
-          {(norm(sport) === "volleyball" || norm(sport) === "newcomb") ? (
-            <label className="mt-3 block text-sm">
-              <div className="mb-1 text-slate-300">Series Format</div>
-              <select
-                className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 outline-none focus:border-slate-500"
-                value={seriesFormatChoice}
-                onChange={(e) => setSeriesFormatChoice(Number(e.target.value))}
+          <div className="grid gap-3 md:grid-cols-2">
+            {liveGamesNow.map((g, i) => (
+              <ScoreBug
+                key={g.id}
+                index={i}
+                href={`/live/${g.id}`}
+                status="live"
+                a={{ name: norm(g.team_a1), score: g.score_a }}
+                b={{ name: norm(g.team_b1), score: g.score_b }}
               >
-                <option value={3}>Best of 3</option>
-                <option value={5}>Best of 5</option>
-              </select>
-            </label>
-          ) : null}
+                <span className="bc-label hidden sm:block">{g.sport}</span>
+              </ScoreBug>
+            ))}
+          </div>
+        </section>
+      ) : null}
 
-          {/* League — pill row, hidden for Crest Cup */}
-          {matchupType !== "crest_cup" ? (
-            <div className="mt-3">
-              <div className="mb-1.5 text-xs font-bold uppercase tracking-wider text-slate-400">League</div>
-              <div className="flex gap-2">
-                {(leagues?.length
-                  ? leagues
-                  : [
-                      { id: "seniors", name: "Seniors" },
-                      { id: "juniors", name: "Juniors" },
-                      { id: "sophomores", name: "Sophomores" },
-                    ]
-                ).map((l) => {
-                  const active = leagueKey === l.id;
-                  return (
-                    <button
-                      key={l.id}
-                      type="button"
-                      onClick={() => setLeagueKey(l.id)}
-                      className="flex-1 rounded-xl px-2 py-2.5 text-sm font-extrabold"
-                      style={
-                        active
-                          ? { background: "linear-gradient(180deg,#4d80ff,#3a71ff)", color: "#fff" }
-                          : { background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.1)", color: "rgba(255,255,255,0.6)" }
-                      }
-                    >
-                      {l.name ?? l.id}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-          ) : (
-            <div className="mt-3 text-xs text-slate-400">Crest Cup — spans all leagues, no age group split.</div>
-          )}
+      {/* Create game */}
+      <section className="bc-card bc-card-pad mt-5" aria-labelledby="new-game-h">
+        <div className="bc-section-head"><h2 id="new-game-h">New game</h2></div>
 
-          {/* Team picks — in Color War these are locked to Blue vs White */}
-          {isCW ? (
-            <div className="mt-3 rounded-2xl border border-blue-400/30 bg-blue-500/5 p-4 text-center">
-              <div className="text-sm font-black tracking-widest text-blue-200">
-                {blueName} (BLUE) vs {whiteName} (WHITE)
-              </div>
-              <div className="mt-1 text-xs text-white/40">Teams are set automatically for Color War.</div>
-            </div>
-          ) : (
-            <div className="mt-3 grid grid-cols-[1fr_auto_1fr] items-start gap-2">
-              <div className="rounded-2xl border border-slate-700 bg-slate-950 p-3">
-                <div className="text-[10px] font-black uppercase tracking-wider text-slate-400">
-                  Team A{matchupType === "two_team" ? "1" : ""}
-                </div>
-                <select
-                  className="mt-1 w-full bg-transparent text-base font-extrabold text-white outline-none"
-                  value={teamA}
-                  onChange={(e) => setTeamA(e.target.value)}
+        {/* Sport: horizontally scrolling chip strip, compact on phones */}
+        <fieldset className="mt-4">
+          <legend className="bc-select-label">Sport</legend>
+          <div className="-mx-1 flex gap-2 overflow-x-auto px-1 pb-1" style={{ scrollbarWidth: "none" }}>
+            {SPORTS.map((s, i) => {
+              const active = norm(sport) === norm(s);
+              return (
+                <button
+                  key={s}
+                  type="button"
+                  aria-pressed={active}
+                  disabled={matchupType === "crest_cup"}
+                  onClick={() => setSport(s)}
+                  className="bc-rise-in flex min-h-[72px] min-w-[76px] shrink-0 flex-col items-center justify-center gap-1 rounded-md border-[1.5px] px-3 py-2 disabled:opacity-40"
+                  style={{
+                    "--stagger": i,
+                    borderColor: active ? "var(--ink)" : "var(--ink-3)",
+                    background: active ? "var(--ink)" : "transparent",
+                    color: active ? "var(--on-ink)" : "var(--ink)",
+                  }}
                 >
-                  <option value="">Select…</option>
-                  {teams.map((t) => (
-                    <option key={t} value={t}>
-                      {t}
-                    </option>
-                  ))}
-                </select>
-                {matchupType === "two_team" ? (
-                  <select
-                    className="mt-2 w-full rounded-lg border border-slate-700 bg-slate-900 px-2 py-1.5 text-xs font-bold text-white outline-none"
-                    value={teamA2}
-                    onChange={(e) => setTeamA2(e.target.value)}
-                  >
-                    <option value="">+ Team A2…</option>
-                    {teams.map((t) => (
-                      <option key={t} value={t}>
-                        {t}
-                      </option>
-                    ))}
-                  </select>
-                ) : null}
-              </div>
-              <div className="pt-4 text-xs font-black text-slate-500">VS</div>
-              <div className="rounded-2xl border border-slate-700 bg-slate-950 p-3">
-                <div className="text-[10px] font-black uppercase tracking-wider text-slate-400">
-                  Team B{matchupType === "two_team" ? "1" : ""}
-                </div>
-                <select
-                  className="mt-1 w-full bg-transparent text-base font-extrabold text-white outline-none"
-                  value={teamB}
-                  onChange={(e) => setTeamB(e.target.value)}
+                  <SportIcon sport={s} color="currentColor" />
+                  <span className="text-xs font-bold">{s}</span>
+                </button>
+              );
+            })}
+          </div>
+          {matchupType === "crest_cup" ? <div className="mt-1 text-sm text-[var(--ink-2)]">Crest Cup is Soccer only.</div> : null}
+        </fieldset>
+
+        {(norm(sport) === "volleyball" || norm(sport) === "newcomb") ? (
+          <label className="mt-4 block">
+            <span className="bc-select-label">Series format</span>
+            <select
+              className="bc-select"
+              value={seriesFormatChoice}
+              onChange={(e) => setSeriesFormatChoice(Number(e.target.value))}
+            >
+              <option value={3}>Best of 3</option>
+              <option value={5}>Best of 5</option>
+            </select>
+          </label>
+        ) : null}
+
+        {/* League: hidden for Crest Cup */}
+        {matchupType !== "crest_cup" ? (
+          <div className="mt-4">
+            <div className="bc-select-label" id="league-l">League</div>
+            <div className="seg" role="group" aria-labelledby="league-l">
+              {(leagues?.length
+                ? leagues
+                : [
+                    { id: "seniors", name: "Seniors" },
+                    { id: "juniors", name: "Juniors" },
+                    { id: "sophomores", name: "Sophomores" },
+                  ]
+              ).map((l) => (
+                <button
+                  key={l.id}
+                  type="button"
+                  aria-pressed={leagueKey === l.id}
+                  onClick={() => setLeagueKey(l.id)}
                 >
-                  <option value="">Select…</option>
-                  {teams.map((t) => (
-                    <option key={t} value={t}>
-                      {t}
-                    </option>
-                  ))}
-                </select>
-                {matchupType === "two_team" ? (
-                  <select
-                    className="mt-2 w-full rounded-lg border border-slate-700 bg-slate-900 px-2 py-1.5 text-xs font-bold text-white outline-none"
-                    value={teamB2}
-                    onChange={(e) => setTeamB2(e.target.value)}
-                  >
-                    <option value="">+ Team B2…</option>
-                    {teams.map((t) => (
-                      <option key={t} value={t}>
-                        {t}
-                      </option>
-                    ))}
-                  </select>
-                ) : null}
-              </div>
+                  {l.name ?? l.id}
+                </button>
+              ))}
             </div>
-          )}
+          </div>
+        ) : (
+          <div className="mt-4 text-sm text-[var(--ink-2)]">Crest Cup spans all leagues, with no age group split.</div>
+        )}
 
-          {/* Auto-computed settings summary — tap Edit to reveal Level / Mode / Clock controls */}
-          <button
-            type="button"
-            onClick={() => setShowSettings((v) => !v)}
-            className="mt-3 flex w-full items-center justify-between gap-2 rounded-xl border px-3.5 py-2.5 text-left"
-            style={{ borderColor: "rgba(58,113,255,0.3)", background: "rgba(58,113,255,0.1)" }}
-          >
-            <span className="truncate text-xs font-extrabold" style={{ color: "#dce8ff" }}>
-              {settingsSummary || "Game settings"}
-            </span>
-            <span className="shrink-0 text-xs font-black" style={{ color: "#8fb3ff" }}>
-              {showSettings ? "Done" : "Edit"}
-            </span>
-          </button>
-
-          {showSettings ? (
-            <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
-              {isCW || (matchupType !== "full_team" && matchupType !== "crest_cup") ? (
-                <label className="text-sm">
-                  <div className="mb-1 text-slate-300">Level</div>
-                  <select
-                    className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 outline-none focus:border-slate-500"
-                    value={String(level).toUpperCase()}
-                    onChange={(e) => setLevel(e.target.value)}
-                  >
-                    {(availableLevels?.length ? availableLevels : FALLBACK_LEVELS).map((l) => (
-                      <option key={l} value={l}>
-                        {l}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-              ) : matchupType === "full_team" ? (
-                <div className="text-xs text-slate-400 flex items-end pb-2">Full Team — no level split.</div>
-              ) : (
-                <div className="text-xs text-slate-400 flex items-end pb-2">Crest Cup — no level split.</div>
-              )}
-
-              {matchupType !== "crest_cup" ? (
-                <label className="text-sm">
-                  <div className="mb-1 text-slate-300">Mode</div>
-                  <select
-                    className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 outline-none focus:border-slate-500"
-                    value={mode}
-                    onChange={(e) => {
-                      setMode(e.target.value);
-                      setModeDirty(true);
-                    }}
-                  >
-                    {MODES.map((m) => (
-                      <option key={m} value={m}>
-                        {m}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-              ) : (
-                <div className="text-xs text-slate-400 flex items-end pb-2">Crest Cup — full camp-wide roster, no fixed mode.</div>
-              )}
-
-              {/* Clock Style */}
-              {clockEnabled ? (
-                <label className="text-sm sm:col-span-2">
-                  <div className="mb-1 text-slate-300">Clock Style</div>
-                  <select
-                    className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 outline-none focus:border-slate-500"
-                    value={clockStyle}
-                    onChange={(e) => {
-                      setClockStyle(e.target.value);
-                      setClockStyleDirty(true);
-                    }}
-                  >
-                    {(clockModes?.length
-                      ? clockModes
-                      : [
-                          {
-                            id: "countdown",
-                            label: "Countdown",
-                            presets: FALLBACK_TIMER_PRESETS.map((p) => p.seconds),
-                          },
-                        ]
-                    ).map((m) => (
-                      <option key={m.id} value={m.id}>
-                        {m.label}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-              ) : (
-                <div className="text-xs text-slate-400 sm:col-span-2">This game has no clock (per points_rules).</div>
-              )}
-
-              {/* Timer Preset */}
-              {clockEnabled ? (
-                <label className="text-sm sm:col-span-2">
-                  <div className="mb-1 text-slate-300">Timer Preset</div>
-                  <select
-                    className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 outline-none focus:border-slate-500"
-                    value={preset}
-                    onChange={(e) => {
-                      setPreset(Number(e.target.value));
-                      setPresetDirty(true);
-                    }}
-                  >
-                    {(timerOptions.length ? timerOptions : FALLBACK_TIMER_PRESETS).map((p) => (
-                      <option key={p.seconds} value={p.seconds}>
-                        {p.label}
-                      </option>
-                    ))}
+        {/* Team picks: in Color War these are locked to Blue vs White */}
+        {isCW ? (
+          <div className="mt-4 rounded-md border-[1.5px] border-[var(--ink)] p-4 text-center">
+            <div className="bc-display text-3xl leading-none">
+              {blueName} <span className="text-[var(--ink-3)]">vs</span> {whiteName}
+            </div>
+            <div className="mt-2 text-sm text-[var(--ink-2)]">Teams are set automatically for Color War.</div>
+          </div>
+        ) : (
+          <div className="mt-4 grid gap-3 sm:grid-cols-[1fr_auto_1fr] sm:items-start">
+            <div className="grid gap-2">
+              <label>
+                <span className="bc-select-label">Team A{matchupType === "two_team" ? " · first" : ""}</span>
+                <select className="bc-select" value={teamA} onChange={(e) => setTeamA(e.target.value)}>
+                  <option value="">Select…</option>
+                  {teams.map((t) => (<option key={t} value={t}>{t}</option>))}
+                </select>
+              </label>
+              {matchupType === "two_team" ? (
+                <label>
+                  <span className="bc-select-label">Team A · second</span>
+                  <select className="bc-select" value={teamA2} onChange={(e) => setTeamA2(e.target.value)}>
+                    <option value="">Add second team…</option>
+                    {teams.map((t) => (<option key={t} value={t}>{t}</option>))}
                   </select>
                 </label>
               ) : null}
             </div>
-          ) : null}
+            <div className="bc-display text-center text-2xl text-[var(--ink-3)] sm:pt-7" aria-hidden="true">vs</div>
+            <div className="grid gap-2">
+              <label>
+                <span className="bc-select-label">Team B{matchupType === "two_team" ? " · first" : ""}</span>
+                <select className="bc-select" value={teamB} onChange={(e) => setTeamB(e.target.value)}>
+                  <option value="">Select…</option>
+                  {teams.map((t) => (<option key={t} value={t}>{t}</option>))}
+                </select>
+              </label>
+              {matchupType === "two_team" ? (
+                <label>
+                  <span className="bc-select-label">Team B · second</span>
+                  <select className="bc-select" value={teamB2} onChange={(e) => setTeamB2(e.target.value)}>
+                    <option value="">Add second team…</option>
+                    {teams.map((t) => (<option key={t} value={t}>{t}</option>))}
+                  </select>
+                </label>
+              ) : null}
+            </div>
+          </div>
+        )}
 
-          {/* More options — Matchup type + Bowl game, hidden in Color War */}
-          {!isCW ? (
-            <div className="mt-1">
-              <button
-                type="button"
-                onClick={() => setShowMore((v) => !v)}
-                className="flex w-full items-center justify-between border-t border-white/5 py-2.5 text-left"
-              >
-                <span className="text-xs font-bold text-slate-400">More options</span>
-                <span className="text-xs text-slate-500">{showMore ? "▲" : "▼"}</span>
-              </button>
+        {/* Auto-computed settings summary. Tap Edit to reveal Level / Mode / Clock controls */}
+        <button
+          type="button"
+          onClick={() => setShowSettings((v) => !v)}
+          aria-expanded={showSettings}
+          className="mt-4 flex min-h-[48px] w-full items-center justify-between gap-2 rounded-md border border-[var(--rule)] bg-[var(--paper)] px-3.5 text-left"
+        >
+          <span className="truncate text-sm font-semibold">{settingsSummary || "Game settings"}</span>
+          <span className="shrink-0 text-sm font-extrabold underline underline-offset-4">{showSettings ? "Done" : "Edit"}</span>
+        </button>
 
-              {showMore ? (
-                <div className="flex flex-col gap-3 pb-1">
-                  <label className="text-sm">
-                    <div className="mb-1 text-slate-300">Matchup</div>
-                    <select
-                      className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 outline-none focus:border-slate-500"
-                      value={matchupType}
-                      onChange={(e) => setMatchupType(e.target.value)}
-                    >
-                      <option value="single">1 team vs 1 team</option>
-                      <option value="two_team">2 teams vs 2 teams</option>
-                      <option value="full_team">Full Team</option>
-                      <option value="crest_cup">Crest Cup (All Leagues)</option>
-                    </select>
+        {showSettings ? (
+          <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
+            {isCW || (matchupType !== "full_team" && matchupType !== "crest_cup") ? (
+              <label>
+                <span className="bc-select-label">Level</span>
+                <select
+                  className="bc-select"
+                  value={String(level).toUpperCase()}
+                  onChange={(e) => setLevel(e.target.value)}
+                >
+                  {(availableLevels?.length ? availableLevels : FALLBACK_LEVELS).map((l) => (
+                    <option key={l} value={l}>{l}</option>
+                  ))}
+                </select>
+              </label>
+            ) : matchupType === "full_team" ? (
+              <div className="flex items-end pb-2 text-sm text-[var(--ink-2)]">Full Team has no level split.</div>
+            ) : (
+              <div className="flex items-end pb-2 text-sm text-[var(--ink-2)]">Crest Cup has no level split.</div>
+            )}
+
+            {matchupType !== "crest_cup" ? (
+              <label>
+                <span className="bc-select-label">Mode</span>
+                <select
+                  className="bc-select"
+                  value={mode}
+                  onChange={(e) => {
+                    setMode(e.target.value);
+                    setModeDirty(true);
+                  }}
+                >
+                  {MODES.map((m) => (<option key={m} value={m}>{m}</option>))}
+                </select>
+              </label>
+            ) : (
+              <div className="flex items-end pb-2 text-sm text-[var(--ink-2)]">Crest Cup uses the full camp-wide roster, with no fixed mode.</div>
+            )}
+
+            {clockEnabled ? (
+              <label className="sm:col-span-2">
+                <span className="bc-select-label">Clock style</span>
+                <select
+                  className="bc-select"
+                  value={clockStyle}
+                  onChange={(e) => {
+                    setClockStyle(e.target.value);
+                    setClockStyleDirty(true);
+                  }}
+                >
+                  {(clockModes?.length
+                    ? clockModes
+                    : [
+                        {
+                          id: "countdown",
+                          label: "Countdown",
+                          presets: FALLBACK_TIMER_PRESETS.map((p) => p.seconds),
+                        },
+                      ]
+                  ).map((m) => (
+                    <option key={m.id} value={m.id}>{m.label}</option>
+                  ))}
+                </select>
+              </label>
+            ) : (
+              <div className="text-sm text-[var(--ink-2)] sm:col-span-2">This game has no clock.</div>
+            )}
+
+            {clockEnabled ? (
+              <label className="sm:col-span-2">
+                <span className="bc-select-label">Timer preset</span>
+                <select
+                  className="bc-select"
+                  value={preset}
+                  onChange={(e) => {
+                    setPreset(Number(e.target.value));
+                    setPresetDirty(true);
+                  }}
+                >
+                  {(timerOptions.length ? timerOptions : FALLBACK_TIMER_PRESETS).map((p) => (
+                    <option key={p.seconds} value={p.seconds}>{p.label}</option>
+                  ))}
+                </select>
+              </label>
+            ) : null}
+          </div>
+        ) : null}
+
+        {/* More options: matchup type + bowl game, hidden in Color War */}
+        {!isCW ? (
+          <div className="mt-2">
+            <button
+              type="button"
+              onClick={() => setShowMore((v) => !v)}
+              aria-expanded={showMore}
+              className="flex min-h-[48px] w-full items-center justify-between border-t border-[var(--rule)] text-left"
+            >
+              <span className="text-sm font-bold text-[var(--ink-2)]">More options</span>
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <path d={showMore ? "M3 10l5-5 5 5" : "M3 6l5 5 5-5"} />
+              </svg>
+            </button>
+
+            {showMore ? (
+              <div className="flex flex-col gap-3 pb-1">
+                <label>
+                  <span className="bc-select-label">Matchup</span>
+                  <select
+                    className="bc-select"
+                    value={matchupType}
+                    onChange={(e) => setMatchupType(e.target.value)}
+                  >
+                    <option value="single">1 team vs 1 team</option>
+                    <option value="two_team">2 teams vs 2 teams</option>
+                    <option value="full_team">Full Team</option>
+                    <option value="crest_cup">Crest Cup (All Leagues)</option>
+                  </select>
+                </label>
+
+                <div className="rounded-md border border-[var(--rule)] p-4">
+                  <label className="flex min-h-[44px] items-center gap-3 text-base font-bold">
+                    <input
+                      type="checkbox"
+                      checked={isBowlGame}
+                      onChange={(e) => {
+                        const on = e.target.checked;
+                        setIsBowlGame(on);
+                        if (!on) {
+                          setBowlName("");
+                          setBowlCounts(true);
+                        }
+                      }}
+                    />
+                    Bowl game
                   </label>
 
-                  <div className="rounded-2xl border border-white/10 bg-black/20 p-4">
-                    <label className="flex items-center gap-3 text-sm font-bold">
-                      <input
-                        type="checkbox"
-                        checked={isBowlGame}
-                        onChange={(e) => {
-                          const on = e.target.checked;
-                          setIsBowlGame(on);
-                          if (!on) {
-                            setBowlName("");
-                            setBowlCounts(true);
-                          }
-                        }}
-                      />
-                      Bowl game?
-                    </label>
+                  {isBowlGame ? (
+                    <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                      <label>
+                        <span className="bc-select-label">Bowl name</span>
+                        <input
+                          value={bowlName}
+                          onChange={(e) => setBowlName(e.target.value)}
+                          placeholder="Session 1 Bowl"
+                          className="bc-select"
+                        />
+                      </label>
 
-                    {isBowlGame ? (
-                      <div className="mt-3 grid gap-3 sm:grid-cols-2">
-                        <label className="text-sm">
-                          <div className="mb-1 text-slate-300">Bowl name</div>
-                          <input
-                            value={bowlName}
-                            onChange={(e) => setBowlName(e.target.value)}
-                            placeholder="Session 1 Bowl"
-                            className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 outline-none focus:border-slate-500"
-                          />
-                        </label>
+                      <label>
+                        <span className="bc-select-label">Counts for standings?</span>
+                        <select
+                          value={bowlCounts ? "yes" : "no"}
+                          onChange={(e) => setBowlCounts(e.target.value === "yes")}
+                          className="bc-select"
+                        >
+                          <option value="yes">Yes (normal points)</option>
+                          <option value="no">No (exhibition)</option>
+                        </select>
+                      </label>
 
-                        <label className="text-sm">
-                          <div className="mb-1 text-slate-300">Counts for standings?</div>
-                          <select
-                            value={bowlCounts ? "yes" : "no"}
-                            onChange={(e) => setBowlCounts(e.target.value === "yes")}
-                            className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 outline-none focus:border-slate-500"
-                          >
-                            <option value="yes">Yes (normal points)</option>
-                            <option value="no">No (exhibition)</option>
-                          </select>
-                        </label>
-
-                        <div className="text-xs text-slate-400 sm:col-span-2">
-                          Bowl games are tagged for display. If “No,” the game finalizes normally but does not change standings.
-                        </div>
-                      </div>
-                    ) : null}
-                  </div>
-                </div>
-              ) : null}
-            </div>
-          ) : null}
-
-          <button
-            onClick={createGame}
-            disabled={!canCreate || creating}
-            className={`mt-4 w-full rounded-2xl px-4 py-3 text-lg font-extrabold shadow
-              ${canCreate && !creating ? "text-white hover:brightness-110" : "bg-slate-800 text-slate-400"}`}
-            style={canCreate && !creating ? { background: "linear-gradient(180deg,#4d80ff,#3a71ff)", boxShadow: "0 6px 20px rgba(58,113,255,0.3)" } : {}}
-          >
-            {creating ? "Creating…" : "Create Game"}
-          </button>
-
-          {err ? <div className="mt-3 rounded-xl border border-red-900 bg-red-950/50 p-3 text-sm text-red-200">{err}</div> : null}
-        </div>
-
-        {/* Recent games */}
-        <div className="mt-4 rounded-2xl border border-slate-800 bg-slate-900/40 p-4">
-          <div className="mb-3 text-lg font-bold">Recent Live Games</div>
-
-          {games.length === 0 ? (
-            <div className="text-sm text-slate-400">No games yet.</div>
-          ) : (
-            <div className="space-y-3">
-              {games.map((g) => {
-                const left = g.matchup_type === "two_team" ? matchupLabel(g.team_a1, g.team_a2) : norm(g.team_a1);
-                const right = g.matchup_type === "two_team" ? matchupLabel(g.team_b1, g.team_b2) : norm(g.team_b1);
-
-                const bowlOn = !!g.is_bowl_game;
-                const bowlLabel = String(g.bowl_name || "").trim();
-                const counts = g.bowl_counts !== false;
-
-                return (
-                  <div key={g.id} className="rounded-2xl border border-slate-800 bg-slate-950/60 p-4">
-                    <div className="flex items-start justify-between gap-3">
-                      <div>
-                        <div className="text-xs text-slate-400">{new Date(g.created_at).toLocaleString()}</div>
-
-                        <div className="mt-1 flex flex-wrap items-center gap-2">
-                          <div className="text-xl font-extrabold">
-                            {left} vs {right}
-                          </div>
-
-                          {bowlOn ? (
-                            <span className="rounded-full border border-amber-400/30 bg-amber-500/10 px-2 py-0.5 text-[11px] font-black text-amber-100">
-                              BOWL{bowlLabel ? `: ${bowlLabel}` : ""}
-                            </span>
-                          ) : null}
-
-                          {bowlOn && !counts ? (
-                            <span className="rounded-full border border-slate-400/30 bg-slate-500/10 px-2 py-0.5 text-[11px] font-black text-slate-100">
-                              EXHIBITION
-                            </span>
-                          ) : null}
-                        </div>
-
-                        <div className="mt-1 text-sm text-slate-300">
-                          {g.league_key} • {g.sport} • Level {g.level} • {g.mode} •{" "}
-                          <span className="font-semibold" style={{ color: "#5b8cff" }}>{g.status}</span>
-                        </div>
-                        <div className="mt-1 text-xs text-slate-500 break-all">ID: {g.id}</div>
-                      </div>
-
-                      <div className="flex flex-col items-end gap-2">
-                        <div className="rounded-2xl border border-slate-700 bg-slate-950 px-4 py-3 text-center">
-                          <div className="text-xs text-slate-400">Score</div>
-                          <div className="text-3xl font-black tabular-nums">
-                            {g.score_a} - {g.score_b}
-                          </div>
-                        </div>
-
-                        <div className="flex gap-2">
-                          <Link className="rounded-xl px-4 py-2 text-sm font-extrabold text-white hover:brightness-110" style={{ background: "linear-gradient(180deg,#4d80ff,#3a71ff)" }} href={`/live/${g.id}`}>
-                            Open
-                          </Link>
-
-                          {g.status !== "final" ? (
-                            <button
-                              onClick={() => deleteGame(g.id)}
-                              className="rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm font-bold text-red-100 hover:bg-red-500/20"
-                            >
-                              Delete
-                            </button>
-                          ) : (
-                            <div className="text-xs text-white/50 italic">Finalized — admin only</div>
-                          )}
-                        </div>
+                      <div className="text-sm text-[var(--ink-2)] sm:col-span-2">
+                        Bowl games are tagged for display. If you pick No, the game finalizes normally but does not change standings.
                       </div>
                     </div>
+                  ) : null}
+                </div>
+              </div>
+            ) : null}
+          </div>
+        ) : null}
+
+        <button
+          onClick={createGame}
+          disabled={!canCreate || creating}
+          className="btn mt-4 w-full"
+          style={{ minHeight: 56, fontSize: 18 }}
+        >
+          {creating ? "Creating…" : "Create game"}
+        </button>
+
+        {err ? <div role="alert" className="bc-error mt-3 text-sm">{err}</div> : null}
+      </section>
+
+      {/* Recent games */}
+      <section className="mt-8" aria-labelledby="recent-h">
+        <div className="bc-section-head reveal"><h2 id="recent-h">Recent games</h2></div>
+
+        {games.length === 0 ? (
+          <div className="bc-empty">
+            <strong>No games yet</strong>
+            Create one above and it will show up here.
+          </div>
+        ) : (
+          <ul className="grid gap-x-5 gap-y-5 lg:grid-cols-2">
+            {games.map((g, i) => {
+              const left = g.matchup_type === "two_team" ? matchupLabel(g.team_a1, g.team_a2) : norm(g.team_a1);
+              const right = g.matchup_type === "two_team" ? matchupLabel(g.team_b1, g.team_b2) : norm(g.team_b1);
+
+              const bowlOn = !!g.is_bowl_game;
+              const bowlLabel = String(g.bowl_name || "").trim();
+              const counts = g.bowl_counts !== false;
+              const isFinal = g.status === "final";
+
+              return (
+                <li key={g.id}>
+                  <ScoreBug
+                    index={Math.min(i, 8)}
+                    href={`/live/${g.id}`}
+                    status={isFinal ? "final" : "live"}
+                    tag={isFinal ? "Final" : "Live"}
+                    a={{ name: left, score: g.score_a }}
+                    b={{ name: right, score: g.score_b }}
+                  />
+                  <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 px-1 text-[15px] text-[var(--ink-2)]">
+                    <span className="bc-label">{g.league_key} · {g.sport} · Level {g.level} · {g.mode}</span>
+                    {bowlOn ? <span className="bc-chip">Bowl{bowlLabel ? `: ${bowlLabel}` : ""}</span> : null}
+                    {bowlOn && !counts ? <span className="bc-chip">Exhibition</span> : null}
+                    <span className="text-[var(--ink-3)]">{new Date(g.created_at).toLocaleString()}</span>
+                    {!isFinal ? (
+                      <button onClick={() => deleteGame(g.id)} className="btn btn-danger btn-sm ml-auto">Delete</button>
+                    ) : (
+                      <span className="ml-auto text-[var(--ink-3)]">Finalized, admin only</span>
+                    )}
                   </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
-      </div>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </section>
     </div>
   );
 }

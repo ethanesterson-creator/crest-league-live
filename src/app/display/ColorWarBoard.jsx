@@ -8,8 +8,26 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "@/lib/supabase";
+import { useRealtimeTable } from "@/lib/useRealtimeTable";
+import FlashNumber from "@/components/FlashNumber";
 
 function norm(s) { return String(s ?? "").trim().toLowerCase(); }
+
+// One atomic status message for the first game whose score actually changed
+// — never a bare number, never one message per changed game.
+function announceScoreChange(prevGames, nextGames, blueName, whiteName) {
+  const prevMap = new Map((prevGames || []).map((g) => [g.id, g]));
+  for (const g of nextGames || []) {
+    const prev = prevMap.get(g.id);
+    if (prev && (Number(prev.score_a) !== Number(g.score_a) || Number(prev.score_b) !== Number(g.score_b))) {
+      const aBlue = norm(g.team_a1) === "blue";
+      const left = aBlue ? blueName : whiteName;
+      const right = aBlue ? whiteName : blueName;
+      return `Score update: ${left} ${Number(g.score_a || 0)}, ${right} ${Number(g.score_b || 0)}`;
+    }
+  }
+  return null;
+}
 
 const CW_SCENES = ["scoreboard", "leaders_seniors", "leaders_juniors", "leaders_sophomores", "live"];
 
@@ -20,6 +38,11 @@ export default function ColorWarBoard({ session = "s1", blueName, whiteName, blu
   const [byLeague, setByLeague] = useState({ seniors: { blue: 0, white: 0 }, juniors: { blue: 0, white: 0 }, sophomores: { blue: 0, white: 0 } });
   const [leaders, setLeaders] = useState({ seniors: [], juniors: [], sophomores: [] });
   const [liveGames, setLiveGames] = useState([]);
+  // Screen-reader announcement of the latest live score change (WCAG 4.1.3)
+  // — the totals above already update instantly via Realtime, but nothing
+  // said so out loud before this.
+  const [liveAnnouncement, setLiveAnnouncement] = useState("");
+  const prevLiveGamesRef = useRef([]);
 
   function logoUrl(path) {
     if (!path) return null;
@@ -142,7 +165,13 @@ export default function ColorWarBoard({ session = "s1", blueName, whiteName, blu
         // stat-leaders scene in front of the whole camp. Keep the last known
         // (already-filtered) leaders instead of showing an unfiltered list.
         console.error("ColorWarBoard departed-player filter failed, keeping last leaders state:", depsErr);
-        setLiveGames(live || []);
+        {
+          const nextLiveEarly = live || [];
+          const earlyAnnouncement = announceScoreChange(prevLiveGamesRef.current, nextLiveEarly, blueName, whiteName);
+          if (earlyAnnouncement) setLiveAnnouncement(earlyAnnouncement);
+          prevLiveGamesRef.current = nextLiveEarly;
+          setLiveGames(nextLiveEarly);
+        }
         return;
       }
       const departedSet = new Set((deps || []).map((d) => String(d.id)));
@@ -153,14 +182,22 @@ export default function ColorWarBoard({ session = "s1", blueName, whiteName, blu
       }
     }
     setLeaders(leaguesOut);
-    setLiveGames(live || []);
+    const nextLive = live || [];
+    const announcement = announceScoreChange(prevLiveGamesRef.current, nextLive, blueName, whiteName);
+    if (announcement) setLiveAnnouncement(announcement);
+    prevLiveGamesRef.current = nextLive;
+    setLiveGames(nextLive);
   }
 
   useEffect(() => {
     loadAll();
-    const r = setInterval(loadAll, 15000);
+    // Safety-net poll for a silently-dropped realtime socket -- slow since
+    // the realtime subscription below is doing the real work now.
+    const r = setInterval(loadAll, 60000);
     return () => clearInterval(r);
   }, [session]);
+
+  useRealtimeTable(["live_games", "live_events"], loadAll);
 
   // Scene rotation every 18s. Skip empty leaders scenes so it never dwells on
   // a blank board.
@@ -201,11 +238,12 @@ export default function ColorWarBoard({ session = "s1", blueName, whiteName, blu
   const blueUrl = logoUrl(blueLogo);
   const whiteUrl = logoUrl(whiteLogo);
 
-  function TeamCrest({ url, fallbackLetter, ring }) {
+  function TeamCrest({ url, fallbackLetter, teamName, onBlue }) {
+    const ring = onBlue ? "rgba(255,255,255,0.9)" : "var(--ink)";
     return url ? (
-      <img src={url} alt="" className={`h-56 w-56 rounded-full object-cover ring-4 ${ring}`} />
+      <img src={url} alt={`${teamName} team crest`} loading="lazy" className="h-48 w-48 rounded-full object-cover" style={{ boxShadow: `0 0 0 6px ${ring}` }} />
     ) : (
-      <div className={`flex h-56 w-56 items-center justify-center rounded-full ring-4 ${ring} bg-white/5 text-9xl font-black`}>
+      <div className="bc-num flex h-48 w-48 items-center justify-center rounded-full text-9xl leading-none" style={{ boxShadow: `0 0 0 6px ${ring}` }}>
         {fallbackLetter}
       </div>
     );
@@ -216,72 +254,72 @@ export default function ColorWarBoard({ session = "s1", blueName, whiteName, blu
     return `${value} ${k} · ${s.toUpperCase()}`;
   }
 
+  // Team identity swatch: a small filled square, never a colored edge.
+  function Swatch({ blue }) {
+    return (
+      <span
+        aria-hidden="true"
+        className="inline-block h-4 w-4 shrink-0 rounded-[3px]"
+        style={blue ? { background: "var(--cw-blue)" } : { background: "#fff", boxShadow: "inset 0 0 0 2px var(--rule)" }}
+      />
+    );
+  }
+
   return (
-    <div className="relative flex h-screen w-full flex-col overflow-hidden bg-gradient-to-br from-blue-950 via-slate-900 to-slate-950 text-white">
-      {/* Animated split background */}
-      <div className="pointer-events-none absolute inset-0">
-        <div className="absolute inset-y-0 left-0 w-1/2 bg-gradient-to-r from-blue-600/25 to-transparent" />
-        <div className="absolute inset-y-0 right-0 w-1/2 bg-gradient-to-l from-white/10 to-transparent" />
-      </div>
+    <div data-theme="night" className="relative flex h-screen w-full flex-col overflow-hidden" style={{ background: "var(--paper)", color: "var(--ink)" }}>
+      <h1 className="sr-only">Color War display board — {blueName} vs {whiteName}</h1>
+      <div aria-live="polite" className="sr-only">{liveAnnouncement}</div>
 
       {/* Header */}
-      <div className="relative z-10 flex items-center justify-between px-16 py-6">
-        <div className="text-5xl font-black tracking-[0.3em] text-blue-300">COLOR WAR</div>
-        <div className="text-2xl font-bold tracking-widest text-white/40">CAMP BAUERCREST</div>
+      <div className="relative z-10 flex items-end justify-between border-b-2 border-[var(--rule-strong)] px-12 py-4">
+        <div className="bc-display text-7xl leading-none">Color War</div>
+        <div className="text-xl font-bold uppercase tracking-[0.12em] text-[var(--ink-2)]">Camp Bauercrest</div>
       </div>
 
-      {/* ---- SCOREBOARD ---- */}
+      {/* ---- SCOREBOARD: a literal split board ---- */}
       {scene === "scoreboard" && (
-        <div className="relative z-10 flex flex-1 flex-col items-center justify-center px-8">
-          <div className="grid w-full grid-cols-[1fr_auto_1fr] items-center gap-6">
-            {/* Blue */}
-            <div className="flex min-w-0 flex-col items-center gap-4 px-4">
-              <TeamCrest url={blueUrl} fallbackLetter="B" ring="ring-blue-400" />
-              <div className="text-center text-6xl font-black uppercase leading-[0.95] tracking-wide text-blue-200 break-words"
-                   style={{ textShadow: "0 0 30px rgba(59,130,246,0.6)" }}>
-                {blueName}
-              </div>
-              <div className="text-[9rem] leading-none font-black tabular-nums text-white" style={{ textShadow: "0 0 60px rgba(59,130,246,0.7)" }}>
-                {blueTotal}
-              </div>
-            </div>
-
-            {/* VS + leader flag */}
-            <div className="flex flex-col items-center gap-3">
-              <div className="text-6xl font-black text-white/30">VS</div>
-              <div className={`rounded-full px-4 py-1 text-sm font-black tracking-widest ${blueLead ? "bg-blue-500/30 text-blue-200" : "bg-white/20 text-white"}`}>
-                {blueTotal === whiteTotal ? "TIED" : blueLead ? `${blueName} +${blueTotal - whiteTotal}` : `${whiteName} +${whiteTotal - blueTotal}`}
+        <div className="relative z-10 flex min-h-0 flex-1 flex-col">
+          <div className="grid min-h-0 flex-1 grid-cols-2">
+            {/* Blue: the team color is the field */}
+            <div className="flex min-w-0 flex-col items-center justify-center gap-4 px-8" style={{ background: "var(--cw-blue)", color: "#fff" }}>
+              <TeamCrest url={blueUrl} fallbackLetter="B" teamName={blueName} onBlue />
+              <div className="bc-display text-balance text-center text-7xl leading-[0.95]">{blueName}</div>
+              <div className="bc-num leading-[0.8]" style={{ fontSize: "clamp(9rem, 18vw, 22rem)" }}>
+                <FlashNumber value={blueTotal} />
               </div>
             </div>
 
             {/* White */}
-            <div className="flex min-w-0 flex-col items-center gap-4 px-4">
-              <TeamCrest url={whiteUrl} fallbackLetter="W" ring="ring-white/70" />
-              <div className="text-center text-6xl font-black uppercase leading-[0.95] tracking-wide text-white break-words"
-                   style={{ textShadow: "0 0 30px rgba(255,255,255,0.5)" }}>
-                {whiteName}
-              </div>
-              <div className="text-[9rem] leading-none font-black tabular-nums text-white" style={{ textShadow: "0 0 60px rgba(255,255,255,0.5)" }}>
-                {whiteTotal}
+            <div className="flex min-w-0 flex-col items-center justify-center gap-4 px-8" style={{ background: "#f5f7fa", color: "#0b1f3b" }}>
+              <TeamCrest url={whiteUrl} fallbackLetter="W" teamName={whiteName} />
+              <div className="bc-display text-balance text-center text-7xl leading-[0.95]">{whiteName}</div>
+              <div className="bc-num leading-[0.8]" style={{ fontSize: "clamp(9rem, 18vw, 22rem)" }}>
+                <FlashNumber value={whiteTotal} />
               </div>
             </div>
           </div>
 
-          {/* Per-league breakdown */}
-          <div className="mt-12 grid w-full grid-cols-3 gap-8">
-            {["seniors", "juniors", "sophomores"].map((lg) => {
-              const bl = byLeague[lg]?.blue || 0, wh = byLeague[lg]?.white || 0;
-              return (
-                <div key={lg} className="rounded-2xl border border-white/10 bg-white/[0.03] p-6">
-                  <div className="mb-3 text-center text-xl font-black uppercase tracking-widest text-white/50">{lg}</div>
-                  <div className="flex items-center justify-between">
-                    <div className="text-4xl font-black text-blue-300">{bl}</div>
-                    <div className="text-sm font-bold text-white/30">BLUE · WHITE</div>
-                    <div className="text-4xl font-black text-white">{wh}</div>
+          {/* Lead flag + per-league breakdown */}
+          <div className="grid grid-cols-[auto_1fr] items-stretch border-t-2 border-[var(--rule-strong)]">
+            <div className="flex items-center px-12 py-4" style={{ background: "var(--ink)", color: "var(--on-ink)" }}>
+              <div className="bc-display text-5xl leading-none">
+                {blueTotal === whiteTotal ? "Tied" : blueLead ? `${blueName} +${blueTotal - whiteTotal}` : `${whiteName} +${whiteTotal - blueTotal}`}
+              </div>
+            </div>
+            <div className="grid grid-cols-3">
+              {["seniors", "juniors", "sophomores"].map((lg) => {
+                const bl = byLeague[lg]?.blue || 0, wh = byLeague[lg]?.white || 0;
+                return (
+                  <div key={lg} className="flex items-center justify-between gap-6 border-l border-[var(--rule)] px-8 py-4">
+                    <div className="text-xl font-bold uppercase tracking-[0.1em] text-[var(--ink-2)]">{lg}</div>
+                    <div className="flex items-center gap-4">
+                      <Swatch blue /><span className="bc-num text-5xl leading-none">{bl}</span>
+                      <Swatch /><span className="bc-num text-5xl leading-none">{wh}</span>
+                    </div>
                   </div>
-                </div>
-              );
-            })}
+                );
+              })}
+            </div>
           </div>
         </div>
       )}
@@ -291,20 +329,19 @@ export default function ColorWarBoard({ session = "s1", blueName, whiteName, blu
         const lg = scene.replace("leaders_", "");
         const rows = leaders[lg] || [];
         return (
-          <div className="relative z-10 flex flex-1 flex-col px-16 pt-6">
-            <div className="mb-8 text-center text-6xl font-black uppercase tracking-[0.3em] text-blue-300">
-              {lg} Stat Leaders
-            </div>
-            <div className="grid flex-1 grid-cols-3 content-center gap-6">
+          <div className="relative z-10 flex flex-1 flex-col px-12 pt-6">
+            <div className="bc-display mb-6 text-7xl leading-none">{lg} stat leaders</div>
+            <div className="grid flex-1 grid-cols-3 content-start gap-6">
               {rows.map((p, i) => {
-                const color = norm(p.team_name);
+                const isBlue = norm(p.team_name) === "blue";
                 return (
-                  <div key={i} className={`rounded-2xl border p-4 ${color === "blue" ? "border-blue-400/40 bg-blue-500/10" : "border-white/30 bg-white/5"}`}>
-                    <div className="truncate text-4xl font-black text-white">{p.player_name}</div>
-                    <div className={`mt-1 text-sm font-black uppercase tracking-wider ${color === "blue" ? "text-blue-300" : "text-white/70"}`}>
-                      {color === "blue" ? blueName : whiteName}
+                  <div key={i} className="board-card p-6">
+                    <div className="flex items-center gap-3 text-lg font-bold uppercase tracking-[0.1em] text-[var(--ink-2)]">
+                      <Swatch blue={isBlue} />
+                      {isBlue ? blueName : whiteName}
                     </div>
-                    <div className="mt-2 text-lg font-bold text-white/80">{statLine(p.sport, p.stat_key, p.value)}</div>
+                    <div className="bc-display mt-2 truncate text-5xl leading-none">{p.player_name}</div>
+                    <div className="bc-num mt-3 text-4xl text-[var(--ink-2)]">{statLine(p.sport, p.stat_key, p.value)}</div>
                   </div>
                 );
               })}
@@ -315,20 +352,31 @@ export default function ColorWarBoard({ session = "s1", blueName, whiteName, blu
 
       {/* ---- LIVE GAMES ---- */}
       {scene === "live" && (
-        <div className="relative z-10 flex flex-1 flex-col px-16 pt-6">
-          <div className="mb-8 text-center text-6xl font-black uppercase tracking-[0.3em] text-blue-300">Live Now</div>
-          <div className="grid flex-1 grid-cols-2 content-center gap-8">
+        <div className="relative z-10 flex flex-1 flex-col px-12 pt-6">
+          <div className="mb-6 flex items-center gap-4">
+            <span className="bc-live-badge" style={{ fontSize: 18, minHeight: 40, padding: "0 16px" }}><span className="bc-live-dot" aria-hidden="true" />Live</span>
+            <div className="bc-display text-7xl leading-none">Live now</div>
+          </div>
+          <div className="grid flex-1 grid-cols-2 content-start gap-8">
             {liveGames.map((g) => {
               const aBlue = norm(g.team_a1) === "blue";
               return (
-                <div key={g.id} className="rounded-2xl border border-white/10 bg-white/[0.04] p-5">
-                  <div className="text-xs font-black uppercase tracking-widest text-white/40">
+                <div key={g.id} className="board-card p-6">
+                  <div className="text-lg font-bold uppercase tracking-[0.08em] text-[var(--ink-2)]">
                     {g.league_key} · {g.sport} · {g.level}
                   </div>
-                  <div className="mt-3 flex items-center justify-between">
-                    <div className={`text-2xl font-black ${aBlue ? "text-blue-300" : "text-white"}`}>{aBlue ? blueName : whiteName}</div>
-                    <div className="text-4xl font-black tabular-nums">{g.score_a} - {g.score_b}</div>
-                    <div className={`text-2xl font-black ${!aBlue ? "text-blue-300" : "text-white"}`}>{!aBlue ? blueName : whiteName}</div>
+                  <div className="mt-3 grid grid-cols-[1fr_auto_1fr] items-center gap-4">
+                    <div className="flex items-center gap-3">
+                      <Swatch blue={aBlue} />
+                      <div className="bc-display text-4xl leading-none">{aBlue ? blueName : whiteName}</div>
+                    </div>
+                    <div className="bc-num text-7xl leading-none">
+                      <FlashNumber value={Number(g.score_a || 0)} />–<FlashNumber value={Number(g.score_b || 0)} />
+                    </div>
+                    <div className="flex items-center justify-end gap-3">
+                      <div className="bc-display text-4xl leading-none">{!aBlue ? blueName : whiteName}</div>
+                      <Swatch blue={!aBlue} />
+                    </div>
                   </div>
                 </div>
               );

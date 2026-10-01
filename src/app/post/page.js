@@ -4,6 +4,9 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { supabase } from "@/lib/supabase";
 import { useAppMode } from "@/lib/useAppMode";
+import { useNotifyingErr } from "@/lib/useNotifyingErr";
+import { useConfirmDialog } from "@/lib/useConfirmDialog";
+import { PageHeader, EmptyState, ErrorNote } from "@/components/ui";
 const SPORTS = ["Hoop", "Soccer", "Softball", "Kickball", "Volleyball", "Football", "Speedball", "Euro", "Hockey", "Newcomb"];
 const FALLBACK_LEVELS = ["A", "B", "C", "D", "E", "F"];
 const MODES = ["5v5", "6v6", "7v7", "8v8", "9v9", "10v10", "11v11"];
@@ -37,7 +40,8 @@ function matchupLabel(a1, a2) {
 
 export default function PostGamesPage() {
   const { season, session, isCW, blueName, whiteName } = useAppMode();
-  const [err, setErr] = useState("");
+  const [err, setErr] = useNotifyingErr();
+  const { confirmAsync, confirmModal } = useConfirmDialog();
   const [msg, setMsg] = useState("");
 
   // Entry type for Phase 2
@@ -205,7 +209,8 @@ export default function PostGamesPage() {
   }
 
   async function deleteDraft(id, label) {
-    if (!confirm(`Delete this draft?\n\n${label}\n\nThis cannot be undone.`)) return;
+    const ok = await confirmAsync(`${label}\n\nThis cannot be undone.`, { title: "Delete this draft?", confirmLabel: "Delete" });
+    if (!ok) return;
     try {
       // Remove child rows first, then the game. If a child delete fails we
       // stop here instead of deleting the parent anyway -- otherwise those
@@ -420,75 +425,55 @@ export default function PostGamesPage() {
   });
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100">
-      <div className="mx-auto max-w-6xl px-4 py-6">
-        <div className="flex items-center justify-between gap-4">
-          <div>
-            <div className="text-2xl font-black tracking-tight">Add Results</div>
-            <div className="mt-1 text-sm text-white/70">
-              Enter results after the fact: <b>Post Games</b> and <b>Non-Game Points</b>.
-            </div>
-          </div>
+    <div className="pb-10">
+      {confirmModal}
+      <div>
+        <PageHeader title="Add results" description="Enter results after the fact: post a finished game, or add non-game points.">
+          <Link href="/" className="btn btn-secondary btn-sm">Home</Link>
+        </PageHeader>
 
-          <Link
-            href="/"
-            className="rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-sm font-semibold hover:bg-white/10"
-          >
-            Home
-          </Link>
-        </div>
-
-        {err ? (
-          <div className="mt-4 rounded-xl border border-red-700 bg-red-950/40 p-3 text-sm text-red-200">{err}</div>
-        ) : null}
+        {err ? <div className="mt-4"><ErrorNote>{err}</ErrorNote></div> : null}
 
         {msg ? (
-          <div className="mt-4 rounded-xl border border-emerald-400/30 bg-emerald-500/10 p-3 text-sm text-emerald-100">{msg}</div>
+          <div role="status" className="mt-4 rounded-md border-[1.5px] border-[var(--good)] p-3 text-sm font-semibold text-[var(--good-ink)]">{msg}</div>
         ) : null}
 
         {/* Entry Type Switch */}
-        <div className="mt-6 rounded-2xl border border-white/10 bg-white/5 p-5">
-          <div className="text-lg font-black">What are you adding?</div>
-          <div className="mt-3 grid gap-3 md:grid-cols-3">
-            <button
-              onClick={() => setEntryType("post")}
-              className={`rounded-xl border px-4 py-3 text-left ${
-                entryType === "post"
-                  ? "border-emerald-400/30 bg-emerald-500/10"
-                  : "border-white/10 bg-black/20 hover:bg-black/30"
-              }`}
-            >
-              <div className="font-black">Camper Post Game</div>
-              <div className="text-xs text-white/60">Create draft → enter score/stats → finalize</div>
-            </button>
-
-            <button
-              onClick={() => setEntryType("non_game")}
-              className={`rounded-xl border px-4 py-3 text-left ${
-                entryType === "non_game"
-                  ? "border-emerald-400/30 bg-emerald-500/10"
-                  : "border-white/10 bg-black/20 hover:bg-black/30"
-              }`}
-            >
-              <div className="font-black">Non-Game Points</div>
-              <div className="text-xs text-white/60">Spirit/cheering/etc. (single team per entry)</div>
-            </button>
+        <section className="bc-card bc-card-pad mt-6" aria-labelledby="entry-type-h">
+          <div className="bc-section-head"><h2 id="entry-type-h">What are you adding?</h2></div>
+          <div className="mt-3 grid gap-3 md:grid-cols-2">
+            {[
+              { key: "post", title: "Finished game", desc: "Create a draft, enter score and stats, then finalize." },
+              { key: "non_game", title: "Non-game points", desc: "Spirit, cheering, and the like. One team per entry." },
+            ].map((o) => (
+              <button
+                key={o.key}
+                type="button"
+                aria-pressed={entryType === o.key}
+                onClick={() => setEntryType(o.key)}
+                className="min-h-[72px] rounded-md border-[1.5px] px-4 py-3 text-left"
+                style={entryType === o.key
+                  ? { background: "var(--ink)", borderColor: "var(--ink)", color: "var(--on-ink)" }
+                  : { background: "transparent", borderColor: "var(--ink-3)", color: "var(--ink)" }}
+              >
+                <div className="text-lg font-bold">{o.title}</div>
+                <div className="text-sm" style={{ opacity: 0.85 }}>{o.desc}</div>
+              </button>
+            ))}
           </div>
-        </div>
+        </section>
 
         {/* GAMES FORM (post + staff) */}
         {entryType === "post" ? (
-          <div className="mt-6 rounded-2xl border border-white/10 bg-white/5 p-5">
-            <div className="text-lg font-black">
-              Create Past Game Draft
-            </div>
+          <div className="bc-card bc-card-pad mt-6">
+            <div className="bc-section-head"><h2>Create Past Game Draft</h2></div>
 
             <div className="mt-4 grid gap-4 md:grid-cols-2">
               <label className="text-sm">
-                <div className="mb-1 text-slate-300">Date</div>
+                <span className="bc-select-label">Date</span>
                 <input
                   type="date"
-                  className="w-full rounded-xl border border-slate-800 bg-slate-950 px-3 py-2 outline-none focus:border-slate-500"
+                  className="bc-select"
                   value={playedOn}
                   onChange={(e) => setPlayedOn(e.target.value)}
                 />
@@ -496,9 +481,9 @@ export default function PostGamesPage() {
 
               {matchupType !== "crest_cup" ? (
                 <label className="text-sm">
-                  <div className="mb-1 text-slate-300">League</div>
+                  <span className="bc-select-label">League</span>
                   <select
-                    className="w-full rounded-xl border border-slate-800 bg-slate-950 px-3 py-2 outline-none focus:border-slate-500"
+                    className="bc-select"
                     value={leagueKey}
                     onChange={(e) => setLeagueKey(e.target.value)}
                   >
@@ -512,9 +497,9 @@ export default function PostGamesPage() {
               )}
 
               <label className="text-sm">
-                <div className="mb-1 text-slate-300">Sport</div>
+                <span className="bc-select-label">Sport</span>
                 <select
-                  className="w-full rounded-xl border border-slate-800 bg-slate-950 px-3 py-2 outline-none focus:border-slate-500 disabled:opacity-50"
+                  className="bc-select disabled:opacity-50"
                   value={sport}
                   onChange={(e) => setSport(e.target.value)}
                   disabled={matchupType === "crest_cup"}
@@ -532,9 +517,9 @@ export default function PostGamesPage() {
 
               {/* Matchup type */}
               <label className="text-sm">
-                <div className="mb-1 text-slate-300">Matchup</div>
+                <span className="bc-select-label">Matchup</span>
                 <select
-                  className="w-full rounded-xl border border-slate-800 bg-slate-950 px-3 py-2 outline-none focus:border-slate-500"
+                  className="bc-select"
                   value={matchupType}
                   onChange={(e) => setMatchupType(e.target.value)}
                 >
@@ -547,9 +532,9 @@ export default function PostGamesPage() {
 
               {matchupType !== "full_team" && matchupType !== "crest_cup" ? (
                 <label className="text-sm">
-                  <div className="mb-1 text-slate-300">Level</div>
+                  <span className="bc-select-label">Level</span>
                   <select
-                    className="w-full rounded-xl border border-slate-800 bg-slate-950 px-3 py-2 outline-none focus:border-slate-500"
+                    className="bc-select"
                     value={String(level).toUpperCase()}
                     onChange={(e) => setLevel(e.target.value)}
                   >
@@ -568,9 +553,9 @@ export default function PostGamesPage() {
 
               {matchupType !== "crest_cup" ? (
                 <label className="text-sm">
-                  <div className="mb-1 text-slate-300">Mode</div>
+                  <span className="bc-select-label">Mode</span>
                   <select
-                    className="w-full rounded-xl border border-slate-800 bg-slate-950 px-3 py-2 outline-none focus:border-slate-500"
+                    className="bc-select"
                     value={mode}
                     onChange={(e) => {
                       setMode(e.target.value);
@@ -591,16 +576,16 @@ export default function PostGamesPage() {
               <div />
 
               {isCW ? (
-                <div className="sm:col-span-2 rounded-2xl border border-blue-400/30 bg-blue-500/5 p-4 text-center">
-                  <div className="text-sm font-black tracking-widest text-blue-200">{blueName} (BLUE) vs {whiteName} (WHITE)</div>
-                  <div className="mt-1 text-xs text-white/40">Teams are set automatically for Color War.</div>
+                <div className="sm:col-span-2 rounded-md border-[1.5px] border-[var(--ink)] p-4 text-center">
+                  <div className="bc-display text-3xl leading-none">{blueName} <span className="text-[var(--ink-3)]">vs</span> {whiteName}</div>
+                  <div className="mt-2 text-sm text-[var(--ink-2)]">Teams are set automatically for Color War.</div>
                 </div>
               ) : (
               <>
               <label className="text-sm">
-                <div className="mb-1 text-slate-300">Team A1</div>
+                <span className="bc-select-label">Team A1</span>
                 <select
-                  className="w-full rounded-xl border border-slate-800 bg-slate-950 px-3 py-2 outline-none focus:border-slate-500"
+                  className="bc-select"
                   value={teamA}
                   onChange={(e) => setTeamA(e.target.value)}
                 >
@@ -613,9 +598,9 @@ export default function PostGamesPage() {
               </label>
 
               <label className="text-sm">
-                <div className="mb-1 text-slate-300">Team B1</div>
+                <span className="bc-select-label">Team B1</span>
                 <select
-                  className="w-full rounded-xl border border-slate-800 bg-slate-950 px-3 py-2 outline-none focus:border-slate-500"
+                  className="bc-select"
                   value={teamB}
                   onChange={(e) => setTeamB(e.target.value)}
                 >
@@ -632,9 +617,9 @@ export default function PostGamesPage() {
               {!isCW && matchupType === "two_team" ? (
                 <>
                   <label className="text-sm">
-                    <div className="mb-1 text-slate-300">Team A2</div>
+                    <span className="bc-select-label">Team A2</span>
                     <select
-                      className="w-full rounded-xl border border-slate-800 bg-slate-950 px-3 py-2 outline-none focus:border-slate-500"
+                      className="bc-select"
                       value={teamA2}
                       onChange={(e) => setTeamA2(e.target.value)}
                     >
@@ -647,9 +632,9 @@ export default function PostGamesPage() {
                   </label>
 
                   <label className="text-sm">
-                    <div className="mb-1 text-slate-300">Team B2</div>
+                    <span className="bc-select-label">Team B2</span>
                     <select
-                      className="w-full rounded-xl border border-slate-800 bg-slate-950 px-3 py-2 outline-none focus:border-slate-500"
+                      className="bc-select"
                       value={teamB2}
                       onChange={(e) => setTeamB2(e.target.value)}
                     >
@@ -666,7 +651,7 @@ export default function PostGamesPage() {
 
             <button
               onClick={() => createDraft()}
-              className="mt-5 w-full rounded-xl bg-emerald-500 px-4 py-3 text-sm font-extrabold text-slate-950 hover:bg-emerald-400"
+              className="btn mt-5 w-full" style={{ minHeight: 56, fontSize: 18 }}
             >
               Create Draft
             </button>
@@ -679,25 +664,25 @@ export default function PostGamesPage() {
 
         {/* NON-GAME POINTS FORM */}
         {entryType === "non_game" ? (
-          <div className="mt-6 rounded-2xl border border-white/10 bg-white/5 p-5">
-            <div className="text-lg font-black">Add Non-Game Points</div>
+          <div className="bc-card bc-card-pad mt-6">
+            <div className="bc-section-head"><h2>Add Non-Game Points</h2></div>
             <div className="mt-1 text-sm text-white/70">Single team per entry. Use multiple entries for multiple teams.</div>
 
             <div className="mt-4 grid gap-4 md:grid-cols-2">
               <label className="text-sm">
-                <div className="mb-1 text-slate-300">Date</div>
+                <span className="bc-select-label">Date</span>
                 <input
                   type="date"
-                  className="w-full rounded-xl border border-slate-800 bg-slate-950 px-3 py-2 outline-none focus:border-slate-500"
+                  className="bc-select"
                   value={ngDate}
                   onChange={(e) => setNgDate(e.target.value)}
                 />
               </label>
 
               <label className="text-sm">
-                <div className="mb-1 text-slate-300">League (context)</div>
+                <span className="bc-select-label">League (context)</span>
                 <select
-                  className="w-full rounded-xl border border-slate-800 bg-slate-950 px-3 py-2 outline-none focus:border-slate-500"
+                  className="bc-select"
                   value={ngLeagueKey}
                   onChange={(e) => setNgLeagueKey(e.target.value)}
                 >
@@ -708,9 +693,9 @@ export default function PostGamesPage() {
               </label>
 
               <label className="text-sm">
-                <div className="mb-1 text-slate-300">Team</div>
+                <span className="bc-select-label">Team</span>
                 <select
-                  className="w-full rounded-xl border border-slate-800 bg-slate-950 px-3 py-2 outline-none focus:border-slate-500"
+                  className="bc-select"
                   value={ngTeam}
                   onChange={(e) => setNgTeam(e.target.value)}
                 >
@@ -723,20 +708,20 @@ export default function PostGamesPage() {
               </label>
 
               <label className="text-sm">
-                <div className="mb-1 text-slate-300">Points</div>
+                <span className="bc-select-label">Points</span>
                 <input
                   type="number"
                   min="0"
-                  className="w-full rounded-xl border border-slate-800 bg-slate-950 px-3 py-2 outline-none focus:border-slate-500"
+                  className="bc-select"
                   value={ngPoints}
                   onChange={(e) => setNgPoints(e.target.value)}
                 />
               </label>
 
               <label className="text-sm">
-                <div className="mb-1 text-slate-300">Reason</div>
+                <span className="bc-select-label">Reason</span>
                 <select
-                  className="w-full rounded-xl border border-slate-800 bg-slate-950 px-3 py-2 outline-none focus:border-slate-500"
+                  className="bc-select"
                   value={ngReason}
                   onChange={(e) => setNgReason(e.target.value)}
                 >
@@ -750,10 +735,10 @@ export default function PostGamesPage() {
 
               {ngReason === "Other" ? (
                 <label className="text-sm">
-                  <div className="mb-1 text-slate-300">Other (type it)</div>
+                  <span className="bc-select-label">Other (type it)</span>
                   <input
                     type="text"
-                    className="w-full rounded-xl border border-slate-800 bg-slate-950 px-3 py-2 outline-none focus:border-slate-500"
+                    className="bc-select"
                     value={ngOther}
                     onChange={(e) => setNgOther(e.target.value)}
                     placeholder="Example: Best banner"
@@ -764,10 +749,10 @@ export default function PostGamesPage() {
               )}
 
               <label className="text-sm md:col-span-2">
-                <div className="mb-1 text-slate-300">Notes (optional)</div>
+                <span className="bc-select-label">Notes (optional)</span>
                 <input
                   type="text"
-                  className="w-full rounded-xl border border-slate-800 bg-slate-950 px-3 py-2 outline-none focus:border-slate-500"
+                  className="bc-select"
                   value={ngNotes}
                   onChange={(e) => setNgNotes(e.target.value)}
                   placeholder="Example: Loudest section during finals"
@@ -778,13 +763,13 @@ export default function PostGamesPage() {
             <div className="mt-5 grid gap-3 md:grid-cols-2">
               <button
                 onClick={() => submitNonGamePoints({ asDraft: true })}
-                className="w-full rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-sm font-extrabold hover:bg-white/10"
+                className="btn btn-secondary w-full"
               >
                 Save as Draft
               </button>
               <button
                 onClick={() => submitNonGamePoints({ asDraft: false })}
-                className="w-full rounded-xl bg-emerald-500 px-4 py-3 text-sm font-extrabold text-slate-950 hover:bg-emerald-400"
+                className="btn w-full"
               >
                 Add Points
               </button>
@@ -793,21 +778,21 @@ export default function PostGamesPage() {
         ) : null}
 
         {/* Draft list */}
-        <div className="mt-8 rounded-2xl border border-white/10 bg-white/5 p-5">
+        <div className="bc-card bc-card-pad mt-8">
           <div className="flex items-center justify-between gap-3">
-            <div className="text-lg font-black">Draft Games</div>
+            <div className="bc-section-head"><h2>Draft Games</h2></div>
             <button
               onClick={() => loadDrafts()}
-              className="rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-sm font-semibold hover:bg-white/10"
+              className="btn btn-secondary btn-sm"
             >
               Refresh
             </button>
           </div>
 
           {!filteredDrafts.length ? (
-            <div className="mt-4 text-sm text-white/60">No drafts yet.</div>
+            <div className="mt-4"><EmptyState title="No drafts yet">Create one above and it will wait here until you finalize it.</EmptyState></div>
           ) : (
-            <div className="mt-4 grid gap-4">
+            <div className="rule-list mt-2">
               {filteredDrafts.map((g) => {
                 const left =
                   g.matchup_type === "two_team" ? matchupLabel(g.team_a1, g.team_a2) : norm(g.team_a1);
@@ -817,26 +802,26 @@ export default function PostGamesPage() {
                 return (
                   <div
                     key={g.id}
-                    className="relative rounded-2xl border border-white/10 bg-black/20 p-4"
+                    className="relative py-4"
                   >
                     <Link href={`/post/${g.id}`} className="block hover:opacity-90">
                       <div className="flex items-center justify-between gap-3 pr-20">
                         <div className="text-xs text-white/60">{g.played_on ?? "—"}</div>
                       </div>
-                      <div className="mt-1 text-xl font-black pr-20">
+                      <div className="mt-1 text-xl font-bold pr-20">
                         {left} vs {right}
                       </div>
                       <div className="mt-1 text-sm text-white/70">
                         {g.league_key} • {g.sport} • Level {g.level} • {g.mode} •{" "}
-                        <span className="text-yellow-300 font-bold">draft</span>
+                        <span className="bc-chip" style={{ color: "var(--warn-ink)" }}>draft</span>
                       </div>
-                      <div className="mt-2 text-2xl font-black tabular-nums">
-                        {Number(g.score_a || 0)} - {Number(g.score_b || 0)}
+                      <div className="bc-num mt-2 text-4xl leading-none">
+                        {Number(g.score_a || 0)}–{Number(g.score_b || 0)}
                       </div>
                     </Link>
                     <button
                       onClick={(e) => { e.preventDefault(); e.stopPropagation(); deleteDraft(g.id, `${left} vs ${right}`); }}
-                      className="absolute right-3 top-3 h-9 rounded-lg border border-red-500/40 bg-red-500/10 px-3 text-xs font-black text-red-200 hover:bg-red-500/20"
+                      className="btn btn-danger btn-sm absolute right-3 top-3"
                     >
                       Delete
                     </button>
