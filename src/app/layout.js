@@ -11,7 +11,7 @@ import AppShell from "./AppShell";
 // The database stays frozen and untouched. Set back to false next summer to
 // reopen the app exactly as it was.
 // ============================================================================
-const OFF_SEASON = false; // TEMP for redesign — RELOCK TO true BEFORE MERGE
+const OFF_SEASON = true;
 
 // UI face: Barlow, the DIN-flavoured sports workhorse for body, forms, tables.
 const barlow = Barlow({
